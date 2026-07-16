@@ -106,9 +106,7 @@ function LudusPage() {
                 <p className="font-serif text-lg italic text-muted-foreground">Your ludus is empty. Recruit your first gladiator.</p>
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {data.gladiators.map((g) => <GladiatorCard key={g.id} g={g} state={data} />)}
-              </div>
+              <GladiatorGrid state={data} />
             )}
           </TabsContent>
 
