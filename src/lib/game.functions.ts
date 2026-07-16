@@ -116,11 +116,15 @@ export const upgradeFacility = createServerFn({ method: "POST" })
     if (curr >= MAX_FACILITY) throw new Error("Facility already at max level");
     const cost = FACILITY_COST(curr);
     if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
-    const patch: Record<string, number> = { denarii: profile.denarii - cost };
-    patch[col] = curr + 1;
+    const next = curr + 1;
+    const patch =
+      data.facility === "training" ? { denarii: profile.denarii - cost, training_level: next } :
+      data.facility === "scouting" ? { denarii: profile.denarii - cost, scouting_level: next } :
+      data.facility === "medicus" ? { denarii: profile.denarii - cost, medicus_level: next } :
+      { denarii: profile.denarii - cost, armory_level: next };
     const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
     if (error) throw new Error(error.message);
-    return { ok: true, cost, newLevel: curr + 1 };
+    return { ok: true, cost, newLevel: next };
   });
 
 // ---------- SKILL UPGRADE ----------
