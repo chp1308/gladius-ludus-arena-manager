@@ -108,20 +108,22 @@ function PitFights({ state }: { state: State }) {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
             return (
-              <button
-                key={gl.id}
-                disabled={!!disabled}
-                onClick={() => setSelectedId(gl.id)}
-                className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
-                }`}
-              >
-                <div className="flex items-center justify-between font-display">
-                  <span className="flex items-center gap-1">{gl.is_beast && <Cat className="h-3 w-3 text-accent" />}{gl.name}</span>
-                  <Badge variant="outline">Lv {gl.level}</Badge>
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">{gl.wins}W/{gl.losses}L · HP {gl.health}</div>
-              </button>
+              <div key={gl.id}>
+                <button
+                  disabled={!!disabled}
+                  onClick={() => setSelectedId(gl.id)}
+                  className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-display">
+                    <span className="flex items-center gap-1">{gl.is_beast && <Cat className="h-3 w-3 text-accent" />}{gl.name}</span>
+                    <Badge variant="outline">Lv {gl.level}</Badge>
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{gl.wins}W/{gl.losses}L · HP {gl.health}</div>
+                </button>
+                <HealButton g={gl} />
+              </div>
             );
           })}
         </div>
