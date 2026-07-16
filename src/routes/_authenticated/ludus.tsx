@@ -403,74 +403,19 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
         )}
 
         <div className="flex gap-2 pt-1">
-          <Button
-            size="sm"
-            className="flex-1"
-            disabled={!!injured || g.health < 30}
-            onClick={() => { setLastResult(null); setFightOpen(true); }}
+          <Link
+            to="/arena"
+            className={`flex-1 ${(!!injured || g.health < 30) ? "pointer-events-none opacity-50" : ""}`}
           >
-            <Swords className="mr-1 h-4 w-4" /> To the Arena
-          </Button>
+            <Button size="sm" className="w-full" disabled={!!injured || g.health < 30}>
+              <Swords className="mr-1 h-4 w-4" /> To the Arena
+            </Button>
+          </Link>
           <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health === 100 && !injured)}>
             <Heart className="mr-1 h-4 w-4" /> Heal
           </Button>
         </div>
       </CardContent>
-
-      <Dialog open={fightOpen} onOpenChange={(o) => { setFightOpen(o); if (!o) setLastResult(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl">
-              {lastResult ? (lastResult.won ? "Victory!" : "Defeat") : "Choose your foe"}
-            </DialogTitle>
-          </DialogHeader>
-          {!lastResult ? (
-            <div className="space-y-3">
-              <p className="font-serif italic text-muted-foreground">
-                {g.name} — Lv {g.level} · {g.wins}W. Ludus fame: {state.profile?.reputation ?? 0}.
-              </p>
-              <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-                {ARENA_TIERS.map((t) => {
-                  const lock = tierUnlockReason(t, state.profile?.reputation ?? 0, g.level, g.wins);
-                  const selected = difficulty === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      disabled={!!lock}
-                      onClick={() => setDifficulty(t.key)}
-                      className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                        selected ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="font-display text-base">{t.label}</div>
-                        <div className="text-xs text-accent">~{t.reward}d · +{t.rep} fame</div>
-                      </div>
-                      <div className="mt-1 font-serif text-xs italic text-muted-foreground">{t.flavor}</div>
-                      {lock && <div className="mt-1 text-xs text-destructive">🔒 {lock}</div>}
-                    </button>
-                  );
-                })}
-              </div>
-              <Button className="w-full" disabled={fightMut.isPending} onClick={() => fightMut.mutate()}>
-                {fightMut.isPending ? "The crowd holds its breath..." : "Fight!"}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className={`rounded-lg p-3 text-center ${lastResult.won ? "bg-accent/20" : "bg-muted"}`}>
-                {lastResult.won ? <Trophy className="mx-auto h-8 w-8 text-accent" /> : <Skull className="mx-auto h-8 w-8 text-muted-foreground" />}
-              </div>
-              <ol className="max-h-72 space-y-1 overflow-y-auto font-serif text-sm">
-                {lastResult.log.map((line, i) => (
-                  <li key={i} className="border-l-2 border-border pl-3">{line}</li>
-                ))}
-              </ol>
-              <Button className="w-full" onClick={() => setFightOpen(false)}>Close</Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }
