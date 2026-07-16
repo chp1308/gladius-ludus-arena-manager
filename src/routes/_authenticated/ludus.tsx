@@ -7,6 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, fightMatch,
   upgradeFacility, upgradeSkill, WEAPON_LABELS,
+  ARENA_TIERS, tierUnlockReason,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Coins, Swords, Trophy, Shield, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat } from "lucide-react";
 
