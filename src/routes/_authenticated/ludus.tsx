@@ -282,11 +282,6 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
   const upgrade = useServerFn(upgradeEquipment);
   const heal = useServerFn(healGladiator);
   const dismiss = useServerFn(dismissGladiator);
-  const fight = useServerFn(fightMatch);
-
-  const [fightOpen, setFightOpen] = useState(false);
-  const [difficulty, setDifficulty] = useState<string>("backwater");
-  const [lastResult, setLastResult] = useState<{ won: boolean; log: string[] } | null>(null);
 
   const injured = g.injury_until && new Date(g.injury_until) > new Date();
   const injuryDaysLeft = injured ? Math.ceil((new Date(g.injury_until!).getTime() - Date.now()) / 86400_000) : 0;
@@ -315,14 +310,6 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
   const dismissMut = useMutation({
     mutationFn: () => dismiss({ data: { gladiatorId: g.id } }),
     onSuccess: () => { toast.success("Gladiator dismissed"); invalidate(); },
-  });
-  const fightMut = useMutation({
-    mutationFn: () => fight({ data: { gladiatorId: g.id, difficulty } }),
-    onSuccess: (r) => {
-      setLastResult({ won: r.won, log: r.log });
-      invalidate();
-    },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const stats: [string, number, "strength" | "agility" | "stamina" | "technique"][] = [
