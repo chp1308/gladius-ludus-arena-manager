@@ -22,12 +22,15 @@ export type Database = {
           created_at: string
           experience: number
           health: number
+          helmet_tier: number
           id: string
           injury_until: string | null
           is_beast: boolean
+          legs_tier: number
           level: number
           losses: number
           name: string
+          offhand_tier: number
           origin: string
           owner_id: string
           stamina: number
@@ -45,12 +48,15 @@ export type Database = {
           created_at?: string
           experience?: number
           health?: number
+          helmet_tier?: number
           id?: string
           injury_until?: string | null
           is_beast?: boolean
+          legs_tier?: number
           level?: number
           losses?: number
           name: string
+          offhand_tier?: number
           origin: string
           owner_id: string
           stamina?: number
@@ -68,12 +74,15 @@ export type Database = {
           created_at?: string
           experience?: number
           health?: number
+          helmet_tier?: number
           id?: string
           injury_until?: string | null
           is_beast?: boolean
+          legs_tier?: number
           level?: number
           losses?: number
           name?: string
+          offhand_tier?: number
           origin?: string
           owner_id?: string
           stamina?: number
