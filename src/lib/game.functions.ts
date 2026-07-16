@@ -67,13 +67,17 @@ function generateGladiator(scoutingLevel: number) {
 function gladiatorPower(
   g: {
     strength: number; agility: number; stamina: number; technique: number;
-    level: number; weapon_tier: number; armor_tier: number; health: number;
+    level: number; weapon_tier: number; armor_tier: number;
+    helmet_tier?: number; legs_tier?: number; offhand_tier?: number;
+    health: number;
     weapon_type: string;
   },
   skillLevel: number,
 ) {
   const base = 3 * (g.strength + g.agility + g.stamina + g.technique);
-  const gear = g.weapon_tier * 12 + g.armor_tier * 9;
+  const gear =
+    g.weapon_tier * 12 + g.armor_tier * 9 +
+    (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
   const lvl = g.level * 6;
   const healthMod = g.health / 100;
   const raw = (base + gear + lvl) * healthMod;
@@ -216,11 +220,18 @@ export const trainGladiator = createServerFn({ method: "POST" })
   });
 
 // ---------- EQUIP ----------
+const SLOT_COST_MULT: Record<string, number> = {
+  weapon: 1.0,
+  armor: 0.85,
+  helmet: 0.55,
+  legs: 0.55,
+  offhand: 0.7,
+};
 export const upgradeEquipment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
     gladiatorId: z.string().uuid(),
-    slot: z.enum(["weapon", "armor"]),
+    slot: z.enum(["weapon", "armor", "helmet", "legs", "offhand"]),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -230,13 +241,15 @@ export const upgradeEquipment = createServerFn({ method: "POST" })
     if (!g) throw new Error("Gladiator not found");
     if (g.is_beast) throw new Error("Beasts do not wear gear");
 
-    const currentTier = data.slot === "weapon" ? g.weapon_tier : g.armor_tier;
+    const tierField = `${data.slot === "weapon" ? "weapon" : data.slot === "armor" ? "armor" : data.slot}_tier` as
+      "weapon_tier" | "armor_tier" | "helmet_tier" | "legs_tier" | "offhand_tier";
+    const currentTier = (g as unknown as Record<string, number>)[tierField] ?? 1;
     if (currentTier >= 5) throw new Error("Already at max tier");
-    const baseCost = 150 * (currentTier + 1);
-    const cost = Math.max(50, Math.floor(baseCost * (1 - (profile.armory_level - 1) * 0.1)));
+    const baseCost = 150 * (currentTier + 1) * SLOT_COST_MULT[data.slot];
+    const cost = Math.max(40, Math.floor(baseCost * (1 - (profile.armory_level - 1) * 0.1)));
     if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
 
-    const patch = data.slot === "weapon" ? { weapon_tier: currentTier + 1 } : { armor_tier: currentTier + 1 };
+    const patch = { [tierField]: currentTier + 1 } as Partial<Record<typeof tierField, number>>;
     const { error } = await supabase.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
     await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);

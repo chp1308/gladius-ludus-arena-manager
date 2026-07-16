@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
@@ -13,8 +14,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Shield, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat } from "lucide-react";
+import { Coins, Swords, Shield, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, User } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/ludus")({
   component: LudusPage,
@@ -104,9 +106,7 @@ function LudusPage() {
                 <p className="font-serif text-lg italic text-muted-foreground">Your ludus is empty. Recruit your first gladiator.</p>
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {data.gladiators.map((g) => <GladiatorCard key={g.id} g={g} state={data} />)}
-              </div>
+              <GladiatorGrid state={data} />
             )}
           </TabsContent>
 
@@ -279,7 +279,97 @@ function SkillCard({
   );
 }
 
-function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
+function GladiatorGrid({ state }: { state: State }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const selected = state.gladiators.find(g => g.id === openId) ?? null;
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {state.gladiators.map((g) => (
+          <GladiatorTile key={g.id} g={g} onClick={() => setOpenId(g.id)} />
+        ))}
+      </div>
+      <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setOpenId(null); }}>
+        <DialogContent className="max-w-3xl">
+          {selected && <GladiatorSheet g={selected} state={state} onClose={() => setOpenId(null)} />}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function GladiatorTile({ g, onClick }: { g: Gladiator; onClick: () => void }) {
+  const injured = g.injury_until && new Date(g.injury_until) > new Date();
+  return (
+    <button
+      onClick={onClick}
+      className="inscribed ornate-border rounded-lg p-4 text-left transition hover:border-primary"
+    >
+      <div className="flex items-center gap-3">
+        <FaceAvatar g={g} size={48} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 truncate font-display text-base">
+            {g.is_beast && <Cat className="h-4 w-4 text-accent" />}
+            {g.name}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Lv {g.level} · {g.wins}W/{g.losses}L · {WEAPON_LABELS[g.weapon_type] ?? g.weapon_type}
+          </div>
+        </div>
+        <Badge className="bg-accent text-accent-foreground">Lv {g.level}</Badge>
+      </div>
+      <div className="mt-3">
+        <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> HP</span>
+          <span>{g.health}/100{injured ? " · Injured" : ""}</span>
+        </div>
+        <Progress value={g.health} className="h-1.5" />
+      </div>
+    </button>
+  );
+}
+
+// Simple procedural avatar: initials over a marble-tinted disc; a cat icon for beasts.
+function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
+  if (g.is_beast) {
+    return (
+      <div
+        className="flex items-center justify-center rounded-full border border-accent/60 bg-gradient-to-br from-accent/30 to-primary/20"
+        style={{ width: size, height: size }}
+      >
+        <Cat className="text-accent" style={{ width: size * 0.55, height: size * 0.55 }} />
+      </div>
+    );
+  }
+  const initials = g.name.split(" ").map(s => s[0]).join("").slice(0, 2).toUpperCase();
+  // deterministic hue from name
+  const hue = [...g.name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+  return (
+    <div
+      className="relative flex items-center justify-center rounded-full border border-primary/50 shadow-inner"
+      style={{
+        width: size,
+        height: size,
+        background: `radial-gradient(circle at 30% 25%, hsl(${hue} 30% 78%), hsl(${hue} 20% 40%))`,
+      }}
+    >
+      <User className="absolute text-background/40" style={{ width: size * 0.85, height: size * 0.85 }} strokeWidth={1} />
+      <span className="relative font-display text-background" style={{ fontSize: size * 0.32 }}>{initials}</span>
+    </div>
+  );
+}
+
+type SlotKey = "helmet" | "armor" | "legs" | "weapon" | "offhand";
+type SlotIconProps = { className?: string };
+const SLOTS: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps>; tierField: keyof Gladiator }[] = [
+  { key: "helmet",  label: "Helmet",   Icon: HardHat,    tierField: "helmet_tier" as keyof Gladiator },
+  { key: "armor",   label: "Cuirass",  Icon: Shield,     tierField: "armor_tier" },
+  { key: "legs",    label: "Greaves",  Icon: Footprints, tierField: "legs_tier" as keyof Gladiator },
+  { key: "weapon",  label: "Weapon",   Icon: Swords,     tierField: "weapon_tier" },
+  { key: "offhand", label: "Off-hand", Icon: Shield,     tierField: "offhand_tier" as keyof Gladiator },
+];
+
+function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onClose: () => void }) {
   const qc = useQueryClient();
   const train = useServerFn(trainGladiator);
   const upgrade = useServerFn(upgradeEquipment);
@@ -291,7 +381,6 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
   const skillLevel = state.skills.find(s => s.weapon_type === g.weapon_type)?.level ?? 0;
   const trainingLevel = state.profile?.training_level ?? 1;
   const statCap = 15 + trainingLevel * 3;
-
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
   const trainMut = useMutation({
@@ -301,7 +390,7 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
     onError: (e: Error) => toast.error(e.message),
   });
   const upgradeMut = useMutation({
-    mutationFn: (slot: "weapon" | "armor") => upgrade({ data: { gladiatorId: g.id, slot } }),
+    mutationFn: (slot: SlotKey) => upgrade({ data: { gladiatorId: g.id, slot } }),
     onSuccess: () => { toast.success("Equipment upgraded"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -312,7 +401,7 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
   });
   const dismissMut = useMutation({
     mutationFn: () => dismiss({ data: { gladiatorId: g.id } }),
-    onSuccess: () => { toast.success("Gladiator dismissed"); invalidate(); },
+    onSuccess: () => { toast.success("Gladiator dismissed"); invalidate(); onClose(); },
   });
 
   const stats: [string, number, "strength" | "agility" | "stamina" | "technique"][] = [
@@ -322,103 +411,164 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
     ["TEC", g.technique, "technique"],
   ];
 
+  const getTier = (field: keyof Gladiator) => (g[field] as number | null | undefined) ?? 1;
+
   return (
-    <Card className="inscribed ornate-border">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 font-display text-xl">
-              {g.is_beast && <Cat className="h-5 w-5 text-accent" />}
-              {g.name}
-            </CardTitle>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="outline">{g.class}</Badge>
-              <Badge variant="secondary">{WEAPON_LABELS[g.weapon_type] ?? g.weapon_type}{skillLevel > 0 ? ` · ★${skillLevel}` : ""}</Badge>
-              <span className="font-serif italic text-muted-foreground">of {g.origin}</span>
-              <Badge className="bg-accent text-accent-foreground">Lv {g.level}</Badge>
-              <span className="text-muted-foreground">{g.wins}W / {g.losses}L</span>
-            </div>
-          </div>
-          <button onClick={() => { if (confirm(`Dismiss ${g.name}?`)) dismissMut.mutate(); }} className="text-muted-foreground hover:text-destructive">
-            <X className="h-4 w-4" />
-          </button>
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 font-display text-2xl">
+          {g.is_beast && <Cat className="h-6 w-6 text-accent" />}
+          {g.name}
+        </DialogTitle>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+          <Badge variant="outline">{g.class}</Badge>
+          <Badge variant="secondary">{WEAPON_LABELS[g.weapon_type] ?? g.weapon_type}{skillLevel > 0 ? ` · ★${skillLevel}` : ""}</Badge>
+          <span className="font-serif italic text-muted-foreground">of {g.origin}</span>
+          <Badge className="bg-accent text-accent-foreground">Lv {g.level}</Badge>
+          <span className="text-muted-foreground">{g.wins}W / {g.losses}L</span>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> Health</span>
-            <span>{g.health}/100</span>
+      </DialogHeader>
+
+      <div className="grid gap-6 md:grid-cols-[260px_1fr]">
+        {/* Paperdoll */}
+        <div className="ornate-border rounded-lg bg-gradient-to-b from-secondary/40 to-background/60 p-4">
+          <div className="grid grid-cols-3 items-center justify-items-center gap-3">
+            {/* row 1 */}
+            <div />
+            <SlotButton
+              slot={SLOTS[0]}
+              tier={getTier(SLOTS[0].tierField)}
+              disabled={g.is_beast || upgradeMut.isPending}
+              onClick={() => upgradeMut.mutate("helmet")}
+            />
+            <div />
+
+            {/* row 2: offhand · face · weapon */}
+            <SlotButton
+              slot={SLOTS[4]}
+              tier={getTier(SLOTS[4].tierField)}
+              disabled={g.is_beast || upgradeMut.isPending}
+              onClick={() => upgradeMut.mutate("offhand")}
+            />
+            <FaceAvatar g={g} size={110} />
+            <SlotButton
+              slot={SLOTS[3]}
+              tier={getTier(SLOTS[3].tierField)}
+              disabled={g.is_beast || upgradeMut.isPending}
+              onClick={() => upgradeMut.mutate("weapon")}
+            />
+
+            {/* row 3 */}
+            <div />
+            <SlotButton
+              slot={SLOTS[1]}
+              tier={getTier(SLOTS[1].tierField)}
+              disabled={g.is_beast || upgradeMut.isPending}
+              onClick={() => upgradeMut.mutate("armor")}
+            />
+            <div />
+
+            {/* row 4 */}
+            <div />
+            <SlotButton
+              slot={SLOTS[2]}
+              tier={getTier(SLOTS[2].tierField)}
+              disabled={g.is_beast || upgradeMut.isPending}
+              onClick={() => upgradeMut.mutate("legs")}
+            />
+            <div />
           </div>
-          <Progress value={g.health} className="h-2" />
-          {injured && (
-            <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
-              <Skull className="h-3 w-3" /> Injured — {injuryDaysLeft}d until recovery
-            </p>
+          {g.is_beast && (
+            <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">Beasts fight with tooth and claw — no gear.</p>
           )}
         </div>
 
-        <div>
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span>XP</span>
-            <span>{g.experience} / {g.level * 100}</span>
+        {/* Right side: vitals, stats, actions */}
+        <div className="space-y-4">
+          <div>
+            <div className="mb-1 flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> Health</span>
+              <span>{g.health}/100</span>
+            </div>
+            <Progress value={g.health} className="h-2" />
+            {injured && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
+                <Skull className="h-3 w-3" /> Injured — {injuryDaysLeft}d until recovery
+              </p>
+            )}
           </div>
-          <Progress value={(g.experience / (g.level * 100)) * 100} className="h-1.5" />
-        </div>
 
-        <div className="grid grid-cols-4 gap-2">
-          {stats.map(([label, val, key]) => {
-            const capped = val >= statCap;
-            return (
-              <button
-                key={key}
-                onClick={() => trainMut.mutate(key)}
-                disabled={trainMut.isPending || !!injured || capped}
-                className="rounded border border-border bg-secondary/40 p-2 text-center transition hover:border-primary hover:bg-secondary disabled:opacity-50"
-                title={capped ? `Capped at ${statCap} — upgrade Training Yard` : "Train"}
-              >
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-                <div className="font-display text-lg">{val}<span className="text-[10px] text-muted-foreground">/{statCap}</span></div>
-              </button>
-            );
-          })}
-        </div>
-
-        {!g.is_beast && (
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <button
-              onClick={() => upgradeMut.mutate("weapon")}
-              disabled={upgradeMut.isPending || g.weapon_tier >= 5}
-              className="flex items-center justify-between rounded border border-border p-2 hover:border-primary disabled:opacity-50"
-            >
-              <span className="flex items-center gap-1"><Swords className="h-3 w-3" /> Weapon</span>
-              <span className="text-accent">{"★".repeat(g.weapon_tier)}{"☆".repeat(5 - g.weapon_tier)}</span>
-            </button>
-            <button
-              onClick={() => upgradeMut.mutate("armor")}
-              disabled={upgradeMut.isPending || g.armor_tier >= 5}
-              className="flex items-center justify-between rounded border border-border p-2 hover:border-primary disabled:opacity-50"
-            >
-              <span className="flex items-center gap-1"><Shield className="h-3 w-3" /> Armor</span>
-              <span className="text-accent">{"★".repeat(g.armor_tier)}{"☆".repeat(5 - g.armor_tier)}</span>
-            </button>
+          <div>
+            <div className="mb-1 flex items-center justify-between text-xs">
+              <span>XP</span>
+              <span>{g.experience} / {g.level * 100}</span>
+            </div>
+            <Progress value={(g.experience / (g.level * 100)) * 100} className="h-1.5" />
           </div>
-        )}
 
-        <div className="flex gap-2 pt-1">
-          <Link
-            to="/arena"
-            className={`flex-1 ${(!!injured || g.health < 30) ? "pointer-events-none opacity-50" : ""}`}
-          >
-            <Button size="sm" className="w-full" disabled={!!injured || g.health < 30}>
-              <Swords className="mr-1 h-4 w-4" /> To the Arena
+          <div className="grid grid-cols-4 gap-2">
+            {stats.map(([label, val, key]) => {
+              const capped = val >= statCap;
+              return (
+                <button
+                  key={key}
+                  onClick={() => trainMut.mutate(key)}
+                  disabled={trainMut.isPending || !!injured || capped}
+                  className="rounded border border-border bg-secondary/40 p-2 text-center transition hover:border-primary hover:bg-secondary disabled:opacity-50"
+                  title={capped ? `Capped at ${statCap} — upgrade Training Yard` : "Train"}
+                >
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+                  <div className="font-display text-lg">{val}<span className="text-[10px] text-muted-foreground">/{statCap}</span></div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Link
+              to="/arena"
+              className={`flex-1 ${(!!injured || g.health < 30) ? "pointer-events-none opacity-50" : ""}`}
+            >
+              <Button size="sm" className="w-full" disabled={!!injured || g.health < 30}>
+                <Swords className="mr-1 h-4 w-4" /> To the Arena
+              </Button>
+            </Link>
+            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health === 100 && !injured)}>
+              <Heart className="mr-1 h-4 w-4" /> Heal
             </Button>
-          </Link>
-          <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health === 100 && !injured)}>
-            <Heart className="mr-1 h-4 w-4" /> Heal
-          </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => { if (confirm(`Dismiss ${g.name}?`)) dismissMut.mutate(); }}
+            >
+              <X className="mr-1 h-4 w-4" /> Dismiss
+            </Button>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </>
+  );
+}
+
+function SlotButton({
+  slot, tier, disabled, onClick,
+}: {
+  slot: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps> };
+  tier: number; disabled: boolean; onClick: () => void;
+}) {
+  const atMax = tier >= 5;
+  const { Icon, label } = slot;
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || atMax}
+      title={atMax ? `${label} — mastercraft` : `Upgrade ${label}`}
+      className="group flex h-20 w-20 flex-col items-center justify-center rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
+    >
+      <Icon className="h-5 w-5 text-primary group-hover:text-accent" />
+      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-[10px] leading-none text-accent">{"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(5 - tier)}</span></div>
+    </button>
   );
 }
