@@ -275,12 +275,87 @@ export const dismissGladiator = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ---------- ARENA TIERS ----------
+// Each venue is gated by ludus fame (reputation), gladiator level, and gladiator fame (wins).
+export type ArenaTier = {
+  key: string;
+  label: string;
+  flavor: string;
+  reqFame: number;       // ludus reputation
+  reqLevel: number;      // gladiator level
+  reqWins: number;       // gladiator wins
+  powerScale: number;    // opponent power multiplier
+  reward: number;        // base denarii
+  xp: number;            // base XP
+  rep: number;           // fame on win
+  opponents: string[];   // flavor opponent pool
+};
+
+export const ARENA_TIERS: ArenaTier[] = [
+  {
+    key: "backwater", label: "Backwater Pits",
+    flavor: "Muddy village pits — a purse of copper and jeering peasants.",
+    reqFame: 0, reqLevel: 1, reqWins: 0,
+    powerScale: 0.80, reward: 70, xp: 35, rep: 1,
+    opponents: ["Drunken Brawler", "Runaway Slave", "Village Bully", "Starving Thief"],
+  },
+  {
+    key: "local", label: "Local Games",
+    flavor: "Small town munera — a wooden stand and a modest crowd.",
+    reqFame: 5, reqLevel: 2, reqWins: 1,
+    powerScale: 1.0, reward: 160, xp: 75, rep: 3,
+    opponents: ["Provincial Auctoratus", "Retired Legionary", "Pit Veteran", "Ostian Bruiser"],
+  },
+  {
+    key: "provincial", label: "Provincial Munera",
+    flavor: "A magistrate's games — proper editors, painted programs, real steel.",
+    reqFame: 25, reqLevel: 3, reqWins: 3,
+    powerScale: 1.15, reward: 320, xp: 130, rep: 6,
+    opponents: ["Praetorian Washout", "Iberian Veteran", "Champion of Ostia", "Nubian Slayer"],
+  },
+  {
+    key: "capua", label: "Grand Games of Capua",
+    flavor: "Capua's arena, where fortunes are made and legions bet their pay.",
+    reqFame: 75, reqLevel: 5, reqWins: 8,
+    powerScale: 1.35, reward: 650, xp: 240, rep: 14,
+    opponents: ["Champion of Capua", "The Bloody Bull", "Marcus Ferrus", "The Thracian Wolf"],
+  },
+  {
+    key: "colosseum", label: "Colosseum of Rome",
+    flavor: "The Flavian Amphitheatre. Fifty thousand voices thirsting for blood.",
+    reqFame: 200, reqLevel: 8, reqWins: 20,
+    powerScale: 1.55, reward: 1300, xp: 420, rep: 30,
+    opponents: ["Priscus the Undefeated", "Verus of the Palatine", "Flamma Redivivus", "The Iron Senator"],
+  },
+  {
+    key: "emperor", label: "Emperor's Spectacle",
+    flavor: "The Emperor himself watches. Death here becomes legend.",
+    reqFame: 500, reqLevel: 12, reqWins: 40,
+    powerScale: 1.8, reward: 2800, xp: 800, rep: 70,
+    opponents: ["Spartacus Reborn", "Hermes of Thrace", "The Emperor's Champion", "Tetraites the Immortal"],
+  },
+];
+
+export function tierUnlockReason(
+  tier: ArenaTier,
+  ludusFame: number,
+  gladLevel: number,
+  gladWins: number,
+): string | null {
+  if (ludusFame < tier.reqFame) return `Ludus needs ${tier.reqFame} fame`;
+  if (gladLevel < tier.reqLevel) return `Gladiator must be level ${tier.reqLevel}`;
+  if (gladWins < tier.reqWins) return `Gladiator needs ${tier.reqWins} wins`;
+  return null;
+}
+
+const TIER_KEYS = ARENA_TIERS.map(t => t.key) as [string, ...string[]];
+
 // ---------- FIGHT ----------
 export const fightMatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
     gladiatorId: z.string().uuid(),
-    difficulty: z.enum(["novice", "veteran", "champion"]),
+    difficulty: z.enum(TIER_KEYS as unknown as [string, ...string[]]),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -291,20 +366,24 @@ export const fightMatch = createServerFn({ method: "POST" })
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
     if (g.health < 30) throw new Error("Gladiator too wounded to fight");
 
+    const tier = ARENA_TIERS.find(t => t.key === data.difficulty);
+    if (!tier) throw new Error("Unknown arena");
+    const lock = tierUnlockReason(tier, profile.reputation, g.level, g.wins);
+    if (lock) throw new Error(lock);
+
     const { data: skillRow } = await supabase
       .from("ludus_skills").select("level")
       .eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
     const skillLevel = skillRow?.level ?? 0;
 
     const myPower = gladiatorPower(g, skillLevel);
-    const scale = data.difficulty === "novice" ? 0.85 : data.difficulty === "veteran" ? 1.05 : 1.3;
-    const opponentPower = Math.floor(myPower * scale + rand(-15, 15));
+    const opponentPower = Math.floor(myPower * tier.powerScale + rand(-15, 15));
     const opponentName = g.is_beast
       ? pick(["Doomed Slave", "Damnatus", "Condemned Thief"])
-      : `${pick(PRAENOMEN)} ${pick(COGNOMEN)}`.trim();
+      : pick(tier.opponents);
 
     const log: string[] = [];
-    log.push(`${g.name} enters the arena to face ${opponentName}.`);
+    log.push(`${g.name} enters ${tier.label} to face ${opponentName}.`);
     if (skillLevel > 0) log.push(`Style mastery: ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type} — rank ${skillLevel}.`);
     log.push(`The crowd roars. Power ${myPower} vs ${opponentPower}.`);
 
@@ -325,11 +404,9 @@ export const fightMatch = createServerFn({ method: "POST" })
     }
 
     const won = oppHp <= myHp;
-    const rewardBase = data.difficulty === "novice" ? 80 : data.difficulty === "veteran" ? 180 : 400;
-    const xpBase = data.difficulty === "novice" ? 40 : data.difficulty === "veteran" ? 90 : 180;
-    const denariiGained = won ? rewardBase + rand(0, 40) : Math.floor(rewardBase * 0.15);
-    const xpGained = won ? xpBase : Math.floor(xpBase * 0.4);
-    const repGained = won ? (data.difficulty === "novice" ? 1 : data.difficulty === "veteran" ? 3 : 8) : 0;
+    const denariiGained = won ? tier.reward + rand(0, Math.floor(tier.reward * 0.2)) : Math.floor(tier.reward * 0.12);
+    const xpGained = won ? tier.xp : Math.floor(tier.xp * 0.4);
+    const repGained = won ? tier.rep : 0;
 
     const damageTaken = Math.max(5, 100 - Math.max(0, myHp));
     const newHealth = Math.max(0, g.health - damageTaken);

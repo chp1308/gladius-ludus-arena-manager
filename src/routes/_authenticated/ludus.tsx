@@ -7,6 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, fightMatch,
   upgradeFacility, upgradeSkill, WEAPON_LABELS,
+  ARENA_TIERS, tierUnlockReason,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Coins, Swords, Trophy, Shield, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat } from "lucide-react";
 
@@ -181,7 +181,7 @@ function LudusPage() {
                               {g?.name ?? "Fallen"} vs {m.opponent_name}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {m.difficulty} · {new Date(m.created_at).toLocaleString()}
+                              {ARENA_TIERS.find(t => t.key === m.difficulty)?.label ?? m.difficulty} · {new Date(m.created_at).toLocaleString()}
                             </div>
                           </div>
                           <div className="text-right text-sm">
@@ -287,7 +287,7 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
   const fight = useServerFn(fightMatch);
 
   const [fightOpen, setFightOpen] = useState(false);
-  const [difficulty, setDifficulty] = useState<"novice" | "veteran" | "champion">("novice");
+  const [difficulty, setDifficulty] = useState<string>("backwater");
   const [lastResult, setLastResult] = useState<{ won: boolean; log: string[] } | null>(null);
 
   const injured = g.injury_until && new Date(g.injury_until) > new Date();
@@ -440,18 +440,33 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
             </DialogTitle>
           </DialogHeader>
           {!lastResult ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <p className="font-serif italic text-muted-foreground">
-                {g.name} will meet one of Rome's champions. Choose the challenge.
+                {g.name} — Lv {g.level} · {g.wins}W. Ludus fame: {state.profile?.reputation ?? 0}.
               </p>
-              <Select value={difficulty} onValueChange={(v) => setDifficulty(v as "novice")}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="novice">Novice — safe purse (~80 denarii)</SelectItem>
-                  <SelectItem value="veteran">Veteran — good coin (~180 denarii)</SelectItem>
-                  <SelectItem value="champion">Champion — glory or ruin (~400 denarii)</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+                {ARENA_TIERS.map((t) => {
+                  const lock = tierUnlockReason(t, state.profile?.reputation ?? 0, g.level, g.wins);
+                  const selected = difficulty === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      disabled={!!lock}
+                      onClick={() => setDifficulty(t.key)}
+                      className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        selected ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-display text-base">{t.label}</div>
+                        <div className="text-xs text-accent">~{t.reward}d · +{t.rep} fame</div>
+                      </div>
+                      <div className="mt-1 font-serif text-xs italic text-muted-foreground">{t.flavor}</div>
+                      {lock && <div className="mt-1 text-xs text-destructive">🔒 {lock}</div>}
+                    </button>
+                  );
+                })}
+              </div>
               <Button className="w-full" disabled={fightMut.isPending} onClick={() => fightMut.mutate()}>
                 {fightMut.isPending ? "The crowd holds its breath..." : "Fight!"}
               </Button>
