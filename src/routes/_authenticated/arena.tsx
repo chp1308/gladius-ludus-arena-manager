@@ -6,6 +6,7 @@ import {
   getLudusState, fightMatch, fightPvp, fightTeamBattle,
   listRivalGladiators, ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
+  healGladiator,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
