@@ -467,3 +467,292 @@ export const fightMatch = createServerFn({ method: "POST" })
 
     return { won, log, denariiGained, xpGained, repGained };
   });
+
+// ============================================================
+// PVP — challenge other players' active gladiators
+// ============================================================
+
+export const listRivalGladiators = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ myGladiatorId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: mine } = await supabase
+      .from("gladiators").select("level").eq("id", data.myGladiatorId).eq("owner_id", userId).maybeSingle();
+    if (!mine) throw new Error("Not your gladiator");
+
+    const { data: rivals, error } = await supabase
+      .from("gladiators")
+      .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,strength,agility,stamina,technique,health,injury_until,weapon_tier,armor_tier")
+      .neq("owner_id", userId)
+      .gte("health", 30)
+      .order("level", { ascending: false })
+      .limit(60);
+    if (error) throw new Error(error.message);
+
+    const active = (rivals ?? []).filter(r => !r.injury_until || new Date(r.injury_until) < new Date());
+    const ownerIds = [...new Set(active.map(r => r.owner_id))];
+    let owners: { id: string; ludus_name: string; reputation: number }[] = [];
+    if (ownerIds.length) {
+      const { data: os } = await supabase.from("profiles").select("id,ludus_name,reputation").in("id", ownerIds);
+      owners = os ?? [];
+    }
+    const oMap = new Map(owners.map(o => [o.id, o]));
+    return active.map(r => ({
+      ...r,
+      ludus_name: oMap.get(r.owner_id)?.ludus_name ?? "Unknown Ludus",
+      ludus_fame: oMap.get(r.owner_id)?.reputation ?? 0,
+    }));
+  });
+
+export const fightPvp = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    myGladiatorId: z.string().uuid(),
+    opponentGladiatorId: z.string().uuid(),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
+    const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.myGladiatorId).eq("owner_id", userId).maybeSingle();
+    if (!g) throw new Error("Gladiator not found");
+    if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
+    if (g.health < 30) throw new Error("Gladiator too wounded");
+
+    const { data: opp } = await supabase.from("gladiators").select("*").eq("id", data.opponentGladiatorId).maybeSingle();
+    if (!opp) throw new Error("Opponent not found");
+    if (opp.owner_id === userId) throw new Error("Cannot fight your own gladiator");
+    if (opp.health < 30) throw new Error("Opponent is not fit to fight");
+    if (opp.injury_until && new Date(opp.injury_until) > new Date()) throw new Error("Opponent is injured");
+
+    const { data: mySkill } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
+    const { data: oppSkill } = await supabase.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", opp.weapon_type).maybeSingle();
+    const myPower = gladiatorPower(g, mySkill?.level ?? 0);
+    const oppPower = gladiatorPower(opp, oppSkill?.level ?? 0);
+
+    const log: string[] = [];
+    log.push(`${g.name} challenges ${opp.name} of a rival ludus.`);
+    log.push(`Power ${myPower} vs ${oppPower}.`);
+    let myHp = 100, oHp = 100;
+    for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
+      const mr = myPower + rand(0, 40);
+      const or = oppPower + rand(0, 40);
+      if (mr > or) { const d = rand(15, 30); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      else { const d = rand(15, 30); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+    }
+    const won = oHp <= myHp;
+
+    // Rewards: PvP gives more fame, less coin
+    const denariiGained = won ? 200 + rand(0, 80) : 30;
+    const xpGained = won ? 140 : 50;
+    const repGained = won ? 8 : -2;
+
+    const damageTaken = Math.max(5, 100 - Math.max(0, myHp));
+    const newHealth = Math.max(0, g.health - damageTaken);
+    let injuryUntil: string | null = null;
+    if (damageTaken > 60 && newHealth > 0) {
+      const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
+      injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
+      log.push(`${g.name} is injured for ${days}d.`);
+    }
+    log.push(won
+      ? `Victory over ${opp.name}! Fame spreads through the provinces.`
+      : `${opp.name}'s ludus claims the honor.`);
+
+    await supabase.from("gladiators").update({
+      health: newHealth,
+      injury_until: injuryUntil,
+      experience: g.experience + xpGained,
+      level: (g.experience + xpGained) >= g.level * 100 ? g.level + 1 : g.level,
+      wins: g.wins + (won ? 1 : 0),
+      losses: g.losses + (won ? 0 : 1),
+    }).eq("id", g.id);
+
+    await supabase.from("profiles").update({
+      denarii: profile.denarii + denariiGained,
+      reputation: Math.max(0, profile.reputation + repGained),
+    }).eq("id", userId);
+
+    // Update opponent using admin (RLS bypass)
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const oppDamage = Math.max(5, 100 - Math.max(0, oHp));
+    const oppNewHealth = Math.max(0, opp.health - oppDamage);
+    let oppInjury: string | null = null;
+    if (oppDamage > 60 && oppNewHealth > 0) {
+      oppInjury = new Date(Date.now() + rand(2, 4) * 86400_000).toISOString();
+    }
+    const oppXp = won ? 40 : 100;
+    await supabaseAdmin.from("gladiators").update({
+      health: oppNewHealth,
+      injury_until: oppInjury,
+      experience: opp.experience + oppXp,
+      level: (opp.experience + oppXp) >= opp.level * 100 ? opp.level + 1 : opp.level,
+      wins: opp.wins + (won ? 0 : 1),
+      losses: opp.losses + (won ? 1 : 0),
+    }).eq("id", opp.id);
+
+    // Opponent owner rewards
+    const { data: oppProfile } = await supabaseAdmin.from("profiles").select("denarii,reputation").eq("id", opp.owner_id).maybeSingle();
+    if (oppProfile) {
+      await supabaseAdmin.from("profiles").update({
+        denarii: oppProfile.denarii + (won ? 30 : 150),
+        reputation: Math.max(0, oppProfile.reputation + (won ? -1 : 6)),
+      }).eq("id", opp.owner_id);
+    }
+
+    await supabase.from("matches").insert({
+      owner_id: userId,
+      gladiator_id: g.id,
+      opponent_name: `${opp.name} (${oMapLudus(opp.owner_id) ?? "rival ludus"})`,
+      opponent_power: oppPower,
+      difficulty: "pvp",
+      result: won ? "win" : "loss",
+      xp_gained: xpGained,
+      denarii_gained: denariiGained,
+      reputation_gained: repGained,
+      log,
+    });
+
+    return { won, log, denariiGained, xpGained, repGained };
+  });
+
+// helper stub (not used — keep signature consistent)
+function oMapLudus(_ownerId: string): string | null { return null; }
+
+// ============================================================
+// TEAM BATTLES — send multiple gladiators of specific composition
+// ============================================================
+
+export type TeamBattle = {
+  key: string;
+  label: string;
+  flavor: string;
+  size: number;
+  requireClass?: string;         // every gladiator must be this class
+  requireBeast?: number;         // exact number of beasts required
+  reqFame: number;
+  powerScale: number;
+  reward: number;
+  xp: number;
+  rep: number;
+};
+
+export const TEAM_BATTLES: TeamBattle[] = [
+  { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerScale: 1.0, reward: 400, xp: 120, rep: 6 },
+  { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerScale: 1.1, reward: 900, xp: 200, rep: 14 },
+  { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerScale: 1.2, reward: 1100, xp: 220, rep: 16 },
+  { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerScale: 1.35, reward: 1800, xp: 320, rep: 26 },
+  { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerScale: 1.6, reward: 3600, xp: 550, rep: 55 },
+];
+
+export function teamBattleRequirementError(
+  battle: TeamBattle,
+  gladiators: { class: string; is_beast: boolean; injury_until: string | null; health: number }[],
+  ludusFame: number,
+): string | null {
+  if (ludusFame < battle.reqFame) return `Ludus needs ${battle.reqFame} fame`;
+  if (gladiators.length !== battle.size) return `Choose exactly ${battle.size} gladiators`;
+  if (gladiators.some(g => g.health < 30)) return "One gladiator is too wounded";
+  if (gladiators.some(g => g.injury_until && new Date(g.injury_until) > new Date())) return "One gladiator is injured";
+  if (battle.requireClass && gladiators.some(g => g.is_beast || g.class !== battle.requireClass)) {
+    return `Every gladiator must be a ${battle.requireClass}`;
+  }
+  if (battle.requireBeast !== undefined) {
+    const beasts = gladiators.filter(g => g.is_beast).length;
+    if (beasts !== battle.requireBeast) return `Must include exactly ${battle.requireBeast} beast`;
+  }
+  return null;
+}
+
+const TEAM_KEYS = TEAM_BATTLES.map(t => t.key) as [string, ...string[]];
+
+export const fightTeamBattle = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    battleKey: z.enum(TEAM_KEYS as unknown as [string, ...string[]]),
+    gladiatorIds: z.array(z.string().uuid()).min(2).max(5),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const battle = TEAM_BATTLES.find(b => b.key === data.battleKey);
+    if (!battle) throw new Error("Unknown battle");
+
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
+
+    const { data: gs } = await supabase.from("gladiators").select("*").in("id", data.gladiatorIds).eq("owner_id", userId);
+    const team = gs ?? [];
+    const err = teamBattleRequirementError(battle, team, profile.reputation);
+    if (err) throw new Error(err);
+
+    const { data: skills } = await supabase.from("ludus_skills").select("weapon_type,level").eq("owner_id", userId);
+    const skillMap = new Map((skills ?? []).map(s => [s.weapon_type, s.level]));
+
+    const teamPower = team.reduce((sum, g) => sum + gladiatorPower(g, skillMap.get(g.weapon_type) ?? 0), 0);
+    const enemyPower = Math.floor(teamPower * battle.powerScale + rand(-30, 30));
+
+    const log: string[] = [];
+    log.push(`${battle.label} begins. ${team.map(t => t.name).join(", ")} enter the sand.`);
+    log.push(`Team power ${teamPower} vs ${enemyPower}.`);
+
+    let teamHp = team.length * 100;
+    let enemyHp = team.length * 100;
+    for (let i = 1; i <= 6 && teamHp > 0 && enemyHp > 0; i++) {
+      const mr = teamPower + rand(0, 60);
+      const or = enemyPower + rand(0, 60);
+      if (mr > or) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
+      else { const d = rand(25, 45); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
+    }
+    const won = enemyHp <= teamHp;
+
+    const denariiGained = won ? battle.reward + rand(0, Math.floor(battle.reward * 0.2)) : Math.floor(battle.reward * 0.15);
+    const xpEach = Math.floor((won ? battle.xp : Math.floor(battle.xp * 0.4)) / 1);
+    const repGained = won ? battle.rep : 0;
+
+    log.push(won
+      ? `Victory! The cohort is showered with denarii and honor. +${denariiGained}d, +${repGained} fame.`
+      : `The cohort is broken. Small purse of ${denariiGained}d for their courage.`);
+
+    // Distribute damage across team members
+    for (const g of team) {
+      const shareDamage = Math.floor((team.length * 100 - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
+      const dmg = Math.max(5, shareDamage);
+      const newHealth = Math.max(0, g.health - dmg);
+      let injuryUntil: string | null = null;
+      if (dmg > 55 && newHealth > 0) {
+        const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
+        injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
+      }
+      const newXp = g.experience + xpEach;
+      const xpNext = g.level * 100;
+      const leveledUp = newXp >= xpNext;
+      await supabase.from("gladiators").update({
+        health: newHealth,
+        injury_until: injuryUntil,
+        experience: leveledUp ? newXp - xpNext : newXp,
+        level: leveledUp ? g.level + 1 : g.level,
+        wins: g.wins + (won ? 1 : 0),
+        losses: g.losses + (won ? 0 : 1),
+      }).eq("id", g.id);
+      await supabase.from("matches").insert({
+        owner_id: userId,
+        gladiator_id: g.id,
+        opponent_name: battle.label,
+        opponent_power: enemyPower,
+        difficulty: `team:${battle.key}`,
+        result: won ? "win" : "loss",
+        xp_gained: xpEach,
+        denarii_gained: Math.floor(denariiGained / team.length),
+        reputation_gained: Math.floor(repGained / team.length),
+        log,
+      });
+    }
+
+    await supabase.from("profiles").update({
+      denarii: profile.denarii + denariiGained,
+      reputation: profile.reputation + repGained,
+    }).eq("id", userId);
+
+    return { won, log, denariiGained, repGained };
+  });
