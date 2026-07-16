@@ -1,0 +1,2 @@
+CREATE POLICY "read all gladiators for pvp" ON public.gladiators FOR SELECT TO authenticated USING (true);
+CREATE POLICY "read all profiles for pvp" ON public.profiles FOR SELECT TO authenticated USING (true);

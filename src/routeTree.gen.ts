@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedLudusRouteImport } from './routes/_authenticated/ludus'
+import { Route as AuthenticatedArenaRouteImport } from './routes/_authenticated/arena'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -39,17 +40,24 @@ const AuthenticatedLudusRoute = AuthenticatedLudusRouteImport.update({
   path: '/ludus',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedArenaRoute = AuthenticatedArenaRouteImport.update({
+  id: '/arena',
+  path: '/arena',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/arena': typeof AuthenticatedArenaRoute
   '/ludus': typeof AuthenticatedLudusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/arena': typeof AuthenticatedArenaRoute
   '/ludus': typeof AuthenticatedLudusRoute
 }
 export interface FileRoutesById {
@@ -58,19 +66,21 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/_authenticated/arena': typeof AuthenticatedArenaRoute
   '/_authenticated/ludus': typeof AuthenticatedLudusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/sitemap.xml' | '/ludus'
+  fullPaths: '/' | '/auth' | '/sitemap.xml' | '/arena' | '/ludus'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/sitemap.xml' | '/ludus'
+  to: '/' | '/auth' | '/sitemap.xml' | '/arena' | '/ludus'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/sitemap.xml'
+    | '/_authenticated/arena'
     | '/_authenticated/ludus'
   fileRoutesById: FileRoutesById
 }
@@ -118,14 +128,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLudusRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/arena': {
+      id: '/_authenticated/arena'
+      path: '/arena'
+      fullPath: '/arena'
+      preLoaderRoute: typeof AuthenticatedArenaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedArenaRoute: typeof AuthenticatedArenaRoute
   AuthenticatedLudusRoute: typeof AuthenticatedLudusRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedArenaRoute: AuthenticatedArenaRoute,
   AuthenticatedLudusRoute: AuthenticatedLudusRoute,
 }
 
