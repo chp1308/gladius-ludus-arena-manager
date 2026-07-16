@@ -287,7 +287,7 @@ function GladiatorCard({ g, state }: { g: Gladiator; state: State }) {
   const fight = useServerFn(fightMatch);
 
   const [fightOpen, setFightOpen] = useState(false);
-  const [difficulty, setDifficulty] = useState<"novice" | "veteran" | "champion">("novice");
+  const [difficulty, setDifficulty] = useState<string>("backwater");
   const [lastResult, setLastResult] = useState<{ won: boolean; log: string[] } | null>(null);
 
   const injured = g.injury_until && new Date(g.injury_until) > new Date();
