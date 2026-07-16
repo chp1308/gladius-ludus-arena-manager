@@ -90,7 +90,12 @@ export const trainGladiator = createServerFn({ method: "POST" })
     if (g[data.stat] >= 20) throw new Error("Stat is maxed");
 
     const gain = Math.random() < 0.7 ? 1 : 2;
-    const patch: Record<string, number> = { [data.stat]: g[data.stat] + gain };
+    const newVal = (g[data.stat] as number) + gain;
+    const patch =
+      data.stat === "strength" ? { strength: newVal } :
+      data.stat === "agility" ? { agility: newVal } :
+      data.stat === "stamina" ? { stamina: newVal } :
+      { technique: newVal };
     const { error } = await supabase.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
     await supabase.from("profiles").update({ denarii: profile.denarii - COST }).eq("id", userId);
