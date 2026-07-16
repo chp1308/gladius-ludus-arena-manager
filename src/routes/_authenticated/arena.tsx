@@ -14,7 +14,32 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield } from "lucide-react";
+import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart } from "lucide-react";
+
+function HealButton({ g }: { g: Gladiator }) {
+  const qc = useQueryClient();
+  const heal = useServerFn(healGladiator);
+  const injured = !!(g.injury_until && new Date(g.injury_until) > new Date());
+  const needsHeal = g.health < 100 || injured;
+  const mut = useMutation({
+    mutationFn: () => heal({ data: { gladiatorId: g.id } }),
+    onSuccess: (r) => { toast.success(`${g.name} healed for ${r.cost}d`); qc.invalidateQueries({ queryKey: ["ludus"] }); qc.invalidateQueries({ queryKey: ["rivals"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  if (!needsHeal) return null;
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="mt-1 h-7 w-full text-xs"
+      disabled={mut.isPending}
+      onClick={(e) => { e.stopPropagation(); mut.mutate(); }}
+    >
+      <Heart className="mr-1 h-3 w-3 text-accent" />
+      {mut.isPending ? "Tending..." : injured ? "Treat injury" : "Heal"}
+    </Button>
+  );
+}
 
 export const Route = createFileRoute("/_authenticated/arena")({
   component: ArenaPage,
