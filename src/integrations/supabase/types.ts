@@ -14,7 +14,152 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      gladiators: {
+        Row: {
+          agility: number
+          armor_tier: number
+          class: string
+          created_at: string
+          experience: number
+          health: number
+          id: string
+          injury_until: string | null
+          level: number
+          losses: number
+          name: string
+          origin: string
+          owner_id: string
+          stamina: number
+          status: string
+          strength: number
+          technique: number
+          weapon_tier: number
+          wins: number
+        }
+        Insert: {
+          agility?: number
+          armor_tier?: number
+          class?: string
+          created_at?: string
+          experience?: number
+          health?: number
+          id?: string
+          injury_until?: string | null
+          level?: number
+          losses?: number
+          name: string
+          origin: string
+          owner_id: string
+          stamina?: number
+          status?: string
+          strength?: number
+          technique?: number
+          weapon_tier?: number
+          wins?: number
+        }
+        Update: {
+          agility?: number
+          armor_tier?: number
+          class?: string
+          created_at?: string
+          experience?: number
+          health?: number
+          id?: string
+          injury_until?: string | null
+          level?: number
+          losses?: number
+          name?: string
+          origin?: string
+          owner_id?: string
+          stamina?: number
+          status?: string
+          strength?: number
+          technique?: number
+          weapon_tier?: number
+          wins?: number
+        }
+        Relationships: []
+      }
+      matches: {
+        Row: {
+          created_at: string
+          denarii_gained: number
+          difficulty: string
+          gladiator_id: string
+          id: string
+          log: Json
+          opponent_name: string
+          opponent_power: number
+          owner_id: string
+          reputation_gained: number
+          result: string
+          xp_gained: number
+        }
+        Insert: {
+          created_at?: string
+          denarii_gained?: number
+          difficulty: string
+          gladiator_id: string
+          id?: string
+          log?: Json
+          opponent_name: string
+          opponent_power: number
+          owner_id: string
+          reputation_gained?: number
+          result: string
+          xp_gained?: number
+        }
+        Update: {
+          created_at?: string
+          denarii_gained?: number
+          difficulty?: string
+          gladiator_id?: string
+          id?: string
+          log?: Json
+          opponent_name?: string
+          opponent_power?: number
+          owner_id?: string
+          reputation_gained?: number
+          result?: string
+          xp_gained?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matches_gladiator_id_fkey"
+            columns: ["gladiator_id"]
+            isOneToOne: false
+            referencedRelation: "gladiators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          denarii: number
+          id: string
+          ludus_name: string
+          reputation: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          denarii?: number
+          id: string
+          ludus_name?: string
+          reputation?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          denarii?: number
+          id?: string
+          ludus_name?: string
+          reputation?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
