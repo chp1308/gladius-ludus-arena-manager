@@ -24,6 +24,7 @@ export type Database = {
           health: number
           id: string
           injury_until: string | null
+          is_beast: boolean
           level: number
           losses: number
           name: string
@@ -34,6 +35,7 @@ export type Database = {
           strength: number
           technique: number
           weapon_tier: number
+          weapon_type: string
           wins: number
         }
         Insert: {
@@ -45,6 +47,7 @@ export type Database = {
           health?: number
           id?: string
           injury_until?: string | null
+          is_beast?: boolean
           level?: number
           losses?: number
           name: string
@@ -55,6 +58,7 @@ export type Database = {
           strength?: number
           technique?: number
           weapon_tier?: number
+          weapon_type?: string
           wins?: number
         }
         Update: {
@@ -66,6 +70,7 @@ export type Database = {
           health?: number
           id?: string
           injury_until?: string | null
+          is_beast?: boolean
           level?: number
           losses?: number
           name?: string
@@ -76,7 +81,35 @@ export type Database = {
           strength?: number
           technique?: number
           weapon_tier?: number
+          weapon_type?: string
           wins?: number
+        }
+        Relationships: []
+      }
+      ludus_skills: {
+        Row: {
+          created_at: string
+          id: string
+          level: number
+          owner_id: string
+          updated_at: string
+          weapon_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          level?: number
+          owner_id: string
+          updated_at?: string
+          weapon_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          level?: number
+          owner_id?: string
+          updated_at?: string
+          weapon_type?: string
         }
         Relationships: []
       }
@@ -135,27 +168,39 @@ export type Database = {
       }
       profiles: {
         Row: {
+          armory_level: number
           created_at: string
           denarii: number
           id: string
           ludus_name: string
+          medicus_level: number
           reputation: number
+          scouting_level: number
+          training_level: number
           updated_at: string
         }
         Insert: {
+          armory_level?: number
           created_at?: string
           denarii?: number
           id: string
           ludus_name?: string
+          medicus_level?: number
           reputation?: number
+          scouting_level?: number
+          training_level?: number
           updated_at?: string
         }
         Update: {
+          armory_level?: number
           created_at?: string
           denarii?: number
           id?: string
           ludus_name?: string
+          medicus_level?: number
           reputation?: number
+          scouting_level?: number
+          training_level?: number
           updated_at?: string
         }
         Relationships: []
