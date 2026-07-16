@@ -6,6 +6,7 @@ import {
   getLudusState, fightMatch, fightPvp, fightTeamBattle,
   listRivalGladiators, ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
+  healGladiator,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +14,32 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield } from "lucide-react";
+import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart } from "lucide-react";
+
+function HealButton({ g }: { g: Gladiator }) {
+  const qc = useQueryClient();
+  const heal = useServerFn(healGladiator);
+  const injured = !!(g.injury_until && new Date(g.injury_until) > new Date());
+  const needsHeal = g.health < 100 || injured;
+  const mut = useMutation({
+    mutationFn: () => heal({ data: { gladiatorId: g.id } }),
+    onSuccess: (r) => { toast.success(`${g.name} healed for ${r.cost}d`); qc.invalidateQueries({ queryKey: ["ludus"] }); qc.invalidateQueries({ queryKey: ["rivals"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  if (!needsHeal) return null;
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="mt-1 h-7 w-full text-xs"
+      disabled={mut.isPending}
+      onClick={(e) => { e.stopPropagation(); mut.mutate(); }}
+    >
+      <Heart className="mr-1 h-3 w-3 text-accent" />
+      {mut.isPending ? "Tending..." : injured ? "Treat injury" : "Heal"}
+    </Button>
+  );
+}
 
 export const Route = createFileRoute("/_authenticated/arena")({
   component: ArenaPage,
@@ -82,20 +108,22 @@ function PitFights({ state }: { state: State }) {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
             return (
-              <button
-                key={gl.id}
-                disabled={!!disabled}
-                onClick={() => setSelectedId(gl.id)}
-                className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
-                }`}
-              >
-                <div className="flex items-center justify-between font-display">
-                  <span className="flex items-center gap-1">{gl.is_beast && <Cat className="h-3 w-3 text-accent" />}{gl.name}</span>
-                  <Badge variant="outline">Lv {gl.level}</Badge>
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">{gl.wins}W/{gl.losses}L · HP {gl.health}</div>
-              </button>
+              <div key={gl.id}>
+                <button
+                  disabled={!!disabled}
+                  onClick={() => setSelectedId(gl.id)}
+                  className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-display">
+                    <span className="flex items-center gap-1">{gl.is_beast && <Cat className="h-3 w-3 text-accent" />}{gl.name}</span>
+                    <Badge variant="outline">Lv {gl.level}</Badge>
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{gl.wins}W/{gl.losses}L · HP {gl.health}</div>
+                </button>
+                <HealButton g={gl} />
+              </div>
             );
           })}
         </div>
@@ -179,20 +207,22 @@ function PvpFights({ state }: { state: State }) {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
             return (
-              <button
-                key={gl.id}
-                disabled={!!disabled}
-                onClick={() => setSelectedId(gl.id)}
-                className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
-                }`}
-              >
-                <div className="flex items-center justify-between font-display">
-                  <span>{gl.name}</span>
-                  <Badge variant="outline">Lv {gl.level}</Badge>
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">{WEAPON_LABELS[gl.weapon_type]}</div>
-              </button>
+              <div key={gl.id}>
+                <button
+                  disabled={!!disabled}
+                  onClick={() => setSelectedId(gl.id)}
+                  className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-display">
+                    <span>{gl.name}</span>
+                    <Badge variant="outline">Lv {gl.level}</Badge>
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{WEAPON_LABELS[gl.weapon_type]}</div>
+                </button>
+                <HealButton g={gl} />
+              </div>
             );
           })}
         </div>
@@ -347,23 +377,25 @@ function TeamFights({ state }: { state: State }) {
             const classOk = !battle.requireClass || (!gl.is_beast && gl.class === battle.requireClass);
             const dim = !selected && !classOk;
             return (
-              <button
-                key={gl.id}
-                disabled={!!disabled}
-                onClick={() => toggle(gl.id)}
-                className={`w-full rounded-lg border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  selected ? "border-primary bg-primary/10" : dim ? "border-border opacity-60" : "border-border hover:border-primary/60"
-                }`}
-              >
-                <div className="flex items-center justify-between font-display text-sm">
-                  <span className="flex items-center gap-1">
-                    {gl.is_beast && <Cat className="h-3 w-3 text-accent" />}
-                    {gl.name}
-                  </span>
-                  <Badge variant="outline">Lv {gl.level}</Badge>
-                </div>
-                <div className="text-xs text-muted-foreground">{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</div>
-              </button>
+              <div key={gl.id}>
+                <button
+                  disabled={!!disabled}
+                  onClick={() => toggle(gl.id)}
+                  className={`w-full rounded-lg border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    selected ? "border-primary bg-primary/10" : dim ? "border-border opacity-60" : "border-border hover:border-primary/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-display text-sm">
+                    <span className="flex items-center gap-1">
+                      {gl.is_beast && <Cat className="h-3 w-3 text-accent" />}
+                      {gl.name}
+                    </span>
+                    <Badge variant="outline">Lv {gl.level}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</div>
+                </button>
+                <HealButton g={gl} />
+              </div>
             );
           })}
         </div>
