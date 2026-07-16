@@ -231,7 +231,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       log.push(`⚔ ${g.name} advances to level ${newLevel}!`);
     }
 
-    const gladPatch: Record<string, unknown> = {
+    const gladPatch = {
       health: newHealth,
       injury_until: injuryUntil,
       experience: finalXp,
