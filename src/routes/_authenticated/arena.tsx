@@ -377,23 +377,25 @@ function TeamFights({ state }: { state: State }) {
             const classOk = !battle.requireClass || (!gl.is_beast && gl.class === battle.requireClass);
             const dim = !selected && !classOk;
             return (
-              <button
-                key={gl.id}
-                disabled={!!disabled}
-                onClick={() => toggle(gl.id)}
-                className={`w-full rounded-lg border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  selected ? "border-primary bg-primary/10" : dim ? "border-border opacity-60" : "border-border hover:border-primary/60"
-                }`}
-              >
-                <div className="flex items-center justify-between font-display text-sm">
-                  <span className="flex items-center gap-1">
-                    {gl.is_beast && <Cat className="h-3 w-3 text-accent" />}
-                    {gl.name}
-                  </span>
-                  <Badge variant="outline">Lv {gl.level}</Badge>
-                </div>
-                <div className="text-xs text-muted-foreground">{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</div>
-              </button>
+              <div key={gl.id}>
+                <button
+                  disabled={!!disabled}
+                  onClick={() => toggle(gl.id)}
+                  className={`w-full rounded-lg border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    selected ? "border-primary bg-primary/10" : dim ? "border-border opacity-60" : "border-border hover:border-primary/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-display text-sm">
+                    <span className="flex items-center gap-1">
+                      {gl.is_beast && <Cat className="h-3 w-3 text-accent" />}
+                      {gl.name}
+                    </span>
+                    <Badge variant="outline">Lv {gl.level}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</div>
+                </button>
+                <HealButton g={gl} />
+              </div>
             );
           })}
         </div>
