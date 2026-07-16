@@ -67,13 +67,17 @@ function generateGladiator(scoutingLevel: number) {
 function gladiatorPower(
   g: {
     strength: number; agility: number; stamina: number; technique: number;
-    level: number; weapon_tier: number; armor_tier: number; health: number;
+    level: number; weapon_tier: number; armor_tier: number;
+    helmet_tier?: number; legs_tier?: number; offhand_tier?: number;
+    health: number;
     weapon_type: string;
   },
   skillLevel: number,
 ) {
   const base = 3 * (g.strength + g.agility + g.stamina + g.technique);
-  const gear = g.weapon_tier * 12 + g.armor_tier * 9;
+  const gear =
+    g.weapon_tier * 12 + g.armor_tier * 9 +
+    (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
   const lvl = g.level * 6;
   const healthMod = g.health / 100;
   const raw = (base + gear + lvl) * healthMod;
