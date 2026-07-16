@@ -243,7 +243,7 @@ export const upgradeEquipment = createServerFn({ method: "POST" })
 
     const tierField = `${data.slot === "weapon" ? "weapon" : data.slot === "armor" ? "armor" : data.slot}_tier` as
       "weapon_tier" | "armor_tier" | "helmet_tier" | "legs_tier" | "offhand_tier";
-    const currentTier = (g as Record<string, number>)[tierField] ?? 1;
+    const currentTier = (g as unknown as Record<string, number>)[tierField] ?? 1;
     if (currentTier >= 5) throw new Error("Already at max tier");
     const baseCost = 150 * (currentTier + 1) * SLOT_COST_MULT[data.slot];
     const cost = Math.max(40, Math.floor(baseCost * (1 - (profile.armory_level - 1) * 0.1)));
