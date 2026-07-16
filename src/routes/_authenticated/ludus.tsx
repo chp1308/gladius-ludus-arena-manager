@@ -81,7 +81,10 @@ function LudusPage() {
               <span>{data.gladiators.length} gladiators</span>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
+          <div className="flex items-center gap-2">
+            <Link to="/arena"><Button size="sm"><Swords className="mr-1 h-4 w-4" /> Arena</Button></Link>
+            <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
+          </div>
         </div>
       </header>
 
