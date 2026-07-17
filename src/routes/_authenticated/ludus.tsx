@@ -480,7 +480,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const injuryDaysLeft = injured ? Math.ceil((new Date(g.injury_until!).getTime() - Date.now()) / 86400_000) : 0;
   const skillLevel = state.skills.find(s => s.weapon_type === g.weapon_type)?.level ?? 0;
   const trainingLevel = state.profile?.training_level ?? 1;
-  const statCap = 15 + trainingLevel * 3;
+  const cap = statCap(trainingLevel);
+  const hpMax = maxHealth(g.stamina);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
   const trainMut = useMutation({
