@@ -210,6 +210,11 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
   );
 }
 
+type Fallen = {
+  id: string; name: string; class: string; weapon_type: string; is_beast: boolean;
+  level: number; wins: number; losses: number; total_invested: number; honorCost: number;
+};
+
 // -----------------------------------------------------------
 // PVP — post a challenge, accept a rival's open challenge
 // -----------------------------------------------------------
