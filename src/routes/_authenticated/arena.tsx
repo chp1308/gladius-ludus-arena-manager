@@ -154,11 +154,27 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
 
   if (result) return <ResultView result={result} onClose={() => setResult(null)} />;
 
+  const selectedTier = ARENA_TIERS.find(t => t.key === difficulty)!;
+
   return (
     <div className="space-y-4">
       <p className="font-serif italic text-muted-foreground">
         {g.name} — Lv {g.level} · {g.wins}W · Ludus fame {state.profile?.reputation ?? 0}
       </p>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <img
+          src={selectedTier.imageUrl}
+          alt={selectedTier.label}
+          loading="lazy"
+          className="aspect-video w-full object-cover"
+          width={1024}
+          height={576}
+        />
+        <div className="bg-gradient-to-t from-background/90 to-transparent p-3">
+          <div className="font-display text-lg text-primary">{selectedTier.label}</div>
+          <div className="font-serif text-xs italic text-muted-foreground">{selectedTier.flavor}</div>
+        </div>
+      </div>
       <div className="space-y-2">
         {ARENA_TIERS.map(t => {
           const lock = tierUnlockReason(t, state.profile?.reputation ?? 0, g.level, g.wins);
