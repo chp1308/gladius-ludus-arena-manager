@@ -562,6 +562,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                     tier={getTier(SLOTS[3].tierField)}
                     disabled={g.is_beast || upgradeMut.isPending}
                     onClick={() => upgradeMut.mutate("weapon")}
+                    cost={g.is_beast ? undefined : gearCost("weapon", getTier(SLOTS[3].tierField), armoryLevel)}
                   />
                   <FaceAvatar g={g} size={110} />
                   {offhandSlot ? (
@@ -570,6 +571,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                       tier={getTier(SLOTS[4].tierField)}
                       disabled={g.is_beast || upgradeMut.isPending}
                       onClick={() => upgradeMut.mutate("offhand")}
+                      cost={g.is_beast ? undefined : gearCost("offhand", getTier(SLOTS[4].tierField), armoryLevel)}
                     />
                   ) : (
                     <div className="flex h-20 w-20 items-center justify-center text-[10px] italic text-muted-foreground">
