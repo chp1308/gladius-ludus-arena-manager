@@ -262,6 +262,66 @@ export type Database = {
         }
         Relationships: []
       }
+      pvp_challenges: {
+        Row: {
+          challenger_gladiator_id: string
+          challenger_id: string
+          created_at: string
+          id: string
+          log: Json | null
+          opponent_gladiator_id: string | null
+          opponent_id: string | null
+          rating: number
+          resolved_at: string | null
+          status: string
+          to_death: boolean
+          winner_owner_id: string | null
+        }
+        Insert: {
+          challenger_gladiator_id: string
+          challenger_id: string
+          created_at?: string
+          id?: string
+          log?: Json | null
+          opponent_gladiator_id?: string | null
+          opponent_id?: string | null
+          rating: number
+          resolved_at?: string | null
+          status?: string
+          to_death?: boolean
+          winner_owner_id?: string | null
+        }
+        Update: {
+          challenger_gladiator_id?: string
+          challenger_id?: string
+          created_at?: string
+          id?: string
+          log?: Json | null
+          opponent_gladiator_id?: string | null
+          opponent_id?: string | null
+          rating?: number
+          resolved_at?: string | null
+          status?: string
+          to_death?: boolean
+          winner_owner_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pvp_challenges_challenger_gladiator_id_fkey"
+            columns: ["challenger_gladiator_id"]
+            isOneToOne: false
+            referencedRelation: "gladiators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pvp_challenges_opponent_gladiator_id_fkey"
+            columns: ["opponent_gladiator_id"]
+            isOneToOne: false
+            referencedRelation: "gladiators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
