@@ -521,77 +521,222 @@ export const fightMatch = createServerFn({ method: "POST" })
     return { won, log, denariiGained, xpGained, repGained };
   });
 
+// ============= Lines 524-706 replaced =============
 // ============================================================
-// PVP — challenge other players' active gladiators
+// PVP — post a challenge, other ludi accept with a similar champion
 // ============================================================
 
-export const listRivalGladiators = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ myGladiatorId: z.string().uuid() }).parse(input))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { data: mine } = await supabase
-      .from("gladiators").select("level").eq("id", data.myGladiatorId).eq("owner_id", userId).maybeSingle();
-    if (!mine) throw new Error("Not your gladiator");
+// Match rating used to gate "similar stats" pairings.
+export function matchRating(g: {
+  level: number; strength: number; agility: number; stamina: number; technique: number;
+  weapon_tier: number; armor_tier: number;
+  helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null;
+}): number {
+  const stats = g.strength + g.agility + g.stamina + g.technique;
+  const gear = g.weapon_tier * 2 + g.armor_tier * 2 + (g.helmet_tier ?? 1) + (g.legs_tier ?? 1) + (g.offhand_tier ?? 1);
+  return g.level * 10 + stats + gear;
+}
 
-    const { data: rivals, error } = await supabase
-      .from("gladiators")
-      .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,strength,agility,stamina,technique,health,injury_until,weapon_tier,armor_tier")
-      .neq("owner_id", userId)
-      .gte("health", 30)
-      .order("level", { ascending: false })
-      .limit(60);
-    if (error) throw new Error(error.message);
+// Similar = challenger's rating within ±25% of acceptor's rating.
+export const SIMILAR_TOLERANCE = 0.25;
+export function isSimilarRating(a: number, b: number): boolean {
+  const diff = Math.abs(a - b);
+  const base = Math.max(a, b);
+  return diff / Math.max(1, base) <= SIMILAR_TOLERANCE;
+}
 
-    const active = (rivals ?? []).filter(r => !r.injury_until || new Date(r.injury_until) < new Date());
-    const ownerIds = [...new Set(active.map(r => r.owner_id))];
-    let owners: { id: string; ludus_name: string; reputation: number }[] = [];
-    if (ownerIds.length) {
-      const { data: os } = await supabase.from("profiles").select("id,ludus_name,reputation").in("id", ownerIds);
-      owners = os ?? [];
-    }
-    const oMap = new Map(owners.map(o => [o.id, o]));
-    return active.map(r => ({
-      ...r,
-      ludus_name: oMap.get(r.owner_id)?.ludus_name ?? "Unknown Ludus",
-      ludus_fame: oMap.get(r.owner_id)?.reputation ?? 0,
-    }));
-  });
-
-export const fightPvp = createServerFn({ method: "POST" })
+// ---------- POST CHALLENGE ----------
+export const postPvpChallenge = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
-    myGladiatorId: z.string().uuid(),
-    opponentGladiatorId: z.string().uuid(),
+    gladiatorId: z.string().uuid(),
     toDeath: z.boolean().optional().default(false),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
+    if (!g) throw new Error("Gladiator not found");
+    if (g.status === "dead") throw new Error("Gladiator has fallen");
+    if (g.status === "challenging") throw new Error("Already posted for a challenge");
+    if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
+    if (g.health < 30) throw new Error("Gladiator too wounded");
+
+    const rating = matchRating(g);
+    const { data: inserted, error } = await supabase.from("pvp_challenges").insert({
+      challenger_id: userId,
+      challenger_gladiator_id: g.id,
+      rating,
+      to_death: !!data.toDeath,
+      status: "open",
+    }).select("id").single();
+    if (error) throw new Error(error.message);
+    await supabase.from("gladiators").update({ status: "challenging" }).eq("id", g.id);
+    return { ok: true, id: inserted.id };
+  });
+
+// ---------- CANCEL CHALLENGE ----------
+export const cancelPvpChallenge = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ challengeId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: c } = await supabase.from("pvp_challenges").select("*").eq("id", data.challengeId).eq("challenger_id", userId).maybeSingle();
+    if (!c) throw new Error("Challenge not found");
+    if (c.status !== "open") throw new Error("Challenge already resolved");
+    await supabase.from("pvp_challenges").delete().eq("id", c.id);
+    await supabase.from("gladiators").update({ status: "idle" }).eq("id", c.challenger_gladiator_id).eq("owner_id", userId);
+    return { ok: true };
+  });
+
+// ---------- SEED BOT CHALLENGES ----------
+// Ensure the arena always has open offers from rival ludi. If any non-caller
+// owner has 0 open challenges and a fit idle gladiator, auto-post one.
+async function ensureBotChallenges(currentUserId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: openByOwner } = await supabaseAdmin
+    .from("pvp_challenges")
+    .select("challenger_id")
+    .eq("status", "open");
+  const havingOpen = new Set((openByOwner ?? []).map(o => o.challenger_id));
+
+  const { data: bots } = await supabaseAdmin
+    .from("gladiators")
+    .select("id,owner_id,level,strength,agility,stamina,technique,weapon_tier,armor_tier,helmet_tier,legs_tier,offhand_tier,health,status,injury_until")
+    .neq("owner_id", currentUserId)
+    .eq("status", "idle")
+    .gte("health", 60);
+  if (!bots) return;
+
+  const nowIso = new Date().toISOString();
+  const byOwner = new Map<string, typeof bots>();
+  for (const b of bots) {
+    if (havingOpen.has(b.owner_id)) continue;
+    if (b.injury_until && b.injury_until > nowIso) continue;
+    const list = byOwner.get(b.owner_id) ?? [];
+    list.push(b);
+    byOwner.set(b.owner_id, list);
+  }
+
+  for (const [owner, list] of byOwner) {
+    const g = list[Math.floor(Math.random() * list.length)];
+    const rating = matchRating(g);
+    await supabaseAdmin.from("pvp_challenges").insert({
+      challenger_id: owner,
+      challenger_gladiator_id: g.id,
+      rating,
+      to_death: Math.random() < 0.25,
+      status: "open",
+    });
+    await supabaseAdmin.from("gladiators").update({ status: "challenging" }).eq("id", g.id);
+  }
+}
+
+// ---------- LIST OPEN CHALLENGES ----------
+export const listOpenPvpChallenges = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ myGladiatorId: z.string().uuid().optional() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await ensureBotChallenges(userId);
+
+    const [openRes, mineRes] = await Promise.all([
+      supabase.from("pvp_challenges").select("*").eq("status", "open").order("created_at", { ascending: false }).limit(60),
+      supabase.from("pvp_challenges").select("*").eq("challenger_id", userId).eq("status", "open").order("created_at", { ascending: false }),
+    ]);
+    const rivals = (openRes.data ?? []).filter(c => c.challenger_id !== userId);
+    const gladiatorIds = [...new Set([...rivals, ...(mineRes.data ?? [])].map(c => c.challenger_gladiator_id))];
+    const ownerIds = [...new Set(rivals.map(c => c.challenger_id))];
+
+    const [gladRes, ownerRes] = await Promise.all([
+      gladiatorIds.length
+        ? supabase.from("gladiators").select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,health,strength,agility,stamina,technique,weapon_tier,armor_tier,helmet_tier,legs_tier,offhand_tier")
+            .in("id", gladiatorIds)
+        : Promise.resolve({ data: [] as never[] }),
+      ownerIds.length
+        ? supabase.from("profiles").select("id,ludus_name,reputation").in("id", ownerIds)
+        : Promise.resolve({ data: [] as never[] }),
+    ]);
+    const gMap = new Map((gladRes.data ?? []).map(g => [g.id, g]));
+    const oMap = new Map((ownerRes.data ?? []).map(o => [o.id, o]));
+
+    let myRating: number | null = null;
+    if (data.myGladiatorId) {
+      const { data: mine } = await supabase
+        .from("gladiators")
+        .select("id,level,strength,agility,stamina,technique,weapon_tier,armor_tier,helmet_tier,legs_tier,offhand_tier")
+        .eq("id", data.myGladiatorId).eq("owner_id", userId).maybeSingle();
+      if (mine) myRating = matchRating(mine);
+    }
+
+    const openChallenges = rivals.map(c => {
+      const g = gMap.get(c.challenger_gladiator_id);
+      const owner = oMap.get(c.challenger_id);
+      const similar = myRating != null && isSimilarRating(myRating, c.rating);
+      return {
+        id: c.id,
+        rating: c.rating,
+        to_death: c.to_death,
+        created_at: c.created_at,
+        similar,
+        ludus_name: owner?.ludus_name ?? "Unknown Ludus",
+        ludus_fame: owner?.reputation ?? 0,
+        gladiator: g ?? null,
+      };
+    });
+    const myOffers = (mineRes.data ?? []).map(c => {
+      const g = gMap.get(c.challenger_gladiator_id);
+      return {
+        id: c.id, rating: c.rating, to_death: c.to_death, created_at: c.created_at,
+        gladiator: g ?? null,
+      };
+    });
+    return { myRating, openChallenges, myOffers };
+  });
+
+// ---------- ACCEPT CHALLENGE ----------
+export const acceptPvpChallenge = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    challengeId: z.string().uuid(),
+    myGladiatorId: z.string().uuid(),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.myGladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("Gladiator has fallen");
+    if (g.status === "challenging") throw new Error("Gladiator is currently posted in your own offer");
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
     if (g.health < 30) throw new Error("Gladiator too wounded");
 
-    const { data: opp } = await supabase.from("gladiators").select("*").eq("id", data.opponentGladiatorId).maybeSingle();
-    if (!opp) throw new Error("Opponent not found");
-    if (opp.owner_id === userId) throw new Error("Cannot fight your own gladiator");
-    if (opp.status === "dead") throw new Error("Opponent has fallen");
-    if (opp.health < 30) throw new Error("Opponent is not fit to fight");
-    if (opp.injury_until && new Date(opp.injury_until) > new Date()) throw new Error("Opponent is injured");
+    const { data: c } = await supabase.from("pvp_challenges").select("*").eq("id", data.challengeId).maybeSingle();
+    if (!c) throw new Error("Challenge not found");
+    if (c.status !== "open") throw new Error("Challenge already resolved");
+    if (c.challenger_id === userId) throw new Error("Cannot accept your own challenge");
 
-    const toDeath = !!data.toDeath;
+    const myRating = matchRating(g);
+    if (!isSimilarRating(myRating, c.rating)) {
+      throw new Error(`Not a similar match (your ${myRating} vs their ${c.rating}). Pick a champion of closer standing.`);
+    }
+
+    const { data: opp } = await supabaseAdmin.from("gladiators").select("*").eq("id", c.challenger_gladiator_id).maybeSingle();
+    if (!opp) throw new Error("Opposing gladiator no longer exists");
+    if (opp.status === "dead") throw new Error("Opposing champion has fallen");
+
+    const toDeath = !!c.to_death;
     const rewardMult = toDeath ? 5 : 1;
 
     const { data: mySkill } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
-    const { data: oppSkill } = await supabase.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", opp.weapon_type).maybeSingle();
+    const { data: oppSkill } = await supabaseAdmin.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", opp.weapon_type).maybeSingle();
     const myPower = gladiatorPower(g, mySkill?.level ?? 0);
     const oppPower = gladiatorPower(opp, oppSkill?.level ?? 0);
 
     const log: string[] = [];
-    log.push(`${g.name} challenges ${opp.name} of a rival ludus.`);
+    log.push(`${g.name} answers the call of ${opp.name}'s ludus.`);
     if (toDeath) log.push("⚔ Sine missione — a fight to the death. No quarter, no mercy.");
     log.push(`Power ${myPower} vs ${oppPower}.`);
     let myHp = 100, oHp = 100;
@@ -603,7 +748,6 @@ export const fightPvp = createServerFn({ method: "POST" })
     }
     const won = oHp <= myHp;
 
-    // Rewards: PvP gives more fame, less coin. Death matches multiply everything ×5.
     const denariiGained = won ? (200 + rand(0, 80)) * rewardMult : 30;
     const xpGained = won ? 140 * rewardMult : 50;
     const repGained = won ? 8 * rewardMult : -2;
@@ -622,9 +766,7 @@ export const fightPvp = createServerFn({ method: "POST" })
       log.push(`${g.name} is injured for ${days}d.`);
     }
     log.push(won
-      ? (toDeath
-          ? `${g.name} stands victorious over ${opp.name}'s corpse. The purse is enormous.`
-          : `Victory over ${opp.name}! Fame spreads through the provinces.`)
+      ? (toDeath ? `${g.name} stands victorious over ${opp.name}'s corpse. The purse is enormous.` : `Victory over ${opp.name}! Fame spreads through the provinces.`)
       : (toDeath ? `${opp.name}'s ludus claims your champion's life.` : `${opp.name}'s ludus claims the honor.`));
 
     await supabase.from("gladiators").update({
@@ -642,8 +784,7 @@ export const fightPvp = createServerFn({ method: "POST" })
       reputation: Math.max(0, profile.reputation + repGained),
     }).eq("id", userId);
 
-    // Update opponent using admin (RLS bypass)
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Update opposing (challenger) gladiator via admin
     const oppDamage = Math.max(5, 100 - Math.max(0, oHp));
     let oppNewHealth = Math.max(0, opp.health - oppDamage);
     let oppInjury: string | null = null;
@@ -665,7 +806,6 @@ export const fightPvp = createServerFn({ method: "POST" })
       losses: opp.losses + (won ? 1 : 0),
     }).eq("id", opp.id);
 
-    // Opponent owner rewards (they also cash in on death matches)
     const { data: oppProfile } = await supabaseAdmin.from("profiles").select("denarii,reputation").eq("id", opp.owner_id).maybeSingle();
     if (oppProfile) {
       await supabaseAdmin.from("profiles").update({
@@ -673,6 +813,16 @@ export const fightPvp = createServerFn({ method: "POST" })
         reputation: Math.max(0, oppProfile.reputation + (won ? -1 : 6 * rewardMult)),
       }).eq("id", opp.owner_id);
     }
+
+    // Resolve the challenge
+    await supabaseAdmin.from("pvp_challenges").update({
+      status: "resolved",
+      opponent_id: userId,
+      opponent_gladiator_id: g.id,
+      winner_owner_id: won ? userId : opp.owner_id,
+      log,
+      resolved_at: new Date().toISOString(),
+    }).eq("id", c.id);
 
     await supabase.from("matches").insert({
       owner_id: userId,
@@ -691,19 +841,14 @@ export const fightPvp = createServerFn({ method: "POST" })
       won, log, denariiGained, xpGained, repGained,
       died: myDied,
       fallen: myDied ? {
-        id: g.id,
-        name: g.name,
-        class: g.class,
-        weapon_type: g.weapon_type,
-        is_beast: g.is_beast,
-        level: g.level,
-        wins: g.wins,
-        losses: g.losses + 1,
+        id: g.id, name: g.name, class: g.class, weapon_type: g.weapon_type, is_beast: g.is_beast,
+        level: g.level, wins: g.wins, losses: g.losses + 1,
         total_invested: g.total_invested ?? 0,
         honorCost: Math.max(10, Math.ceil((g.total_invested ?? 0) * 0.05)),
       } : null,
     };
   });
+
 
 // ---------- HONOR FALLEN GLADIATOR ----------
 export const honorGladiator = createServerFn({ method: "POST" })
