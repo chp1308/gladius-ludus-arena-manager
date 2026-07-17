@@ -677,10 +677,10 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 }
 
 function SlotButton({
-  slot, tier, disabled, onClick,
+  slot, tier, disabled, onClick, cost,
 }: {
   slot: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps> };
-  tier: number; disabled: boolean; onClick: () => void;
+  tier: number; disabled: boolean; onClick: () => void; cost?: number;
 }) {
   const atMax = tier >= 5;
   const { Icon, label } = slot;
@@ -688,12 +688,17 @@ function SlotButton({
     <button
       onClick={onClick}
       disabled={disabled || atMax}
-      title={atMax ? `${label} — mastercraft` : `Upgrade ${label}`}
+      title={atMax ? `${label} — mastercraft` : cost !== undefined ? `Upgrade ${label} · ${cost} denarii` : `Upgrade ${label}`}
       className="group flex h-20 w-20 flex-col items-center justify-center rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
     >
       <Icon className="h-5 w-5 text-primary group-hover:text-accent" />
       <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="text-[10px] leading-none text-accent">{"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(5 - tier)}</span></div>
+      {cost !== undefined && !atMax && (
+        <div className="mt-0.5 flex items-center gap-0.5 text-[10px] text-accent">
+          <Coins className="h-3 w-3" /> {cost}
+        </div>
+      )}
     </button>
   );
 }
