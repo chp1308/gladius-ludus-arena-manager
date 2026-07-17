@@ -325,6 +325,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "backwater", label: "Backwater Pits",
     flavor: "Muddy village pits — a purse of copper and jeering peasants.",
+    imageUrl: backwaterImg.url,
     reqFame: 0, reqLevel: 1, reqWins: 0,
     powerScale: 0.80, reward: 70, xp: 35, rep: 1,
     opponents: ["Drunken Brawler", "Runaway Slave", "Village Bully", "Starving Thief"],
@@ -332,6 +333,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "local", label: "Local Games",
     flavor: "Small town munera — a wooden stand and a modest crowd.",
+    imageUrl: localImg.url,
     reqFame: 5, reqLevel: 2, reqWins: 1,
     powerScale: 1.0, reward: 160, xp: 75, rep: 3,
     opponents: ["Provincial Auctoratus", "Retired Legionary", "Pit Veteran", "Ostian Bruiser"],
@@ -339,6 +341,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "provincial", label: "Provincial Munera",
     flavor: "A magistrate's games — proper editors, painted programs, real steel.",
+    imageUrl: provincialImg.url,
     reqFame: 25, reqLevel: 3, reqWins: 3,
     powerScale: 1.15, reward: 320, xp: 130, rep: 6,
     opponents: ["Praetorian Washout", "Iberian Veteran", "Champion of Ostia", "Nubian Slayer"],
@@ -346,6 +349,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "capua", label: "Grand Games of Capua",
     flavor: "Capua's arena, where fortunes are made and legions bet their pay.",
+    imageUrl: capuaImg.url,
     reqFame: 75, reqLevel: 5, reqWins: 8,
     powerScale: 1.35, reward: 650, xp: 240, rep: 14,
     opponents: ["Champion of Capua", "The Bloody Bull", "Marcus Ferrus", "The Thracian Wolf"],
@@ -353,6 +357,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "colosseum", label: "Colosseum of Rome",
     flavor: "The Flavian Amphitheatre. Fifty thousand voices thirsting for blood.",
+    imageUrl: colosseumImg.url,
     reqFame: 200, reqLevel: 8, reqWins: 20,
     powerScale: 1.55, reward: 1300, xp: 420, rep: 30,
     opponents: ["Priscus the Undefeated", "Verus of the Palatine", "Flamma Redivivus", "The Iron Senator"],
@@ -360,6 +365,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "emperor", label: "Emperor's Spectacle",
     flavor: "The Emperor himself watches. Death here becomes legend.",
+    imageUrl: emperorImg.url,
     reqFame: 500, reqLevel: 12, reqWins: 40,
     powerScale: 1.8, reward: 2800, xp: 800, rep: 70,
     opponents: ["Spartacus Reborn", "Hermes of Thrace", "The Emperor's Champion", "Tetraites the Immortal"],
