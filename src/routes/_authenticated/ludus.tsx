@@ -7,7 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator,
   upgradeFacility, upgradeSkill, WEAPON_LABELS,
-  ARENA_TIERS,
+  ARENA_TIERS, statCap, maxHealth,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
