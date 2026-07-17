@@ -256,11 +256,17 @@ function PvpFights({ state }: { state: State }) {
   );
 }
 
+type Fallen = {
+  id: string; name: string; class: string; weapon_type: string; is_beast: boolean;
+  level: number; wins: number; losses: number; total_invested: number; honorCost: number;
+};
+
 function RivalList({ myGladiator }: { myGladiator: Gladiator }) {
   const qc = useQueryClient();
   const listFn = useServerFn(listRivalGladiators);
   const fightFn = useServerFn(fightPvp);
-  const [result, setResult] = useState<{ won: boolean; log: string[] } | null>(null);
+  const [toDeath, setToDeath] = useState(false);
+  const [result, setResult] = useState<{ won: boolean; log: string[]; fallen: Fallen | null } | null>(null);
 
   const { data: rivals, isLoading } = useQuery({
     queryKey: ["rivals", myGladiator.id],
@@ -268,16 +274,16 @@ function RivalList({ myGladiator }: { myGladiator: Gladiator }) {
   });
 
   const mut = useMutation({
-    mutationFn: (opponentId: string) => fightFn({ data: { myGladiatorId: myGladiator.id, opponentGladiatorId: opponentId } }),
+    mutationFn: (opponentId: string) => fightFn({ data: { myGladiatorId: myGladiator.id, opponentGladiatorId: opponentId, toDeath } }),
     onSuccess: (r) => {
-      setResult({ won: r.won, log: r.log });
+      setResult({ won: r.won, log: r.log, fallen: r.fallen ?? null });
       qc.invalidateQueries({ queryKey: ["ludus"] });
       qc.invalidateQueries({ queryKey: ["rivals"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (result) return <ResultView result={result} onClose={() => setResult(null)} />;
+  if (result) return <PvpResultView result={result} onClose={() => setResult(null)} />;
   if (isLoading) return <p className="font-serif italic text-muted-foreground">Scouts search the provinces...</p>;
   if (!rivals || rivals.length === 0) return (
     <div className="inscribed ornate-border rounded-lg p-8 text-center font-serif italic text-muted-foreground">
@@ -286,10 +292,22 @@ function RivalList({ myGladiator }: { myGladiator: Gladiator }) {
   );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <p className="font-serif italic text-muted-foreground">
         {myGladiator.name} seeks a worthy foe. Victory brings great fame.
       </p>
+      <div className={`flex items-center justify-between rounded-lg border p-3 ${toDeath ? "border-destructive/60 bg-destructive/10" : "border-border bg-card/50"}`}>
+        <div className="flex items-center gap-2">
+          <Flame className={`h-4 w-4 ${toDeath ? "text-destructive" : "text-muted-foreground"}`} />
+          <div>
+            <Label htmlFor="death-toggle" className="font-display text-sm">Sine missione — fight to the death</Label>
+            <div className="text-xs text-muted-foreground">
+              5× denarii, XP and fame on victory. Lose and your gladiator dies.
+            </div>
+          </div>
+        </div>
+        <Switch id="death-toggle" checked={toDeath} onCheckedChange={setToDeath} />
+      </div>
       {rivals.map(r => (
         <div key={r.id} className="rounded-lg border border-border bg-card/50 p-3">
           <div className="flex items-center justify-between">
@@ -304,8 +322,13 @@ function RivalList({ myGladiator }: { myGladiator: Gladiator }) {
                 {r.ludus_name} · fame {r.ludus_fame} · {r.wins}W/{r.losses}L · HP {r.health}
               </div>
             </div>
-            <Button size="sm" disabled={mut.isPending} onClick={() => mut.mutate(r.id)}>
-              Challenge
+            <Button
+              size="sm"
+              variant={toDeath ? "destructive" : "default"}
+              disabled={mut.isPending}
+              onClick={() => mut.mutate(r.id)}
+            >
+              {toDeath ? "To the death" : "Challenge"}
             </Button>
           </div>
         </div>
@@ -313,6 +336,67 @@ function RivalList({ myGladiator }: { myGladiator: Gladiator }) {
     </div>
   );
 }
+
+function PvpResultView({ result, onClose }: { result: { won: boolean; log: string[]; fallen: Fallen | null }; onClose: () => void }) {
+  const qc = useQueryClient();
+  const honor = useServerFn(honorGladiator);
+  const [honored, setHonored] = useState(false);
+  const mut = useMutation({
+    mutationFn: (gid: string) => honor({ data: { gladiatorId: gid } }),
+    onSuccess: (r) => {
+      setHonored(true);
+      toast.success(`Memorial raised for ${result.fallen?.name} — ${r.cost}d`);
+      qc.invalidateQueries({ queryKey: ["ludus"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const fallen = result.fallen;
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl">{result.won ? "Victory!" : "Defeat"}</DialogTitle>
+        </DialogHeader>
+        <div className={`rounded-lg p-3 text-center ${result.won ? "bg-accent/20" : "bg-muted"}`}>
+          {result.won ? <Trophy className="mx-auto h-8 w-8 text-accent" /> : <Skull className="mx-auto h-8 w-8 text-muted-foreground" />}
+        </div>
+        <ol className="max-h-56 space-y-1 overflow-y-auto font-serif text-sm">
+          {result.log.map((line, i) => (
+            <li key={i} className="border-l-2 border-border pl-3">{line}</li>
+          ))}
+        </ol>
+        {fallen && !honored && (
+          <div className="ornate-border rounded-lg border border-destructive/50 bg-destructive/5 p-4">
+            <div className="mb-2 flex items-center gap-2 font-display text-lg text-destructive">
+              <Skull className="h-5 w-5" /> {fallen.name} has fallen
+            </div>
+            <p className="mb-3 font-serif text-sm italic text-muted-foreground">
+              Honor {fallen.name} in your Hall of Fame — a bronze plaque, a marble bust,
+              a tale carved into the walls of your ludus. Costs 5% of the {fallen.total_invested}d
+              invested in their glory.
+            </p>
+            <Button
+              className="w-full"
+              variant="secondary"
+              disabled={mut.isPending}
+              onClick={() => mut.mutate(fallen.id)}
+            >
+              <Award className="mr-2 h-4 w-4" />
+              Honor the gladiator — {fallen.honorCost}d
+            </Button>
+          </div>
+        )}
+        {fallen && honored && (
+          <p className="text-center font-serif italic text-accent">
+            {fallen.name} joins the Hall of Fame. May their name outlive us all.
+          </p>
+        )}
+        <Button className="w-full" onClick={onClose}>Close</Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 // -----------------------------------------------------------
 // TEAM BATTLES
