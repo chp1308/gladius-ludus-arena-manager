@@ -5,7 +5,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
-  healGladiator, dismissGladiator,
+  healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost,
 } from "@/lib/game.functions";
@@ -16,7 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/ludus")({
   component: LudusPage,
