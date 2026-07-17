@@ -194,12 +194,13 @@ export const recruitGladiator = createServerFn({ method: "POST" })
     if (profile.denarii < COST) throw new Error(`Scouting fee: ${COST} denarii`);
 
     const g = generateGladiator(profile.scouting_level);
-    const { error: insertErr } = await supabase.from("gladiators").insert({ owner_id: userId, ...g });
+    const { error: insertErr } = await supabase.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
     if (insertErr) throw new Error(insertErr.message);
     const { error: updErr } = await supabase.from("profiles").update({ denarii: profile.denarii - COST }).eq("id", userId);
     if (updErr) throw new Error(updErr.message);
     return { ok: true, isBeast: g.is_beast, name: g.name };
   });
+
 
 // ---------- TRAIN ----------
 export const trainGladiator = createServerFn({ method: "POST" })
