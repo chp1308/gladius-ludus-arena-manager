@@ -543,20 +543,37 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
             />
             <div />
 
-            {/* row 2: offhand · face · weapon */}
-            <SlotButton
-              slot={SLOTS[4]}
-              tier={getTier(SLOTS[4].tierField)}
-              disabled={g.is_beast || upgradeMut.isPending}
-              onClick={() => upgradeMut.mutate("offhand")}
-            />
-            <FaceAvatar g={g} size={110} />
-            <SlotButton
-              slot={SLOTS[3]}
-              tier={getTier(SLOTS[3].tierField)}
-              disabled={g.is_beast || upgradeMut.isPending}
-              onClick={() => upgradeMut.mutate("weapon")}
-            />
+            {/* row 2: weapon (main-hand, viewer left = character's right) · face · offhand */}
+            {(() => {
+              const lo = loadoutFor(g.weapon_type);
+              const weaponSlot = { ...SLOTS[3], label: lo.weapon.label, Icon: lo.weapon.Icon };
+              const offhandSlot = lo.offhand
+                ? { ...SLOTS[4], label: lo.offhand.label, Icon: lo.offhand.Icon }
+                : null;
+              return (
+                <>
+                  <SlotButton
+                    slot={weaponSlot}
+                    tier={getTier(SLOTS[3].tierField)}
+                    disabled={g.is_beast || upgradeMut.isPending}
+                    onClick={() => upgradeMut.mutate("weapon")}
+                  />
+                  <FaceAvatar g={g} size={110} />
+                  {offhandSlot ? (
+                    <SlotButton
+                      slot={offhandSlot}
+                      tier={getTier(SLOTS[4].tierField)}
+                      disabled={g.is_beast || upgradeMut.isPending}
+                      onClick={() => upgradeMut.mutate("offhand")}
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center text-[10px] italic text-muted-foreground">
+                      two-handed
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {/* row 3 */}
             <div />
