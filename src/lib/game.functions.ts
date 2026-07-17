@@ -26,8 +26,10 @@ const MAX_SKILL = 5;
 const FACILITY_COST = (curr: number) => 500 * (curr + 1); // 1->2 costs 1000
 const SKILL_COST = (curr: number) => 200 * (curr + 1);
 
-// Stat cap grows with training facility
-const statCap = (trainingLevel: number) => 15 + trainingLevel * 3; // lvl1=18, lvl5=30
+// Stat cap grows with training facility (+10 per training-yard level)
+export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lvl1=25, lvl5=65
+// Max health scales with stamina: +5 HP per point
+export const maxHealth = (stamina: number) => 100 + stamina * 5;
 
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -79,7 +81,7 @@ function gladiatorPower(
     g.weapon_tier * 12 + g.armor_tier * 9 +
     (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
   const lvl = g.level * 6;
-  const healthMod = g.health / 100;
+  const healthMod = g.health / maxHealth(g.stamina);
   const raw = (base + gear + lvl) * healthMod;
   const skillMod = 1 + skillLevel * 0.08; // +8% per skill level for the matching style
   return Math.floor(raw * skillMod);
@@ -211,7 +213,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const patch =
       data.stat === "strength" ? { strength: newVal } :
       data.stat === "agility" ? { agility: newVal } :
-      data.stat === "stamina" ? { stamina: newVal } :
+      data.stat === "stamina" ? { stamina: newVal, health: Math.min(maxHealth(newVal), g.health + (newVal - g.stamina) * 5) } :
       { technique: newVal };
     const { error } = await supabase.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
@@ -266,12 +268,13 @@ export const healGladiator = createServerFn({ method: "POST" })
     if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
-    const missing = 100 - g.health;
+    const hpMax = maxHealth(g.stamina);
+    const missing = hpMax - g.health;
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
     const baseCost = Math.max(30, missing * 2);
     const cost = Math.max(15, Math.floor(baseCost * (1 - (profile.medicus_level - 1) * 0.12)));
     if (profile.denarii < cost) throw new Error(`Physician needs ${cost} denarii`);
-    const { error } = await supabase.from("gladiators").update({ health: 100, injury_until: null }).eq("id", g.id);
+    const { error } = await supabase.from("gladiators").update({ health: hpMax, injury_until: null }).eq("id", g.id);
     if (error) throw new Error(error.message);
     await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
     return { ok: true, cost };

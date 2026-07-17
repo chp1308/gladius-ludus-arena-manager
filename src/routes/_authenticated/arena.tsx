@@ -6,7 +6,7 @@ import {
   getLudusState, fightMatch, fightPvp, fightTeamBattle,
   listRivalGladiators, ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
-  healGladiator,
+  healGladiator, maxHealth,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ function HealButton({ g }: { g: Gladiator }) {
   const qc = useQueryClient();
   const heal = useServerFn(healGladiator);
   const injured = !!(g.injury_until && new Date(g.injury_until) > new Date());
-  const needsHeal = g.health < 100 || injured;
+  const needsHeal = g.health < maxHealth(g.stamina) || injured;
   const mut = useMutation({
     mutationFn: () => heal({ data: { gladiatorId: g.id } }),
     onSuccess: (r) => { toast.success(`${g.name} healed for ${r.cost}d`); qc.invalidateQueries({ queryKey: ["ludus"] }); qc.invalidateQueries({ queryKey: ["rivals"] }); },

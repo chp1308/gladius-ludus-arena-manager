@@ -7,7 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator,
   upgradeFacility, upgradeSkill, WEAPON_LABELS,
-  ARENA_TIERS,
+  ARENA_TIERS, statCap, maxHealth,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -321,9 +321,9 @@ function GladiatorTile({ g, onClick }: { g: Gladiator; onClick: () => void }) {
       <div className="mt-3">
         <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> HP</span>
-          <span>{g.health}/100{injured ? " · Injured" : ""}</span>
+          <span>{g.health}/{maxHealth(g.stamina)}{injured ? " · Injured" : ""}</span>
         </div>
-        <Progress value={g.health} className="h-1.5" />
+        <Progress value={(g.health / maxHealth(g.stamina)) * 100} className="h-1.5" />
       </div>
     </button>
   );
@@ -480,7 +480,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const injuryDaysLeft = injured ? Math.ceil((new Date(g.injury_until!).getTime() - Date.now()) / 86400_000) : 0;
   const skillLevel = state.skills.find(s => s.weapon_type === g.weapon_type)?.level ?? 0;
   const trainingLevel = state.profile?.training_level ?? 1;
-  const statCap = 15 + trainingLevel * 3;
+  const cap = statCap(trainingLevel);
+  const hpMax = maxHealth(g.stamina);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
   const trainMut = useMutation({
@@ -605,9 +606,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
           <div>
             <div className="mb-1 flex items-center justify-between text-xs">
               <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> Health</span>
-              <span>{g.health}/100</span>
+              <span>{g.health}/{hpMax}</span>
             </div>
-            <Progress value={g.health} className="h-2" />
+            <Progress value={(g.health / hpMax) * 100} className="h-2" />
             {injured && (
               <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
                 <Skull className="h-3 w-3" /> Injured — {injuryDaysLeft}d until recovery
@@ -625,17 +626,17 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 
           <div className="grid grid-cols-4 gap-2">
             {stats.map(([label, val, key]) => {
-              const capped = val >= statCap;
+              const capped = val >= cap;
               return (
                 <button
                   key={key}
                   onClick={() => trainMut.mutate(key)}
                   disabled={trainMut.isPending || !!injured || capped}
                   className="rounded border border-border bg-secondary/40 p-2 text-center transition hover:border-primary hover:bg-secondary disabled:opacity-50"
-                  title={capped ? `Capped at ${statCap} — upgrade Training Yard` : "Train"}
+                  title={capped ? `Capped at ${cap} — upgrade Training Yard` : "Train"}
                 >
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-                  <div className="font-display text-lg">{val}<span className="text-[10px] text-muted-foreground">/{statCap}</span></div>
+                  <div className="font-display text-lg">{val}<span className="text-[10px] text-muted-foreground">/{cap}</span></div>
                 </button>
               );
             })}
@@ -650,7 +651,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                 <Swords className="mr-1 h-4 w-4" /> To the Arena
               </Button>
             </Link>
-            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health === 100 && !injured)}>
+            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health >= hpMax && !injured)}>
               <Heart className="mr-1 h-4 w-4" /> Heal
             </Button>
             <Button
