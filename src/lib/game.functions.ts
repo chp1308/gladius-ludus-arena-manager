@@ -268,12 +268,13 @@ export const healGladiator = createServerFn({ method: "POST" })
     if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
-    const missing = 100 - g.health;
+    const hpMax = maxHealth(g.stamina);
+    const missing = hpMax - g.health;
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
     const baseCost = Math.max(30, missing * 2);
     const cost = Math.max(15, Math.floor(baseCost * (1 - (profile.medicus_level - 1) * 0.12)));
     if (profile.denarii < cost) throw new Error(`Physician needs ${cost} denarii`);
-    const { error } = await supabase.from("gladiators").update({ health: 100, injury_until: null }).eq("id", g.id);
+    const { error } = await supabase.from("gladiators").update({ health: hpMax, injury_until: null }).eq("id", g.id);
     if (error) throw new Error(error.message);
     await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
     return { ok: true, cost };
