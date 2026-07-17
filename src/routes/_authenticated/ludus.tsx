@@ -726,3 +726,124 @@ function SlotButton({
     </button>
   );
 }
+
+// -----------------------------------------------------------
+// FALLEN — dead gladiators awaiting honor or dismissal
+// -----------------------------------------------------------
+function FallenSection({ state }: { state: State }) {
+  const dead = state.gladiators.filter(g => g.status === "dead");
+  const denarii = state.profile?.denarii ?? 0;
+  if (dead.length === 0) return null;
+  return (
+    <Card className="inscribed ornate-border border-destructive/40 bg-destructive/5">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 font-display text-lg text-destructive">
+          <Flame className="h-5 w-5" /> Fallen in the Sand
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="font-serif text-sm italic text-muted-foreground">
+          These gladiators died in the arena. Honor them in your Hall of Fame — or let their name fade.
+        </p>
+        {dead.map(g => <FallenRow key={g.id} g={g} denarii={denarii} />)}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FallenRow({ g, denarii }: { g: Gladiator; denarii: number }) {
+  const qc = useQueryClient();
+  const honor = useServerFn(honorGladiator);
+  const dismiss = useServerFn(dismissGladiator);
+  const honorCost = Math.max(10, Math.ceil((g.total_invested ?? 0) * 0.05));
+  const honorMut = useMutation({
+    mutationFn: () => honor({ data: { gladiatorId: g.id } }),
+    onSuccess: (r) => { toast.success(`${g.name} enshrined for ${r.cost}d`); qc.invalidateQueries({ queryKey: ["ludus"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const dismissMut = useMutation({
+    mutationFn: () => dismiss({ data: { gladiatorId: g.id } }),
+    onSuccess: () => { toast.success(`${g.name} laid in an unmarked grave.`); qc.invalidateQueries({ queryKey: ["ludus"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background/60 p-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 font-display">
+          <Skull className="h-4 w-4 text-destructive" />
+          <span className="truncate">{g.name}</span>
+          <Badge variant="outline">Lv {g.level}</Badge>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {g.is_beast ? "Beast" : g.class} · {g.wins}W/{g.losses}L · invested {g.total_invested ?? 0}d
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={honorMut.isPending || denarii < honorCost}
+          onClick={() => honorMut.mutate()}
+        >
+          <Award className="mr-1 h-4 w-4" />
+          Honor · {honorCost}d
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={dismissMut.isPending}
+          onClick={() => { if (confirm(`Bury ${g.name} without honor?`)) dismissMut.mutate(); }}
+        >
+          Dismiss
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------
+// HALL OF FAME
+// -----------------------------------------------------------
+function HallOfFame({ state }: { state: State }) {
+  const hall = state.hallOfFame ?? [];
+  return (
+    <Card className="inscribed ornate-border">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 font-display">
+          <Award className="h-5 w-5 text-accent" /> Hall of Fame
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {hall.length === 0 ? (
+          <p className="font-serif italic text-muted-foreground">
+            No memorials yet. When a champion falls in a death match, honor them here.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {hall.map((h) => (
+              <li key={h.id} className="flex items-center justify-between py-3">
+                <div>
+                  <div className="flex items-center gap-2 font-display text-base">
+                    {h.is_beast && <Cat className="h-4 w-4 text-accent" />}
+                    {h.name}
+                    <Badge variant="outline">Lv {h.level}</Badge>
+                    <Badge variant="secondary">{WEAPON_LABELS[h.weapon_type] ?? h.weapon_type}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {h.is_beast ? "Beast" : h.class} · {h.wins}W/{h.losses}L · enshrined {new Date(h.created_at).toLocaleDateString()}
+                  </div>
+                  {h.epitaph && (
+                    <p className="mt-1 font-serif text-sm italic text-muted-foreground">"{h.epitaph}"</p>
+                  )}
+                </div>
+                <div className="text-right text-xs text-muted-foreground">
+                  {h.total_invested}d invested
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
