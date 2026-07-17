@@ -210,7 +210,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const bigChance = 0.2 + profile.training_level * 0.1;
     const gain = Math.random() < bigChance ? 2 : 1;
     const newVal = Math.min(cap, (g[data.stat] as number) + gain);
-    const patch: Record<string, number> =
+    const patch =
       data.stat === "strength" ? { strength: newVal } :
       data.stat === "agility" ? { agility: newVal } :
       data.stat === "stamina" ? { stamina: newVal, health: Math.min(maxHealth(newVal), g.health + (newVal - g.stamina) * 5) } :
