@@ -630,16 +630,20 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
           <div className="grid grid-cols-4 gap-2">
             {stats.map(([label, val, key]) => {
               const capped = val >= cap;
+              const canAfford = denarii >= tCost;
               return (
                 <button
                   key={key}
                   onClick={() => trainMut.mutate(key)}
-                  disabled={trainMut.isPending || !!injured || capped}
+                  disabled={trainMut.isPending || !!injured || capped || !canAfford}
                   className="rounded border border-border bg-secondary/40 p-2 text-center transition hover:border-primary hover:bg-secondary disabled:opacity-50"
-                  title={capped ? `Capped at ${cap} — upgrade Training Yard` : "Train"}
+                  title={capped ? `Capped at ${cap} — upgrade Training Yard` : !canAfford ? `Need ${tCost} denarii` : `Train · ${tCost} denarii`}
                 >
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
                   <div className="font-display text-lg">{val}<span className="text-[10px] text-muted-foreground">/{cap}</span></div>
+                  <div className={`mt-0.5 flex items-center justify-center gap-0.5 text-[10px] ${canAfford ? "text-accent" : "text-destructive"}`}>
+                    <Coins className="h-3 w-3" /> {tCost}
+                  </div>
                 </button>
               );
             })}
