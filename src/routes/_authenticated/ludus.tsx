@@ -329,7 +329,18 @@ function GladiatorTile({ g, onClick }: { g: Gladiator; onClick: () => void }) {
   );
 }
 
-// Simple procedural avatar: initials over a marble-tinted disc; a cat icon for beasts.
+// Deterministic PRNG from a string
+function seedFrom(str: string) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return ((h ^= h >>> 16) >>> 0) / 4294967296;
+  };
+}
+
+// Procedurally generated portrait — SVG bust with varied skin, hair, beard, eyes.
 function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
   if (g.is_beast) {
     return (
@@ -341,26 +352,115 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
       </div>
     );
   }
-  const initials = g.name.split(" ").map(s => s[0]).join("").slice(0, 2).toUpperCase();
-  // deterministic hue from name
-  const hue = [...g.name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+  const rng = seedFrom(g.name + "|" + g.origin);
+  const skins = ["#f0c9a5", "#e0b088", "#c48c67", "#a0704f", "#7a4f31", "#5a3620"];
+  const hairs = ["#1a1208", "#2b1a0d", "#3a2416", "#5a3a1a", "#8a5a2a", "#c89a4a", "#e3d5b0", "#7a7a7a"];
+  const eyes  = ["#3a2a1a", "#5a3a20", "#3a5a3a", "#2a4a6a", "#4a3a2a"];
+  const skin = skins[Math.floor(rng() * skins.length)];
+  const hair = hairs[Math.floor(rng() * hairs.length)];
+  const eye  = eyes[Math.floor(rng() * eyes.length)];
+  const beard = rng() < 0.55;
+  const helmet = rng() < 0.25;
+  const scar = rng() < 0.3;
+  const noseW = 4 + rng() * 3;
+  const mouthCurve = rng() < 0.7 ? 2 : -1; // mostly stern
+
+  const s = size;
   return (
     <div
-      className="relative flex items-center justify-center rounded-full border border-primary/50 shadow-inner"
-      style={{
-        width: size,
-        height: size,
-        background: `radial-gradient(circle at 30% 25%, hsl(${hue} 30% 78%), hsl(${hue} 20% 40%))`,
-      }}
+      className="relative overflow-hidden rounded-full border border-primary/50 shadow-inner"
+      style={{ width: s, height: s, background: "radial-gradient(circle at 30% 25%, hsl(35 25% 22%), hsl(20 30% 10%))" }}
     >
-      <User className="absolute text-background/40" style={{ width: size * 0.85, height: size * 0.85 }} strokeWidth={1} />
-      <span className="relative font-display text-background" style={{ fontSize: size * 0.32 }}>{initials}</span>
+      <svg viewBox="0 0 100 100" width={s} height={s} shapeRendering="geometricPrecision">
+        {/* shoulders / tunic */}
+        <path d="M5 100 Q 50 65 95 100 Z" fill="#3b2a1c" />
+        <path d="M20 92 Q 50 78 80 92 L 80 100 L 20 100 Z" fill="#8b1a1a" opacity="0.7" />
+        {/* neck */}
+        <rect x="42" y="60" width="16" height="14" fill={skin} />
+        {/* head */}
+        <ellipse cx="50" cy="45" rx="22" ry="26" fill={skin} />
+        {/* jaw shadow */}
+        <path d="M28 48 Q 50 78 72 48" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
+        {/* hair */}
+        {!helmet && (
+          <path d={`M28 38 Q 30 20 50 18 Q 70 20 72 38 Q 68 30 50 28 Q 32 30 28 38 Z`} fill={hair} />
+        )}
+        {helmet && (
+          <>
+            <path d="M26 42 Q 26 18 50 16 Q 74 18 74 42 L 72 44 Q 50 32 28 44 Z" fill="#8a7a4a" stroke="#5a4a20" strokeWidth="1" />
+            <rect x="48" y="14" width="4" height="10" fill="#b22222" />
+            <path d="M46 12 Q 50 4 54 12 Q 60 8 58 18 Q 50 14 42 18 Q 40 8 46 12 Z" fill="#b22222" />
+          </>
+        )}
+        {/* eyes */}
+        <ellipse cx="41" cy="46" rx="2.6" ry="1.8" fill="#fff" />
+        <ellipse cx="59" cy="46" rx="2.6" ry="1.8" fill="#fff" />
+        <circle cx="41" cy="46" r="1.3" fill={eye} />
+        <circle cx="59" cy="46" r="1.3" fill={eye} />
+        {/* brows */}
+        <path d="M37 42 L 45 41" stroke={hair} strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M55 41 L 63 42" stroke={hair} strokeWidth="1.6" strokeLinecap="round" />
+        {/* nose */}
+        <path d={`M50 48 Q ${50 - noseW / 2} 54 50 57 Q ${50 + noseW / 2} 54 50 48`} fill="rgba(0,0,0,0.15)" />
+        {/* mouth */}
+        <path d={`M44 62 Q 50 ${62 + mouthCurve} 56 62`} stroke="#3a1a1a" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+        {/* beard */}
+        {beard && (
+          <path d="M32 55 Q 34 72 50 74 Q 66 72 68 55 Q 60 66 50 66 Q 40 66 32 55 Z" fill={hair} opacity="0.85" />
+        )}
+        {/* scar */}
+        {scar && <path d="M40 38 L 44 52" stroke="#6a2a1a" strokeWidth="0.8" />}
+      </svg>
     </div>
   );
 }
 
 type SlotKey = "helmet" | "armor" | "legs" | "weapon" | "offhand";
 type SlotIconProps = { className?: string };
+
+// Per weapon_type, main-hand and off-hand slots reflect what the class actually wields.
+type WeaponLoadout = {
+  weapon: { label: string; Icon: React.ComponentType<SlotIconProps> };
+  offhand: { label: string; Icon: React.ComponentType<SlotIconProps> } | null;
+};
+const LOADOUTS: Record<string, WeaponLoadout> = {
+  gladius: { weapon: { label: "Gladius", Icon: Sword }, offhand: { label: "Scutum", Icon: Shield } },
+  spear:   { weapon: { label: "Spear",   Icon: SpearIcon }, offhand: { label: "Parma", Icon: ShieldHalf } },
+  net:     { weapon: { label: "Trident", Icon: TridentIcon }, offhand: { label: "Net", Icon: NetIcon } },
+  dual:    { weapon: { label: "Sword",   Icon: Sword }, offhand: { label: "Sword", Icon: Sword } },
+};
+function loadoutFor(weaponType: string): WeaponLoadout {
+  return LOADOUTS[weaponType] ?? { weapon: { label: "Weapon", Icon: Swords }, offhand: { label: "Off-hand", Icon: Shield } };
+}
+
+function SpearIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20 L 20 4" />
+      <path d="M20 4 L 15 4 L 20 9 Z" fill="currentColor" />
+      <path d="M6 18 L 3 21" />
+    </svg>
+  );
+}
+function TridentIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22 L 12 10" />
+      <path d="M6 8 L 6 3 M12 8 L 12 2 M18 8 L 18 3" />
+      <path d="M4 8 L 20 8" />
+      <path d="M9 12 L 15 12" />
+    </svg>
+  );
+}
+function NetIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12 H21 M12 3 V21 M5 5 L 19 19 M19 5 L 5 19" />
+    </svg>
+  );
+}
+
 const SLOTS: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps>; tierField: keyof Gladiator }[] = [
   { key: "helmet",  label: "Helmet",   Icon: HardHat,    tierField: "helmet_tier" as keyof Gladiator },
   { key: "armor",   label: "Cuirass",  Icon: Shield,     tierField: "armor_tier" },
