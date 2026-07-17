@@ -297,11 +297,16 @@ export const healGladiator = createServerFn({ method: "POST" })
     const baseCost = Math.max(30, missing * 2);
     const cost = Math.max(15, Math.floor(baseCost * (1 - (profile.medicus_level - 1) * 0.12)));
     if (profile.denarii < cost) throw new Error(`Physician needs ${cost} denarii`);
-    const { error } = await supabase.from("gladiators").update({ health: hpMax, injury_until: null }).eq("id", g.id);
+    const { error } = await supabase.from("gladiators").update({
+      health: hpMax,
+      injury_until: null,
+      total_invested: (g.total_invested ?? 0) + cost,
+    }).eq("id", g.id);
     if (error) throw new Error(error.message);
     await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
     return { ok: true, cost };
   });
+
 
 // ---------- DISMISS ----------
 export const dismissGladiator = createServerFn({ method: "POST" })
