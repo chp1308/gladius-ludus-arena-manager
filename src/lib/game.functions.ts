@@ -743,8 +743,8 @@ export const honorGladiator = createServerFn({ method: "POST" })
   });
 
 
-// helper stub (not used — keep signature consistent)
-function oMapLudus(_ownerId: string): string | null { return null; }
+
+
 
 // ============================================================
 // TEAM BATTLES — send multiple gladiators of specific composition
