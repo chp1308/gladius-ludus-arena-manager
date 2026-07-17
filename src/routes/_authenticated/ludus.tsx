@@ -167,6 +167,12 @@ function LudusPage() {
             </div>
           </TabsContent>
 
+          <TabsContent value="hall" className="mt-6">
+            <HallOfFame state={data} />
+          </TabsContent>
+
+
+
           <TabsContent value="history" className="mt-6">
             <Card className="inscribed ornate-border">
               <CardHeader><CardTitle className="font-display">Chronicle of the Arena</CardTitle></CardHeader>
