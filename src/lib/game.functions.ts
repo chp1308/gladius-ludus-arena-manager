@@ -210,10 +210,10 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const bigChance = 0.2 + profile.training_level * 0.1;
     const gain = Math.random() < bigChance ? 2 : 1;
     const newVal = Math.min(cap, (g[data.stat] as number) + gain);
-    const patch =
+    const patch: Record<string, number> =
       data.stat === "strength" ? { strength: newVal } :
       data.stat === "agility" ? { agility: newVal } :
-      data.stat === "stamina" ? { stamina: newVal } :
+      data.stat === "stamina" ? { stamina: newVal, health: Math.min(maxHealth(newVal), g.health + (newVal - g.stamina) * 5) } :
       { technique: newVal };
     const { error } = await supabase.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
