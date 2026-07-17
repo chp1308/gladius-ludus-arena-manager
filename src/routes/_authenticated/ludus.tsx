@@ -321,9 +321,9 @@ function GladiatorTile({ g, onClick }: { g: Gladiator; onClick: () => void }) {
       <div className="mt-3">
         <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> HP</span>
-          <span>{g.health}/100{injured ? " · Injured" : ""}</span>
+          <span>{g.health}/{maxHealth(g.stamina)}{injured ? " · Injured" : ""}</span>
         </div>
-        <Progress value={g.health} className="h-1.5" />
+        <Progress value={(g.health / maxHealth(g.stamina)) * 100} className="h-1.5" />
       </div>
     </button>
   );
