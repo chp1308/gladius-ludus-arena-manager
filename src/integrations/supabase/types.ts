@@ -37,6 +37,7 @@ export type Database = {
           status: string
           strength: number
           technique: number
+          total_invested: number
           weapon_tier: number
           weapon_type: string
           wins: number
@@ -63,6 +64,7 @@ export type Database = {
           status?: string
           strength?: number
           technique?: number
+          total_invested?: number
           weapon_tier?: number
           weapon_type?: string
           wins?: number
@@ -89,7 +91,53 @@ export type Database = {
           status?: string
           strength?: number
           technique?: number
+          total_invested?: number
           weapon_tier?: number
+          weapon_type?: string
+          wins?: number
+        }
+        Relationships: []
+      }
+      hall_of_fame: {
+        Row: {
+          class: string
+          created_at: string
+          epitaph: string | null
+          id: string
+          is_beast: boolean
+          level: number
+          losses: number
+          name: string
+          owner_id: string
+          total_invested: number
+          weapon_type: string
+          wins: number
+        }
+        Insert: {
+          class: string
+          created_at?: string
+          epitaph?: string | null
+          id?: string
+          is_beast?: boolean
+          level?: number
+          losses?: number
+          name: string
+          owner_id: string
+          total_invested?: number
+          weapon_type: string
+          wins?: number
+        }
+        Update: {
+          class?: string
+          created_at?: string
+          epitaph?: string | null
+          id?: string
+          is_beast?: boolean
+          level?: number
+          losses?: number
+          name?: string
+          owner_id?: string
+          total_invested?: number
           weapon_type?: string
           wins?: number
         }
