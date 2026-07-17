@@ -166,7 +166,7 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
       <p className="font-serif italic text-muted-foreground">
         {g.name} — Lv {g.level} · {g.wins}W · Ludus fame {state.profile?.reputation ?? 0}
       </p>
-      <div className="overflow-hidden rounded-lg border border-border">
+      <div className="relative overflow-hidden rounded-lg border border-border">
         <img
           src={selectedTier.imageUrl}
           alt={selectedTier.label}
@@ -175,9 +175,19 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
           width={1024}
           height={576}
         />
-        <div className="bg-gradient-to-t from-background/90 to-transparent p-3">
-          <div className="font-display text-lg text-primary">{selectedTier.label}</div>
-          <div className="font-serif text-xs italic text-muted-foreground">{selectedTier.flavor}</div>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/90 via-background/60 to-transparent p-4 pt-16">
+          <div className="mx-auto max-w-md text-center">
+            <div className="font-display text-lg text-primary">{selectedTier.label}</div>
+            <div className="font-serif text-xs italic text-muted-foreground">{selectedTier.flavor}</div>
+            <Button
+              className="mt-3"
+              size="lg"
+              disabled={mut.isPending}
+              onClick={() => mut.mutate()}
+            >
+              {mut.isPending ? "The crowd holds its breath..." : "Fight!"}
+            </Button>
+          </div>
         </div>
       </div>
       <div className="space-y-2">
@@ -203,9 +213,6 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
           );
         })}
       </div>
-      <Button className="w-full" size="lg" disabled={mut.isPending} onClick={() => mut.mutate()}>
-        {mut.isPending ? "The crowd holds its breath..." : "Fight!"}
-      </Button>
     </div>
   );
 }
