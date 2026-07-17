@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tansta
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import {
-  getLudusState, fightMatch, fightPvp, fightTeamBattle,
-  listRivalGladiators, ARENA_TIERS, tierUnlockReason,
+  getLudusState, fightMatch, fightTeamBattle,
+  postPvpChallenge, cancelPvpChallenge, listOpenPvpChallenges, acceptPvpChallenge,
+  matchRating,
+  ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator,
 } from "@/lib/game.functions";
@@ -208,134 +210,224 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
   );
 }
 
-// -----------------------------------------------------------
-// PVP — challenge other players' gladiators
-// -----------------------------------------------------------
-function PvpFights({ state }: { state: State }) {
-  const eligible = state.gladiators.filter(g => g.health >= 30 && (!g.injury_until || new Date(g.injury_until) < new Date()));
-  const [selectedId, setSelectedId] = useState<string | null>(eligible[0]?.id ?? null);
-  const g = state.gladiators.find(x => x.id === selectedId) ?? null;
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-      <div>
-        <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">Your champion</div>
-        <div className="space-y-2">
-          {state.gladiators.length === 0 && <p className="font-serif italic text-muted-foreground">No gladiators yet.</p>}
-          {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
-            const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
-            const disabled = injured || gl.health < 30;
-            return (
-              <div key={gl.id}>
-                <button
-                  disabled={!!disabled}
-                  onClick={() => setSelectedId(gl.id)}
-                  className={`w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
-                  }`}
-                >
-                  <div className="flex items-center justify-between font-display">
-                    <span>{gl.name}</span>
-                    <Badge variant="outline">Lv {gl.level}</Badge>
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">{WEAPON_LABELS[gl.weapon_type]}</div>
-                </button>
-                <HealButton g={gl} />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {g ? <RivalList myGladiator={g} /> : (
-        <div className="inscribed ornate-border rounded-lg p-12 text-center font-serif italic text-muted-foreground">
-          Select a champion to challenge rivals.
-        </div>
-      )}
-    </div>
-  );
-}
-
 type Fallen = {
   id: string; name: string; class: string; weapon_type: string; is_beast: boolean;
   level: number; wins: number; losses: number; total_invested: number; honorCost: number;
 };
 
-function RivalList({ myGladiator }: { myGladiator: Gladiator }) {
-  const qc = useQueryClient();
-  const listFn = useServerFn(listRivalGladiators);
-  const fightFn = useServerFn(fightPvp);
-  const [toDeath, setToDeath] = useState(false);
-  const [result, setResult] = useState<{ won: boolean; log: string[]; fallen: Fallen | null } | null>(null);
+// -----------------------------------------------------------
+// PVP — post a challenge, accept a rival's open challenge
+// -----------------------------------------------------------
+function PvpFights({ state }: { state: State }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <PostChallengeCard state={state} />
+      <RivalChallengesCard state={state} />
+    </div>
+  );
+}
 
-  const { data: rivals, isLoading } = useQuery({
-    queryKey: ["rivals", myGladiator.id],
-    queryFn: () => listFn({ data: { myGladiatorId: myGladiator.id } }),
+function PostChallengeCard({ state }: { state: State }) {
+  const qc = useQueryClient();
+  const postFn = useServerFn(postPvpChallenge);
+  const cancelFn = useServerFn(cancelPvpChallenge);
+  const listFn = useServerFn(listOpenPvpChallenges);
+  const eligible = state.gladiators.filter(g =>
+    g.status !== "dead" && g.status !== "challenging" &&
+    g.health >= 30 && (!g.injury_until || new Date(g.injury_until) < new Date())
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(eligible[0]?.id ?? null);
+  const [toDeath, setToDeath] = useState(false);
+  const g = state.gladiators.find(x => x.id === selectedId) ?? null;
+
+  const { data: offers } = useQuery({
+    queryKey: ["pvp-offers"],
+    queryFn: () => listFn({ data: {} }),
   });
 
-  const mut = useMutation({
-    mutationFn: (opponentId: string) => fightFn({ data: { myGladiatorId: myGladiator.id, opponentGladiatorId: opponentId, toDeath } }),
+  const post = useMutation({
+    mutationFn: () => postFn({ data: { gladiatorId: selectedId!, toDeath } }),
+    onSuccess: () => {
+      toast.success("Challenge posted to the sands.");
+      qc.invalidateQueries({ queryKey: ["ludus"] });
+      qc.invalidateQueries({ queryKey: ["pvp-offers"] });
+      qc.invalidateQueries({ queryKey: ["pvp-open"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const cancel = useMutation({
+    mutationFn: (id: string) => cancelFn({ data: { challengeId: id } }),
+    onSuccess: () => {
+      toast.success("Challenge withdrawn.");
+      qc.invalidateQueries({ queryKey: ["ludus"] });
+      qc.invalidateQueries({ queryKey: ["pvp-offers"] });
+      qc.invalidateQueries({ queryKey: ["pvp-open"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Card className="bg-card/50">
+      <CardHeader>
+        <CardTitle className="font-display text-lg">Post a Challenge</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="font-serif text-sm italic text-muted-foreground">
+          Stake a champion on the sands. A rival ludus may answer with a fighter of similar standing.
+        </p>
+        <div className="space-y-2">
+          {eligible.length === 0 && <p className="font-serif text-sm italic text-muted-foreground">No rested champions available to post.</p>}
+          {eligible.map(gl => {
+            const rating = matchRating(gl);
+            return (
+              <button
+                key={gl.id}
+                onClick={() => setSelectedId(gl.id)}
+                className={`w-full rounded-lg border p-2 text-left transition ${selectedId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"}`}
+              >
+                <div className="flex items-center justify-between font-display text-sm">
+                  <span className="flex items-center gap-1">{gl.is_beast && <Cat className="h-3 w-3 text-accent" />}{gl.name}</span>
+                  <Badge variant="outline">Lv {gl.level}</Badge>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {WEAPON_LABELS[gl.weapon_type] ?? gl.weapon_type} · Rating {rating} · HP {gl.health}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className={`flex items-center justify-between rounded-lg border p-3 ${toDeath ? "border-destructive/60 bg-destructive/10" : "border-border bg-card/50"}`}>
+          <div className="flex items-center gap-2">
+            <Flame className={`h-4 w-4 ${toDeath ? "text-destructive" : "text-muted-foreground"}`} />
+            <Label htmlFor="post-death" className="font-display text-sm">Sine missione (5× stakes)</Label>
+          </div>
+          <Switch id="post-death" checked={toDeath} onCheckedChange={setToDeath} />
+        </div>
+        <Button
+          className="w-full"
+          disabled={!g || post.isPending}
+          onClick={() => post.mutate()}
+        >
+          {post.isPending ? "Heralds ride out..." : "Post Challenge"}
+        </Button>
+
+        {offers && offers.myOffers.length > 0 && (
+          <div className="space-y-2 pt-2">
+            <div className="text-xs uppercase tracking-widest text-muted-foreground">Your open offers</div>
+            {offers.myOffers.map(o => (
+              <div key={o.id} className="flex items-center justify-between rounded-lg border border-border bg-background/40 p-2 text-sm">
+                <div>
+                  <div className="font-display">{o.gladiator?.name ?? "Unknown"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Rating {o.rating}{o.to_death && <span className="ml-1 text-destructive">· to the death</span>}
+                  </div>
+                </div>
+                <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => cancel.mutate(o.id)}>
+                  Withdraw
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RivalChallengesCard({ state }: { state: State }) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listOpenPvpChallenges);
+  const acceptFn = useServerFn(acceptPvpChallenge);
+  const eligible = state.gladiators.filter(g =>
+    g.status !== "dead" && g.status !== "challenging" &&
+    g.health >= 30 && (!g.injury_until || new Date(g.injury_until) < new Date())
+  );
+  const [myId, setMyId] = useState<string | null>(eligible[0]?.id ?? null);
+  const [result, setResult] = useState<{ won: boolean; log: string[]; fallen: Fallen | null } | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["pvp-open", myId],
+    queryFn: () => listFn({ data: myId ? { myGladiatorId: myId } : {} }),
+  });
+
+  const accept = useMutation({
+    mutationFn: (challengeId: string) => acceptFn({ data: { challengeId, myGladiatorId: myId! } }),
     onSuccess: (r) => {
       setResult({ won: r.won, log: r.log, fallen: r.fallen ?? null });
       qc.invalidateQueries({ queryKey: ["ludus"] });
-      qc.invalidateQueries({ queryKey: ["rivals"] });
+      qc.invalidateQueries({ queryKey: ["pvp-open"] });
+      qc.invalidateQueries({ queryKey: ["pvp-offers"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   if (result) return <PvpResultView result={result} onClose={() => setResult(null)} />;
-  if (isLoading) return <p className="font-serif italic text-muted-foreground">Scouts search the provinces...</p>;
-  if (!rivals || rivals.length === 0) return (
-    <div className="inscribed ornate-border rounded-lg p-8 text-center font-serif italic text-muted-foreground">
-      No rival ludi have active gladiators to fight. Return later.
-    </div>
-  );
 
   return (
-    <div className="space-y-3">
-      <p className="font-serif italic text-muted-foreground">
-        {myGladiator.name} seeks a worthy foe. Victory brings great fame.
-      </p>
-      <div className={`flex items-center justify-between rounded-lg border p-3 ${toDeath ? "border-destructive/60 bg-destructive/10" : "border-border bg-card/50"}`}>
-        <div className="flex items-center gap-2">
-          <Flame className={`h-4 w-4 ${toDeath ? "text-destructive" : "text-muted-foreground"}`} />
-          <div>
-            <Label htmlFor="death-toggle" className="font-display text-sm">Sine missione — fight to the death</Label>
-            <div className="text-xs text-muted-foreground">
-              5× denarii, XP and fame on victory. Lose and your gladiator dies.
-            </div>
+    <Card className="bg-card/50">
+      <CardHeader>
+        <CardTitle className="font-display text-lg">Rival Challenges</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div>
+          <div className="mb-1 text-xs uppercase tracking-widest text-muted-foreground">Answer with</div>
+          <div className="flex flex-wrap gap-2">
+            {eligible.length === 0 && <p className="font-serif text-sm italic text-muted-foreground">No rested champions.</p>}
+            {eligible.map(gl => (
+              <button
+                key={gl.id}
+                onClick={() => setMyId(gl.id)}
+                className={`rounded-lg border px-3 py-1.5 text-sm transition ${myId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"}`}
+              >
+                <span className="font-display">{gl.name}</span>
+                <span className="ml-2 text-xs text-muted-foreground">R{matchRating(gl)}</span>
+              </button>
+            ))}
           </div>
         </div>
-        <Switch id="death-toggle" checked={toDeath} onCheckedChange={setToDeath} />
-      </div>
-      {rivals.map(r => (
-        <div key={r.id} className="rounded-lg border border-border bg-card/50 p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 font-display">
-                {r.is_beast && <Cat className="h-4 w-4 text-accent" />}
-                {r.name}
-                <Badge variant="outline">Lv {r.level}</Badge>
-                <Badge variant="secondary">{WEAPON_LABELS[r.weapon_type] ?? r.weapon_type}</Badge>
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {r.ludus_name} · fame {r.ludus_fame} · {r.wins}W/{r.losses}L · HP {r.health}
+
+        {isLoading && <p className="font-serif italic text-muted-foreground">Scouts scan the provinces...</p>}
+        {data && data.openChallenges.length === 0 && (
+          <p className="font-serif italic text-muted-foreground">No rival ludi have open challenges. Return later.</p>
+        )}
+        {data && data.openChallenges.map(c => {
+          const g = c.gladiator;
+          const disabled = !myId || !c.similar || accept.isPending;
+          return (
+            <div key={c.id} className={`rounded-lg border p-3 ${c.similar ? "border-border bg-card/40" : "border-border/50 bg-background/30 opacity-70"}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 font-display">
+                    {g?.is_beast && <Cat className="h-4 w-4 text-accent" />}
+                    {g?.name ?? "Unknown"}
+                    <Badge variant="outline">Lv {g?.level ?? "?"}</Badge>
+                    <Badge variant="secondary">{g ? (WEAPON_LABELS[g.weapon_type] ?? g.weapon_type) : ""}</Badge>
+                    {c.to_death && <Badge variant="destructive" className="text-xs">Sine missione</Badge>}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {c.ludus_name} · fame {c.ludus_fame} · Rating {c.rating}
+                  </div>
+                  {!c.similar && myId && (
+                    <div className="mt-1 text-xs text-destructive">Not a similar match for your champion.</div>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant={c.to_death ? "destructive" : "default"}
+                  disabled={disabled}
+                  onClick={() => accept.mutate(c.id)}
+                >
+                  {c.to_death ? "Fight to death" : "Accept"}
+                </Button>
               </div>
             </div>
-            <Button
-              size="sm"
-              variant={toDeath ? "destructive" : "default"}
-              disabled={mut.isPending}
-              onClick={() => mut.mutate(r.id)}
-            >
-              {toDeath ? "To the death" : "Challenge"}
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
+
 
 function PvpResultView({ result, onClose }: { result: { won: boolean; log: string[]; fallen: Fallen | null }; onClose: () => void }) {
   const qc = useQueryClient();
