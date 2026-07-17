@@ -30,6 +30,13 @@ const SKILL_COST = (curr: number) => 200 * (curr + 1);
 export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lvl1=25, lvl5=65
 // Max health scales with stamina: +5 HP per point
 export const maxHealth = (stamina: number) => 100 + stamina * 5;
+// Training cost falls with training facility level
+export const trainCost = (trainingLevel: number) => Math.max(20, 50 - (trainingLevel - 1) * 6);
+// Gear upgrade cost by slot, tier, and armory level
+export const gearCost = (slot: "weapon" | "armor" | "helmet" | "legs" | "offhand", currentTier: number, armoryLevel: number) => {
+  const base = 150 * (currentTier + 1) * (SLOT_COST_MULT[slot] ?? 1);
+  return Math.max(40, Math.floor(base * (1 - (armoryLevel - 1) * 0.1)));
+};
 
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
