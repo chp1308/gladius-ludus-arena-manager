@@ -291,6 +291,8 @@ export const healGladiator = createServerFn({ method: "POST" })
     if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
+    if (g.status === "dead") throw new Error("The physician cannot revive the dead");
+
     const hpMax = maxHealth(g.stamina);
     const missing = hpMax - g.health;
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
