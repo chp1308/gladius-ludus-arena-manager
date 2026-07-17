@@ -81,7 +81,7 @@ function gladiatorPower(
     g.weapon_tier * 12 + g.armor_tier * 9 +
     (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
   const lvl = g.level * 6;
-  const healthMod = g.health / 100;
+  const healthMod = g.health / maxHealth(g.stamina);
   const raw = (base + gear + lvl) * healthMod;
   const skillMod = 1 + skillLevel * 0.08; // +8% per skill level for the matching style
   return Math.floor(raw * skillMod);
