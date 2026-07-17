@@ -93,16 +93,20 @@ function LudusPage() {
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Tabs defaultValue="ludus" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-5">
+          <TabsList className="grid w-full max-w-2xl grid-cols-6">
             <TabsTrigger value="ludus">Ludus</TabsTrigger>
             <TabsTrigger value="recruit">Recruit</TabsTrigger>
             <TabsTrigger value="facilities">Facilities</TabsTrigger>
             <TabsTrigger value="skills">Skills</TabsTrigger>
+            <TabsTrigger value="hall">Hall</TabsTrigger>
             <TabsTrigger value="history">Chronicle</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="ludus" className="mt-6">
-            {data.gladiators.length === 0 ? (
+          <TabsContent value="ludus" className="mt-6 space-y-6">
+            {data.gladiators.filter(g => g.status === "dead").length > 0 && (
+              <FallenSection state={data} />
+            )}
+            {data.gladiators.filter(g => g.status !== "dead").length === 0 ? (
               <div className="inscribed ornate-border rounded-lg p-12 text-center">
                 <p className="font-serif text-lg italic text-muted-foreground">Your ludus is empty. Recruit your first gladiator.</p>
               </div>
@@ -110,6 +114,7 @@ function LudusPage() {
               <GladiatorGrid state={data} />
             )}
           </TabsContent>
+
 
           <TabsContent value="recruit" className="mt-6">
             <Card className="inscribed ornate-border">
