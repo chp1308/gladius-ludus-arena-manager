@@ -297,8 +297,9 @@ function GladiatorGrid({ state }: { state: State }) {
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {state.gladiators.map((g) => (
+        {state.gladiators.filter(g => g.status !== "dead").map((g) => (
           <GladiatorTile key={g.id} g={g} onClick={() => setOpenId(g.id)} />
+
         ))}
       </div>
       <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setOpenId(null); }}>
