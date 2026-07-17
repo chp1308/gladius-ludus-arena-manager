@@ -218,6 +218,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
 
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
+    if (g.status === "dead") throw new Error("Gladiator has fallen");
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
 
     const cap = statCap(profile.training_level);
@@ -227,16 +228,18 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const bigChance = 0.2 + profile.training_level * 0.1;
     const gain = Math.random() < bigChance ? 2 : 1;
     const newVal = Math.min(cap, (g[data.stat] as number) + gain);
+    const basePatch: Record<string, number | string | null> = { total_invested: (g.total_invested ?? 0) + COST };
     const patch =
-      data.stat === "strength" ? { strength: newVal } :
-      data.stat === "agility" ? { agility: newVal } :
-      data.stat === "stamina" ? { stamina: newVal, health: Math.min(maxHealth(newVal), g.health + (newVal - g.stamina) * 5) } :
-      { technique: newVal };
+      data.stat === "strength" ? { ...basePatch, strength: newVal } :
+      data.stat === "agility" ? { ...basePatch, agility: newVal } :
+      data.stat === "stamina" ? { ...basePatch, stamina: newVal, health: Math.min(maxHealth(newVal), g.health + (newVal - g.stamina) * 5) } :
+      { ...basePatch, technique: newVal };
     const { error } = await supabase.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
     await supabase.from("profiles").update({ denarii: profile.denarii - COST }).eq("id", userId);
     return { ok: true, gain, stat: data.stat };
   });
+
 
 // ---------- EQUIP ----------
 const SLOT_COST_MULT: Record<string, number> = {
