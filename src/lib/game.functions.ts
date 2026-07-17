@@ -105,11 +105,12 @@ export const getLudusState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [profile, gladiators, matches, skills] = await Promise.all([
+    const [profile, gladiators, matches, skills, hall] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
       supabase.from("gladiators").select("*").eq("owner_id", userId).order("created_at", { ascending: true }),
       supabase.from("matches").select("*").eq("owner_id", userId).order("created_at", { ascending: false }).limit(20),
       supabase.from("ludus_skills").select("*").eq("owner_id", userId),
+      supabase.from("hall_of_fame").select("*").eq("owner_id", userId).order("created_at", { ascending: false }),
     ]);
     if (profile.error) throw new Error(profile.error.message);
     return {
@@ -117,8 +118,10 @@ export const getLudusState = createServerFn({ method: "GET" })
       gladiators: gladiators.data ?? [],
       matches: matches.data ?? [],
       skills: skills.data ?? [],
+      hallOfFame: hall.data ?? [],
     };
   });
+
 
 // ---------- FACILITY UPGRADE ----------
 export const upgradeFacility = createServerFn({ method: "POST" })
