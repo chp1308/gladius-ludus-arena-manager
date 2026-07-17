@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import backwaterImg from "@/assets/arena/backwater-pits.jpg.asset.json";
+import localImg from "@/assets/arena/local-games.jpg.asset.json";
+import provincialImg from "@/assets/arena/provincial-munera.jpg.asset.json";
+import capuaImg from "@/assets/arena/grand-capua.jpg.asset.json";
+import colosseumImg from "@/assets/arena/colosseum.jpg.asset.json";
+import emperorImg from "@/assets/arena/emperor-spectacle.jpg.asset.json";
 
 const ORIGINS = ["Thrace", "Gaul", "Nubia", "Britannia", "Germania", "Hispania", "Syria", "Numidia"];
 const CLASSES = ["Murmillo", "Retiarius", "Thraex", "Secutor", "Hoplomachus", "Dimachaerus"];
