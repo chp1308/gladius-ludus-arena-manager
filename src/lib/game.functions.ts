@@ -26,8 +26,10 @@ const MAX_SKILL = 5;
 const FACILITY_COST = (curr: number) => 500 * (curr + 1); // 1->2 costs 1000
 const SKILL_COST = (curr: number) => 200 * (curr + 1);
 
-// Stat cap grows with training facility
-const statCap = (trainingLevel: number) => 15 + trainingLevel * 3; // lvl1=18, lvl5=30
+// Stat cap grows with training facility (+10 per training-yard level)
+export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lvl1=25, lvl5=65
+// Max health scales with stamina: +5 HP per point
+export const maxHealth = (stamina: number) => 100 + stamina * 5;
 
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
