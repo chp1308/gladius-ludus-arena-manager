@@ -7,7 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator,
   upgradeFacility, upgradeSkill, WEAPON_LABELS,
-  ARENA_TIERS, statCap, maxHealth,
+  ARENA_TIERS, statCap, maxHealth, trainCost, gearCost,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -480,8 +480,11 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const injuryDaysLeft = injured ? Math.ceil((new Date(g.injury_until!).getTime() - Date.now()) / 86400_000) : 0;
   const skillLevel = state.skills.find(s => s.weapon_type === g.weapon_type)?.level ?? 0;
   const trainingLevel = state.profile?.training_level ?? 1;
+  const armoryLevel = state.profile?.armory_level ?? 1;
+  const denarii = state.profile?.denarii ?? 0;
   const cap = statCap(trainingLevel);
   const hpMax = maxHealth(g.stamina);
+  const tCost = trainCost(trainingLevel);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
   const trainMut = useMutation({
@@ -541,6 +544,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               tier={getTier(SLOTS[0].tierField)}
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("helmet")}
+              cost={g.is_beast ? undefined : gearCost("helmet", getTier(SLOTS[0].tierField), armoryLevel)}
+              denarii={denarii}
             />
             <div />
 
@@ -558,6 +563,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                     tier={getTier(SLOTS[3].tierField)}
                     disabled={g.is_beast || upgradeMut.isPending}
                     onClick={() => upgradeMut.mutate("weapon")}
+                    cost={g.is_beast ? undefined : gearCost("weapon", getTier(SLOTS[3].tierField), armoryLevel)}
+                    denarii={denarii}
                   />
                   <FaceAvatar g={g} size={110} />
                   {offhandSlot ? (
@@ -566,6 +573,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                       tier={getTier(SLOTS[4].tierField)}
                       disabled={g.is_beast || upgradeMut.isPending}
                       onClick={() => upgradeMut.mutate("offhand")}
+                      cost={g.is_beast ? undefined : gearCost("offhand", getTier(SLOTS[4].tierField), armoryLevel)}
+                      denarii={denarii}
                     />
                   ) : (
                     <div className="flex h-20 w-20 items-center justify-center text-[10px] italic text-muted-foreground">
@@ -583,6 +592,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               tier={getTier(SLOTS[1].tierField)}
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("armor")}
+              cost={g.is_beast ? undefined : gearCost("armor", getTier(SLOTS[1].tierField), armoryLevel)}
+              denarii={denarii}
             />
             <div />
 
@@ -593,6 +604,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               tier={getTier(SLOTS[2].tierField)}
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("legs")}
+              cost={g.is_beast ? undefined : gearCost("legs", getTier(SLOTS[2].tierField), armoryLevel)}
+              denarii={denarii}
             />
             <div />
           </div>
@@ -627,16 +640,20 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
           <div className="grid grid-cols-4 gap-2">
             {stats.map(([label, val, key]) => {
               const capped = val >= cap;
+              const canAfford = denarii >= tCost;
               return (
                 <button
                   key={key}
                   onClick={() => trainMut.mutate(key)}
-                  disabled={trainMut.isPending || !!injured || capped}
+                  disabled={trainMut.isPending || !!injured || capped || !canAfford}
                   className="rounded border border-border bg-secondary/40 p-2 text-center transition hover:border-primary hover:bg-secondary disabled:opacity-50"
-                  title={capped ? `Capped at ${cap} — upgrade Training Yard` : "Train"}
+                  title={capped ? `Capped at ${cap} — upgrade Training Yard` : !canAfford ? `Need ${tCost} denarii` : `Train · ${tCost} denarii`}
                 >
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
                   <div className="font-display text-lg">{val}<span className="text-[10px] text-muted-foreground">/{cap}</span></div>
+                  <div className={`mt-0.5 flex items-center justify-center gap-0.5 text-[10px] ${canAfford ? "text-accent" : "text-destructive"}`}>
+                    <Coins className="h-3 w-3" /> {tCost}
+                  </div>
                 </button>
               );
             })}
@@ -670,23 +687,29 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 }
 
 function SlotButton({
-  slot, tier, disabled, onClick,
+  slot, tier, disabled, onClick, cost, denarii,
 }: {
   slot: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps> };
-  tier: number; disabled: boolean; onClick: () => void;
+  tier: number; disabled: boolean; onClick: () => void; cost?: number; denarii?: number;
 }) {
   const atMax = tier >= 5;
+  const unaffordable = cost !== undefined && (denarii ?? 0) < cost;
   const { Icon, label } = slot;
   return (
     <button
       onClick={onClick}
-      disabled={disabled || atMax}
-      title={atMax ? `${label} — mastercraft` : `Upgrade ${label}`}
+      disabled={disabled || atMax || unaffordable}
+      title={atMax ? `${label} — mastercraft` : unaffordable ? `Need ${cost} denarii` : cost !== undefined ? `Upgrade ${label} · ${cost} denarii` : `Upgrade ${label}`}
       className="group flex h-20 w-20 flex-col items-center justify-center rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
     >
       <Icon className="h-5 w-5 text-primary group-hover:text-accent" />
       <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="text-[10px] leading-none text-accent">{"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(5 - tier)}</span></div>
+      {cost !== undefined && !atMax && (
+        <div className={`mt-0.5 flex items-center gap-0.5 text-[10px] ${unaffordable ? "text-destructive" : "text-accent"}`}>
+          <Coins className="h-3 w-3" /> {cost}
+        </div>
+      )}
     </button>
   );
 }
