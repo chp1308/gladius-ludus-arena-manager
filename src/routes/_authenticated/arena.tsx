@@ -6,15 +6,18 @@ import {
   getLudusState, fightMatch, fightPvp, fightTeamBattle,
   listRivalGladiators, ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
-  healGladiator, maxHealth,
+  healGladiator, maxHealth, honorGladiator,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart } from "lucide-react";
+import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart, Flame } from "lucide-react";
+
 
 function HealButton({ g }: { g: Gladiator }) {
   const qc = useQueryClient();
