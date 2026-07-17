@@ -589,6 +589,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               tier={getTier(SLOTS[1].tierField)}
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("armor")}
+              cost={g.is_beast ? undefined : gearCost("armor", getTier(SLOTS[1].tierField), armoryLevel)}
             />
             <div />
 
@@ -599,6 +600,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               tier={getTier(SLOTS[2].tierField)}
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("legs")}
+              cost={g.is_beast ? undefined : gearCost("legs", getTier(SLOTS[2].tierField), armoryLevel)}
             />
             <div />
           </div>
