@@ -310,6 +310,7 @@ export type ArenaTier = {
   key: string;
   label: string;
   flavor: string;
+  imageUrl: string;      // arena illustration
   reqFame: number;       // ludus reputation
   reqLevel: number;      // gladiator level
   reqWins: number;       // gladiator wins
