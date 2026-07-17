@@ -651,7 +651,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                 <Swords className="mr-1 h-4 w-4" /> To the Arena
               </Button>
             </Link>
-            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health === 100 && !injured)}>
+            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health >= hpMax && !injured)}>
               <Heart className="mr-1 h-4 w-4" /> Heal
             </Button>
             <Button
