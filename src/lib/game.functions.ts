@@ -272,7 +272,7 @@ export const upgradeEquipment = createServerFn({ method: "POST" })
     const cost = Math.max(40, Math.floor(baseCost * (1 - (profile.armory_level - 1) * 0.1)));
     if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
 
-    const patch = { [tierField]: currentTier + 1, total_invested: (g.total_invested ?? 0) + cost } as Partial<Record<string, number>>;
+    const patch: Record<string, number> = { [tierField]: currentTier + 1, total_invested: (g.total_invested ?? 0) + cost };
     const { error } = await supabase.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
     await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
