@@ -107,7 +107,7 @@ function PitFights({ state }: { state: State }) {
         <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">Your gladiators</div>
         <div className="space-y-2">
           {state.gladiators.length === 0 && <p className="font-serif italic text-muted-foreground">No gladiators yet.</p>}
-          {state.gladiators.map(gl => {
+          {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
             return (
@@ -222,7 +222,7 @@ function PvpFights({ state }: { state: State }) {
         <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">Your champion</div>
         <div className="space-y-2">
           {state.gladiators.length === 0 && <p className="font-serif italic text-muted-foreground">No gladiators yet.</p>}
-          {state.gladiators.map(gl => {
+          {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
             return (
@@ -473,7 +473,7 @@ function TeamFights({ state }: { state: State }) {
           Cohort — {selectedIds.length}/{battle.size}
         </div>
         <div className="space-y-2">
-          {state.gladiators.map(gl => {
+          {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
             const selected = selectedIds.includes(gl.id);
