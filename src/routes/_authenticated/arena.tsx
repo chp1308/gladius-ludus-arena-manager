@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tansta
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import {
-  getLudusState, fightMatch, fightPvp, fightTeamBattle,
-  listRivalGladiators, ARENA_TIERS, tierUnlockReason,
+  getLudusState, fightMatch, fightTeamBattle,
+  postPvpChallenge, cancelPvpChallenge, listOpenPvpChallenges, acceptPvpChallenge,
+  matchRating,
+  ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator,
 } from "@/lib/game.functions";
