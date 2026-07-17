@@ -606,9 +606,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
           <div>
             <div className="mb-1 flex items-center justify-between text-xs">
               <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> Health</span>
-              <span>{g.health}/100</span>
+              <span>{g.health}/{hpMax}</span>
             </div>
-            <Progress value={g.health} className="h-2" />
+            <Progress value={(g.health / hpMax) * 100} className="h-2" />
             {injured && (
               <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
                 <Skull className="h-3 w-3" /> Injured — {injuryDaysLeft}d until recovery
