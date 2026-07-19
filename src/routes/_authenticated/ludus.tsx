@@ -11,12 +11,12 @@ import {
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { MAX_GEAR_TIER, requiredArmoryLevel } from "@/lib/game.functions";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock } from "lucide-react";
 
 
 export const Route = createFileRoute("/_authenticated/ludus")({
@@ -92,128 +92,270 @@ function LudusPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <Tabs defaultValue="ludus" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-6">
-            <TabsTrigger value="ludus">Ludus</TabsTrigger>
-            <TabsTrigger value="recruit">Recruit</TabsTrigger>
-            <TabsTrigger value="facilities">Facilities</TabsTrigger>
-            <TabsTrigger value="skills">Skills</TabsTrigger>
-            <TabsTrigger value="hall">Hall</TabsTrigger>
-            <TabsTrigger value="history">Chronicle</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="ludus" className="mt-6 space-y-6">
-            {data.gladiators.filter(g => g.status === "dead").length > 0 && (
-              <FallenSection state={data} />
-            )}
-            {data.gladiators.filter(g => g.status !== "dead").length === 0 ? (
-              <div className="inscribed ornate-border rounded-lg p-12 text-center">
-                <p className="font-serif text-lg italic text-muted-foreground">Your ludus is empty. Recruit your first gladiator.</p>
-              </div>
-            ) : (
-              <GladiatorGrid state={data} />
-            )}
-          </TabsContent>
-
-
-          <TabsContent value="recruit" className="mt-6">
-            <Card className="inscribed ornate-border">
-              <CardHeader>
-                <CardTitle className="font-display">The Slave Market</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="font-serif italic text-muted-foreground">
-                  Send your scouts to the provinces. Better scouting brings stronger recruits — and, if fortune favors you, a captured lion or tiger.
-                </p>
-                <div className="text-sm text-muted-foreground">
-                  Scouting Network — <span className="text-accent">Lv {scoutingLevel}</span> · beast chance ~{Math.round(Math.min(0.02 + scoutingLevel * 0.03, 0.2) * 100)}%
-                </div>
-                <Button
-                  size="lg"
-                  onClick={() => recruitMut.mutate()}
-                  disabled={recruitMut.isPending || denarii < recruitCost}
-                >
-                  Scout recruit · {recruitCost} denarii
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="facilities" className="mt-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              {FACILITIES.map((f) => (
-                <FacilityCard
-                  key={f.key}
-                  facility={f.key}
-                  label={f.label}
-                  desc={f.desc}
-                  Icon={f.icon}
-                  level={data.profile?.[`${f.key}_level` as `training_level`] ?? 1}
-                  denarii={denarii}
-                />
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="skills" className="mt-6">
-            <p className="mb-4 font-serif italic text-muted-foreground">
-              Master a fighting style — each rank grants +8% combat power to gladiators using that weapon.
-            </p>
-            <div className="grid gap-3 md:grid-cols-2">
-              {SKILL_TREE.map((s) => {
-                const level = data.skills.find(x => x.weapon_type === s.key)?.level ?? 0;
-                return <SkillCard key={s.key} weaponType={s.key} label={s.label} level={level} denarii={denarii} />;
-              })}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="hall" className="mt-6">
-            <HallOfFame state={data} />
-          </TabsContent>
-
-
-
-          <TabsContent value="history" className="mt-6">
-            <Card className="inscribed ornate-border">
-              <CardHeader><CardTitle className="font-display">Chronicle of the Arena</CardTitle></CardHeader>
-              <CardContent>
-                {data.matches.length === 0 ? (
-                  <p className="font-serif italic text-muted-foreground">No matches yet. Send a gladiator to the sand.</p>
-                ) : (
-                  <ul className="divide-y divide-border">
-                    {data.matches.map((m) => {
-                      const g = data.gladiators.find(x => x.id === m.gladiator_id);
-                      return (
-                        <li key={m.id} className="flex items-center justify-between py-3">
-                          <div>
-                            <div className="font-serif text-base">
-                              <span className={m.result === "win" ? "text-primary font-semibold" : "text-muted-foreground"}>
-                                {m.result === "win" ? "Victory" : "Defeat"}
-                              </span>
-                              {" — "}
-                              {g?.name ?? "Fallen"} vs {m.opponent_name}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {ARENA_TIERS.find(t => t.key === m.difficulty)?.label ?? m.difficulty} · {new Date(m.created_at).toLocaleString()}
-                            </div>
-                          </div>
-                          <div className="text-right text-sm">
-                            <div className="text-accent">+{m.denarii_gained} denarii</div>
-                            <div className="text-muted-foreground">+{m.xp_gained} XP</div>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        <VillageView state={data} recruitCost={recruitCost} recruitPending={recruitMut.isPending} onRecruit={() => recruitMut.mutate()} />
       </main>
     </div>
   );
 }
+
+// -----------------------------------------------------------
+// VILLAGE — map of interactive buildings replacing the tab menu
+// -----------------------------------------------------------
+type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "study" | "temple" | "chronicle";
+
+type Building = {
+  key: BuildingKey;
+  name: string;
+  flavor: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  tone: string; // gradient class
+  span?: string; // grid column span
+};
+
+const BUILDINGS: Building[] = [
+  { key: "ludus",    name: "Ludus Grounds",    flavor: "Your gladiators drill and rest.",           Icon: Home,        tone: "from-primary/25 to-primary/5", span: "md:col-span-2" },
+  { key: "market",   name: "Slave Market",     flavor: "Buy fresh blood from the provinces.",       Icon: Users,       tone: "from-accent/25 to-accent/5" },
+  { key: "training", name: "Training Yard",    flavor: "Higher stat caps and cheaper drills.",      Icon: Dumbbell,    tone: "from-secondary/60 to-secondary/10" },
+  { key: "scouting", name: "Scouting Network", flavor: "Stronger recruits, rare beasts.",           Icon: Search,      tone: "from-secondary/60 to-secondary/10" },
+  { key: "medicus",  name: "Valetudinarium",   flavor: "Faster healing, shorter injuries.",         Icon: Cross,       tone: "from-secondary/60 to-secondary/10" },
+  { key: "armory",   name: "The Forge",        flavor: "Unlock higher tiers of gear.",              Icon: Hammer,      tone: "from-primary/20 to-secondary/20" },
+  { key: "study",    name: "Study of Arms",    flavor: "Master a fighting style.",                  Icon: BookOpen,    tone: "from-accent/20 to-secondary/20" },
+  { key: "temple",   name: "Temple of Memory", flavor: "Honor the fallen in your Hall of Fame.",    Icon: Award,       tone: "from-accent/25 to-accent/5" },
+  { key: "chronicle",name: "Chronicle Stele",  flavor: "Every match, carved in stone.",             Icon: ScrollText,  tone: "from-secondary/50 to-background" },
+];
+
+function VillageView({
+  state, recruitCost, recruitPending, onRecruit,
+}: {
+  state: State; recruitCost: number; recruitPending: boolean; onRecruit: () => void;
+}) {
+  const [open, setOpen] = useState<BuildingKey | null>(null);
+  const denarii = state.profile?.denarii ?? 0;
+  const scoutingLevel = state.profile?.scouting_level ?? 1;
+  const dead = state.gladiators.filter(g => g.status === "dead").length;
+  const roster = state.gladiators.filter(g => g.status !== "dead").length;
+
+  const badges: Partial<Record<BuildingKey, string>> = {
+    ludus: `${roster}`,
+    training: `Lv ${state.profile?.training_level ?? 1}`,
+    scouting: `Lv ${state.profile?.scouting_level ?? 1}`,
+    medicus:  `Lv ${state.profile?.medicus_level ?? 1}`,
+    armory:   `Lv ${state.profile?.armory_level ?? 1}`,
+    temple:   dead > 0 ? `${dead} fallen` : undefined,
+    chronicle: state.matches.length ? `${state.matches.length}` : undefined,
+  };
+
+  return (
+    <>
+      <div className="mb-6 text-center">
+        <h1 className="laurel font-display text-3xl text-primary">Your Ludus</h1>
+        <p className="mt-1 font-serif italic text-muted-foreground">Walk the grounds — visit the forge, the market, the temple.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {BUILDINGS.map((b) => {
+          const Icon = b.Icon;
+          return (
+            <button
+              key={b.key}
+              onClick={() => setOpen(b.key)}
+              className={`group ornate-border relative flex flex-col items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br ${b.tone} p-5 text-center transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-relief)] ${b.span ?? ""}`}
+            >
+              <div className="pointer-events-none absolute inset-0 opacity-30 mix-blend-multiply" style={{ backgroundImage: "radial-gradient(circle at 20% 10%, rgba(255,255,255,0.4), transparent 40%), radial-gradient(circle at 80% 90%, rgba(0,0,0,0.15), transparent 40%)" }} />
+              <Icon className="relative z-10 mb-2 h-10 w-10 text-primary" />
+              <div className="relative z-10 font-display text-base tracking-wide">{b.name}</div>
+              <div className="relative z-10 mt-1 max-w-[18rem] font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
+              {badges[b.key] && (
+                <span className="relative z-10 mt-2 inline-flex items-center rounded-full border border-border/60 bg-background/70 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {badges[b.key]}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <Dialog open={open !== null} onOpenChange={(o) => !o && setOpen(null)}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+          {open && (
+            <BuildingPanel
+              buildingKey={open}
+              state={state}
+              denarii={denarii}
+              scoutingLevel={scoutingLevel}
+              recruitCost={recruitCost}
+              recruitPending={recruitPending}
+              onRecruit={onRecruit}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function BuildingPanel({
+  buildingKey, state, denarii, scoutingLevel, recruitCost, recruitPending, onRecruit,
+}: {
+  buildingKey: BuildingKey; state: State; denarii: number; scoutingLevel: number;
+  recruitCost: number; recruitPending: boolean; onRecruit: () => void;
+}) {
+  const b = BUILDINGS.find(x => x.key === buildingKey)!;
+  const Icon = b.Icon;
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 font-display text-2xl">
+          <Icon className="h-6 w-6 text-primary" /> {b.name}
+        </DialogTitle>
+        <p className="font-serif text-sm italic text-muted-foreground">{b.flavor}</p>
+      </DialogHeader>
+
+      <div className="mt-4 space-y-6">
+        {buildingKey === "ludus" && (
+          <>
+            {state.gladiators.filter(g => g.status === "dead").length > 0 && <FallenSection state={state} />}
+            {state.gladiators.filter(g => g.status !== "dead").length === 0 ? (
+              <div className="inscribed ornate-border rounded-lg p-12 text-center">
+                <p className="font-serif text-lg italic text-muted-foreground">Your ludus is empty. Visit the Slave Market.</p>
+              </div>
+            ) : (
+              <GladiatorGrid state={state} />
+            )}
+          </>
+        )}
+
+        {buildingKey === "market" && (
+          <Card className="inscribed ornate-border">
+            <CardContent className="space-y-4 pt-6">
+              <p className="font-serif italic text-muted-foreground">
+                Send your scouts to the provinces. Better scouting brings stronger recruits — and, if fortune favors you, a captured lion or tiger.
+              </p>
+              <div className="text-sm text-muted-foreground">
+                Scouting Network — <span className="text-accent">Lv {scoutingLevel}</span> · beast chance ~{Math.round(Math.min(0.02 + scoutingLevel * 0.03, 0.2) * 100)}%
+              </div>
+              <Button size="lg" onClick={onRecruit} disabled={recruitPending || denarii < recruitCost}>
+                Scout recruit · {recruitCost} denarii
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory") && (() => {
+          const f = FACILITIES.find(x => x.key === buildingKey)!;
+          return (
+            <FacilityCard
+              facility={f.key}
+              label={f.label}
+              desc={f.desc}
+              Icon={f.icon}
+              level={state.profile?.[`${f.key}_level` as `training_level`] ?? 1}
+              denarii={denarii}
+            />
+          );
+        })()}
+
+        {buildingKey === "armory" && (
+          <Card className="inscribed ornate-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 font-display text-base"><Hammer className="h-4 w-4 text-primary" /> Forge Tiers</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-3 font-serif text-sm italic text-muted-foreground">
+                Gear runs from I to VIII. Each rung of the forge unlocks a higher tier of weapon and armor.
+              </p>
+              <ArmoryTierTable armoryLevel={state.profile?.armory_level ?? 1} />
+            </CardContent>
+          </Card>
+        )}
+
+        {buildingKey === "study" && (
+          <>
+            <p className="font-serif italic text-muted-foreground">
+              Master a fighting style — each rank grants +8% combat power to gladiators using that weapon.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {SKILL_TREE.map((s) => {
+                const level = state.skills.find(x => x.weapon_type === s.key)?.level ?? 0;
+                return <SkillCard key={s.key} weaponType={s.key} label={s.label} level={level} denarii={denarii} />;
+              })}
+            </div>
+          </>
+        )}
+
+        {buildingKey === "temple" && (
+          <>
+            <FallenSection state={state} />
+            <HallOfFame state={state} />
+          </>
+        )}
+
+        {buildingKey === "chronicle" && (
+          <Card className="inscribed ornate-border">
+            <CardContent className="pt-6">
+              {state.matches.length === 0 ? (
+                <p className="font-serif italic text-muted-foreground">No matches yet. Send a gladiator to the sand.</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {state.matches.map((m) => {
+                    const g = state.gladiators.find(x => x.id === m.gladiator_id);
+                    return (
+                      <li key={m.id} className="flex items-center justify-between py-3">
+                        <div>
+                          <div className="font-serif text-base">
+                            <span className={m.result === "win" ? "text-primary font-semibold" : "text-muted-foreground"}>
+                              {m.result === "win" ? "Victory" : "Defeat"}
+                            </span>
+                            {" — "}
+                            {g?.name ?? "Fallen"} vs {m.opponent_name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {ARENA_TIERS.find(t => t.key === m.difficulty)?.label ?? m.difficulty} · {new Date(m.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="text-right text-sm">
+                          <div className="text-accent">+{m.denarii_gained} denarii</div>
+                          <div className="text-muted-foreground">+{m.xp_gained} XP</div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </>
+  );
+}
+
+const ROMAN = ["I","II","III","IV","V","VI","VII","VIII"];
+function ArmoryTierTable({ armoryLevel }: { armoryLevel: number }) {
+  return (
+    <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+      {Array.from({ length: MAX_GEAR_TIER }, (_, i) => i + 1).map((tier) => {
+        const req = requiredArmoryLevel(tier);
+        const unlocked = armoryLevel >= req;
+        return (
+          <div
+            key={tier}
+            className={`rounded border p-2 text-center text-xs ${unlocked ? "border-primary/50 bg-primary/5" : "border-border bg-muted/40 text-muted-foreground"}`}
+            title={unlocked ? `Tier ${tier} unlocked` : `Requires forge Lv ${req}`}
+          >
+            <div className="font-display text-base">{ROMAN[tier - 1]}</div>
+            <div className="mt-0.5 flex items-center justify-center gap-1 text-[10px]">
+              {unlocked ? <Hammer className="h-3 w-3 text-primary" /> : <Lock className="h-3 w-3" />}
+              Lv {req}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 
 function FacilityCard({
   facility, label, desc, Icon, level, denarii,
@@ -558,6 +700,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("helmet")}
               cost={g.is_beast ? undefined : gearCost("helmet", getTier(SLOTS[0].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
               denarii={denarii}
             />
             <div />
@@ -577,6 +720,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                     disabled={g.is_beast || upgradeMut.isPending}
                     onClick={() => upgradeMut.mutate("weapon")}
                     cost={g.is_beast ? undefined : gearCost("weapon", getTier(SLOTS[3].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
                     denarii={denarii}
                   />
                   <FaceAvatar g={g} size={110} />
@@ -587,6 +731,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                       disabled={g.is_beast || upgradeMut.isPending}
                       onClick={() => upgradeMut.mutate("offhand")}
                       cost={g.is_beast ? undefined : gearCost("offhand", getTier(SLOTS[4].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
                       denarii={denarii}
                     />
                   ) : (
@@ -606,6 +751,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("armor")}
               cost={g.is_beast ? undefined : gearCost("armor", getTier(SLOTS[1].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
               denarii={denarii}
             />
             <div />
@@ -618,6 +764,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("legs")}
               cost={g.is_beast ? undefined : gearCost("legs", getTier(SLOTS[2].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
               denarii={denarii}
             />
             <div />
@@ -700,29 +847,48 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 }
 
 function SlotButton({
-  slot, tier, disabled, onClick, cost, denarii,
+  slot, tier, disabled, onClick, cost, denarii, armoryLevel,
 }: {
   slot: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps> };
-  tier: number; disabled: boolean; onClick: () => void; cost?: number; denarii?: number;
+  tier: number; disabled: boolean; onClick: () => void; cost?: number; denarii?: number; armoryLevel?: number;
 }) {
-  const atMax = tier >= 5;
+  const atMax = tier >= MAX_GEAR_TIER;
+  const nextTier = tier + 1;
+  const reqArmory = requiredArmoryLevel(nextTier);
+  const forgeLocked = !atMax && armoryLevel !== undefined && armoryLevel < reqArmory;
   const unaffordable = cost !== undefined && (denarii ?? 0) < cost;
   const { Icon, label } = slot;
+  const emptyStars = Math.max(0, MAX_GEAR_TIER - tier);
+  const title = atMax
+    ? `${label} — mastercraft (VIII)`
+    : forgeLocked
+    ? `Requires The Forge Lv ${reqArmory} to craft tier ${nextTier}`
+    : unaffordable
+    ? `Need ${cost} denarii`
+    : cost !== undefined
+    ? `Upgrade ${label} to tier ${nextTier} · ${cost} denarii`
+    : `Upgrade ${label}`;
   return (
     <button
       onClick={onClick}
-      disabled={disabled || atMax || unaffordable}
-      title={atMax ? `${label} — mastercraft` : unaffordable ? `Need ${cost} denarii` : cost !== undefined ? `Upgrade ${label} · ${cost} denarii` : `Upgrade ${label}`}
-      className="group flex h-20 w-20 flex-col items-center justify-center rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
+      disabled={disabled || atMax || forgeLocked || unaffordable}
+      title={title}
+      className="group relative flex h-20 w-20 flex-col items-center justify-center rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
     >
       <Icon className="h-5 w-5 text-primary group-hover:text-accent" />
       <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="text-[10px] leading-none text-accent">{"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(5 - tier)}</span></div>
-      {cost !== undefined && !atMax && (
+      <div className="text-[9px] leading-none text-accent">
+        {"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(emptyStars)}</span>
+      </div>
+      {forgeLocked ? (
+        <div className="mt-0.5 flex items-center gap-0.5 text-[10px] text-muted-foreground">
+          <Lock className="h-3 w-3" /> Forge {reqArmory}
+        </div>
+      ) : cost !== undefined && !atMax ? (
         <div className={`mt-0.5 flex items-center gap-0.5 text-[10px] ${unaffordable ? "text-destructive" : "text-accent"}`}>
           <Coins className="h-3 w-3" /> {cost}
         </div>
-      )}
+      ) : null}
     </button>
   );
 }
