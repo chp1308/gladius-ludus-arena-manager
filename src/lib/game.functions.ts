@@ -136,9 +136,10 @@ export function armorMitigation(g: {
 function rollDamage(
   attackerWeaponTier: number,
   defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null },
+  defenseLevel: number = 0,
 ) {
   const dmg = weaponDamageRange(attackerWeaponTier);
-  const mit = armorMitigation(defender);
+  const mit = armorMitigation(defender, defenseLevel);
   const min = Math.max(3, dmg.min - mit.max);
   const max = Math.max(min + 1, dmg.max - mit.min);
   return rand(min, max);
