@@ -700,6 +700,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("helmet")}
               cost={g.is_beast ? undefined : gearCost("helmet", getTier(SLOTS[0].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
               denarii={denarii}
             />
             <div />
@@ -719,6 +720,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                     disabled={g.is_beast || upgradeMut.isPending}
                     onClick={() => upgradeMut.mutate("weapon")}
                     cost={g.is_beast ? undefined : gearCost("weapon", getTier(SLOTS[3].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
                     denarii={denarii}
                   />
                   <FaceAvatar g={g} size={110} />
@@ -729,6 +731,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                       disabled={g.is_beast || upgradeMut.isPending}
                       onClick={() => upgradeMut.mutate("offhand")}
                       cost={g.is_beast ? undefined : gearCost("offhand", getTier(SLOTS[4].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
                       denarii={denarii}
                     />
                   ) : (
@@ -748,6 +751,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("armor")}
               cost={g.is_beast ? undefined : gearCost("armor", getTier(SLOTS[1].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
               denarii={denarii}
             />
             <div />
@@ -760,6 +764,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               disabled={g.is_beast || upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("legs")}
               cost={g.is_beast ? undefined : gearCost("legs", getTier(SLOTS[2].tierField), armoryLevel)}
+                    armoryLevel={armoryLevel}
               denarii={denarii}
             />
             <div />
