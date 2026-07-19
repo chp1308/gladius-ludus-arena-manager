@@ -254,6 +254,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
 
 
 // ---------- EQUIP ----------
+export const upgradeEquipment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
     gladiatorId: z.string().uuid(),
@@ -268,12 +269,14 @@ export const trainGladiator = createServerFn({ method: "POST" })
     if (g.status === "dead") throw new Error("Gladiator has fallen");
     if (g.is_beast) throw new Error("Beasts do not wear gear");
 
-    const tierField = `${data.slot === "weapon" ? "weapon" : data.slot === "armor" ? "armor" : data.slot}_tier` as
+    const tierField = `${data.slot}_tier` as
       "weapon_tier" | "armor_tier" | "helmet_tier" | "legs_tier" | "offhand_tier";
     const currentTier = (g as unknown as Record<string, number>)[tierField] ?? 1;
-    if (currentTier >= 5) throw new Error("Already at max tier");
-    const baseCost = 150 * (currentTier + 1) * SLOT_COST_MULT[data.slot];
-    const cost = Math.max(40, Math.floor(baseCost * (1 - (profile.armory_level - 1) * 0.1)));
+    if (currentTier >= MAX_GEAR_TIER) throw new Error("Already at master tier");
+    const nextTier = currentTier + 1;
+    const reqArmory = requiredArmoryLevel(nextTier);
+    if (profile.armory_level < reqArmory) throw new Error(`The armory must be level ${reqArmory} to forge tier ${nextTier} gear`);
+    const cost = gearCost(data.slot, currentTier, profile.armory_level);
     if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
 
     const patch = { [tierField]: currentTier + 1, total_invested: (g.total_invested ?? 0) + cost };
