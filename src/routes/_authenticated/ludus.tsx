@@ -387,7 +387,7 @@ function BuildingPanel({
         {buildingKey === "study" && (
           <>
             <p className="font-serif italic text-muted-foreground">
-              Master a fighting style — each rank grants +8% combat power to gladiators using that weapon.
+              Master fighting styles — each rank grants +8% combat power to gladiators using that weapon. Defensive Doctrine hardens armor for every fighter.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               {SKILL_TREE.map((s) => {
