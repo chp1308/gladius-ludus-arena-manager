@@ -122,12 +122,14 @@ export function weaponDamageRange(weaponTier: number) {
 export function armorMitigation(g: {
   armor_tier?: number | null; helmet_tier?: number | null;
   legs_tier?: number | null; offhand_tier?: number | null;
-}) {
+}, defenseLevel: number = 0) {
   const a = g.armor_tier ?? 1, h = g.helmet_tier ?? 1;
   const l = g.legs_tier ?? 1, o = g.offhand_tier ?? 1;
   // Cuirass weighted highest; offhand (shield) contributes if worn.
   const score = a * 1.5 + h * 1.0 + l * 1.0 + o * 0.8;
-  return { min: Math.floor(score * 0.35), max: Math.floor(score * 0.7) };
+  // Defensive Doctrine: each rank hardens armor effectiveness.
+  const defenseMod = 1 + defenseLevel * 0.15;
+  return { min: Math.floor(score * 0.35 * defenseMod), max: Math.floor(score * 0.7 * defenseMod) };
 }
 
 // Compute an actual damage roll from attacker weapon tier and defender armor.
