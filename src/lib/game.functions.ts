@@ -469,6 +469,10 @@ export const fightMatch = createServerFn({ method: "POST" })
       .from("ludus_skills").select("level")
       .eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
     const skillLevel = skillRow?.level ?? 0;
+    const { data: defenseRow } = await supabase
+      .from("ludus_skills").select("level")
+      .eq("owner_id", userId).eq("weapon_type", "defense").maybeSingle();
+    const defenseLevel = defenseRow?.level ?? 0;
 
     const myPower = gladiatorPower(g, skillLevel);
     const opponentPower = rand(tier.powerMin, tier.powerMax);
@@ -479,6 +483,7 @@ export const fightMatch = createServerFn({ method: "POST" })
     const log: string[] = [];
     log.push(`${g.name} enters ${tier.label} to face ${opponentName}.`);
     if (skillLevel > 0) log.push(`Style mastery: ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type} — rank ${skillLevel}.`);
+    if (defenseLevel > 0) log.push(`Defensive doctrine: rank ${defenseLevel} — your armor holds firmer.`);
     log.push(`The crowd roars. Power ${myPower} vs ${opponentPower}.`);
 
     // Derive opponent gear tier from arena strength (1..8).
@@ -488,7 +493,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       helmet_tier: oppGearTier, legs_tier: oppGearTier, offhand_tier: oppGearTier,
     };
     const myDmg = weaponDamageRange(g.weapon_tier);
-    const myMit = armorMitigation(g);
+    const myMit = armorMitigation(g, defenseLevel);
     log.push(`Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
 
     let myHp = 100, oppHp = 100;
@@ -501,7 +506,7 @@ export const fightMatch = createServerFn({ method: "POST" })
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
       } else {
-        const dmg = rollDamage(oppGearTier, g);
+        const dmg = rollDamage(oppGearTier, g, defenseLevel);
         myHp -= dmg;
         log.push(`Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`);
       }
