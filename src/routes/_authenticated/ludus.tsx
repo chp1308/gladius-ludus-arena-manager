@@ -175,6 +175,7 @@ function LudusPage() {
           </div>
           <div className="flex items-center gap-2">
             <Link to="/info"><Button variant="outline" size="sm"><BookOpen className="mr-1 h-4 w-4" /> Codex</Button></Link>
+            <Link to="/leaderboard"><Button variant="outline" size="sm"><Trophy className="mr-1 h-4 w-4" /> Champions</Button></Link>
             <Link to="/arena"><Button size="sm"><Swords className="mr-1 h-4 w-4" /> Arena</Button></Link>
             <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
           </div>
