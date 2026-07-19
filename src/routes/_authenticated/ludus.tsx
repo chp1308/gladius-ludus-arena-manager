@@ -1005,7 +1005,7 @@ function SlotButton({
       ) : (
         <Icon className="pointer-events-none absolute inset-0 m-auto h-6 w-6 text-primary group-hover:text-accent" />
       )}
-      <div className="relative z-10 rounded bg-background/70 px-1 text-[9px] uppercase tracking-wider text-muted-foreground backdrop-blur-sm">{label}</div>
+      {tier === 0 && <div className="relative z-10 rounded bg-background/70 px-1 text-[9px] uppercase tracking-wider text-muted-foreground backdrop-blur-sm">{label}</div>}
       <div className="relative z-10 rounded bg-background/70 px-1 text-[9px] leading-none text-accent">
         {"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(emptyStars)}</span>
       </div>
