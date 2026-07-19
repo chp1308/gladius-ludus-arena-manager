@@ -112,7 +112,37 @@ function gladiatorPower(
   return Math.floor(raw * skillMod);
 }
 
-// ---------- READ ----------
+// Weapon tier increases hit range. Tier 1: 15–30, Tier 8: 36–65.
+export function weaponDamageRange(weaponTier: number) {
+  const t = Math.max(1, weaponTier || 1);
+  return { min: 15 + (t - 1) * 3, max: 30 + (t - 1) * 5 };
+}
+
+// Armor tiers reduce incoming damage. Averages helmet/cuirass/greaves/offhand.
+export function armorMitigation(g: {
+  armor_tier?: number | null; helmet_tier?: number | null;
+  legs_tier?: number | null; offhand_tier?: number | null;
+}) {
+  const a = g.armor_tier ?? 1, h = g.helmet_tier ?? 1;
+  const l = g.legs_tier ?? 1, o = g.offhand_tier ?? 1;
+  // Cuirass weighted highest; offhand (shield) contributes if worn.
+  const score = a * 1.5 + h * 1.0 + l * 1.0 + o * 0.8;
+  return { min: Math.floor(score * 0.35), max: Math.floor(score * 0.7) };
+}
+
+// Compute an actual damage roll from attacker weapon tier and defender armor.
+function rollDamage(
+  attackerWeaponTier: number,
+  defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null },
+) {
+  const dmg = weaponDamageRange(attackerWeaponTier);
+  const mit = armorMitigation(defender);
+  const min = Math.max(3, dmg.min - mit.max);
+  const max = Math.max(min + 1, dmg.max - mit.min);
+  return rand(min, max);
+}
+
+
 export const getLudusState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -448,21 +478,32 @@ export const fightMatch = createServerFn({ method: "POST" })
     if (skillLevel > 0) log.push(`Style mastery: ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type} — rank ${skillLevel}.`);
     log.push(`The crowd roars. Power ${myPower} vs ${opponentPower}.`);
 
+    // Derive opponent gear tier from arena strength (1..8).
+    const oppGearTier = Math.max(1, Math.min(8, Math.round((opponentPower / 2200) * 8)));
+    const opponent = {
+      weapon_tier: oppGearTier, armor_tier: oppGearTier,
+      helmet_tier: oppGearTier, legs_tier: oppGearTier, offhand_tier: oppGearTier,
+    };
+    const myDmg = weaponDamageRange(g.weapon_tier);
+    const myMit = armorMitigation(g);
+    log.push(`Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
+
     let myHp = 100, oppHp = 100;
     const rounds = rand(3, 5);
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
       const myRoll = myPower + rand(0, 40);
       const oppRoll = opponentPower + rand(0, 40);
       if (myRoll > oppRoll) {
-        const dmg = rand(15, 30);
+        const dmg = rollDamage(g.weapon_tier, opponent);
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
       } else {
-        const dmg = rand(15, 30);
+        const dmg = rollDamage(oppGearTier, g);
         myHp -= dmg;
         log.push(`Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`);
       }
     }
+
 
     const won = oppHp <= myHp;
     const denariiGained = won ? tier.reward + rand(0, Math.floor(tier.reward * 0.2)) : Math.floor(tier.reward * 0.12);
@@ -747,13 +788,17 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     log.push(`${g.name} answers the call of ${opp.name}'s ludus.`);
     if (toDeath) log.push("⚔ Sine missione — a fight to the death. No quarter, no mercy.");
     log.push(`Power ${myPower} vs ${oppPower}.`);
+    const myDmg = weaponDamageRange(g.weapon_tier);
+    const oppDmg = weaponDamageRange(opp.weapon_tier);
+    log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg.`);
     let myHp = 100, oHp = 100;
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
       const mr = myPower + rand(0, 40);
       const or = oppPower + rand(0, 40);
-      if (mr > or) { const d = rand(15, 30); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
-      else { const d = rand(15, 30); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+      if (mr > or) { const d = rollDamage(g.weapon_tier, opp); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      else { const d = rollDamage(opp.weapon_tier, g); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
     }
+
     const won = oHp <= myHp;
 
     const denariiGained = won ? (200 + rand(0, 80)) * rewardMult : 30;
