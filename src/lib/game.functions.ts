@@ -507,11 +507,11 @@ export const fightMatch = createServerFn({ method: "POST" })
       const myRoll = myPower + rand(0, 40);
       const oppRoll = opponentPower + rand(0, 40);
       if (myRoll > oppRoll) {
-        const dmg = rollDamage(g.weapon_tier, opponent);
+        const dmg = rollDamage(g.weapon_tier, opponent, 0, g.level);
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
       } else {
-        const dmg = rollDamage(oppGearTier, g, defenseLevel);
+        const dmg = rollDamage(oppGearTier, g, defenseLevel, tier.reqLevel);
         myHp -= dmg;
         log.push(`Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`);
       }
