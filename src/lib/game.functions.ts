@@ -814,8 +814,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
       const mr = myPower + rand(0, 40);
       const or = oppPower + rand(0, 40);
-      if (mr > or) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
-      else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+      if (mr > or) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel, opp.level); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
     }
 
     const won = oHp <= myHp;
