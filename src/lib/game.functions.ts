@@ -478,21 +478,32 @@ export const fightMatch = createServerFn({ method: "POST" })
     if (skillLevel > 0) log.push(`Style mastery: ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type} — rank ${skillLevel}.`);
     log.push(`The crowd roars. Power ${myPower} vs ${opponentPower}.`);
 
+    // Derive opponent gear tier from arena strength (1..8).
+    const oppGearTier = Math.max(1, Math.min(8, Math.round((opponentPower / 2200) * 8)));
+    const opponent = {
+      weapon_tier: oppGearTier, armor_tier: oppGearTier,
+      helmet_tier: oppGearTier, legs_tier: oppGearTier, offhand_tier: oppGearTier,
+    };
+    const myDmg = weaponDamageRange(g.weapon_tier);
+    const myMit = armorMitigation(g);
+    log.push(`Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
+
     let myHp = 100, oppHp = 100;
     const rounds = rand(3, 5);
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
       const myRoll = myPower + rand(0, 40);
       const oppRoll = opponentPower + rand(0, 40);
       if (myRoll > oppRoll) {
-        const dmg = rand(15, 30);
+        const dmg = rollDamage(g.weapon_tier, opponent);
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
       } else {
-        const dmg = rand(15, 30);
+        const dmg = rollDamage(oppGearTier, g);
         myHp -= dmg;
         log.push(`Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`);
       }
     }
+
 
     const won = oppHp <= myHp;
     const denariiGained = won ? tier.reward + rand(0, Math.floor(tier.reward * 0.2)) : Math.floor(tier.reward * 0.12);
