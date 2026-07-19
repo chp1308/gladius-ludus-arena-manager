@@ -105,9 +105,11 @@ function gladiatorPower(
   const gear =
     g.weapon_tier * 12 + g.armor_tier * 9 +
     (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
-  const lvl = g.level * 6;
+  // Level: flat bonus + 6% multiplicative per level (veterans hit harder).
+  const lvl = g.level * 14;
+  const levelMult = 1 + (g.level - 1) * 0.06;
   const healthMod = g.health / maxHealth(g.stamina);
-  const raw = (base + gear + lvl) * healthMod;
+  const raw = (base + gear + lvl) * healthMod * levelMult;
   const skillMod = 1 + skillLevel * 0.08; // +8% per skill level for the matching style
   return Math.floor(raw * skillMod);
 }
