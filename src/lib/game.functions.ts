@@ -789,8 +789,12 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
 
     const { data: mySkill } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
     const { data: oppSkill } = await supabaseAdmin.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", opp.weapon_type).maybeSingle();
+    const { data: myDefense } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", "defense").maybeSingle();
+    const { data: oppDefense } = await supabaseAdmin.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", "defense").maybeSingle();
     const myPower = gladiatorPower(g, mySkill?.level ?? 0);
     const oppPower = gladiatorPower(opp, oppSkill?.level ?? 0);
+    const myDefenseLevel = myDefense?.level ?? 0;
+    const oppDefenseLevel = oppDefense?.level ?? 0;
 
     const log: string[] = [];
     log.push(`${g.name} answers the call of ${opp.name}'s ludus.`);
@@ -799,12 +803,14 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const myDmg = weaponDamageRange(g.weapon_tier);
     const oppDmg = weaponDamageRange(opp.weapon_tier);
     log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg.`);
+    if (myDefenseLevel > 0) log.push(`${g.name} adopts defensive stance — rank ${myDefenseLevel}.`);
+    if (oppDefenseLevel > 0) log.push(`${opp.name} adopts defensive stance — rank ${oppDefenseLevel}.`);
     let myHp = 100, oHp = 100;
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
       const mr = myPower + rand(0, 40);
       const or = oppPower + rand(0, 40);
-      if (mr > or) { const d = rollDamage(g.weapon_tier, opp); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
-      else { const d = rollDamage(opp.weapon_tier, g); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+      if (mr > or) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
     }
 
     const won = oHp <= myHp;
