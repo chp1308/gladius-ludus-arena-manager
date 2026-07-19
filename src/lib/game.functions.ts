@@ -788,13 +788,17 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     log.push(`${g.name} answers the call of ${opp.name}'s ludus.`);
     if (toDeath) log.push("⚔ Sine missione — a fight to the death. No quarter, no mercy.");
     log.push(`Power ${myPower} vs ${oppPower}.`);
+    const myDmg = weaponDamageRange(g.weapon_tier);
+    const oppDmg = weaponDamageRange(opp.weapon_tier);
+    log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg.`);
     let myHp = 100, oHp = 100;
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
       const mr = myPower + rand(0, 40);
       const or = oppPower + rand(0, 40);
-      if (mr > or) { const d = rand(15, 30); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
-      else { const d = rand(15, 30); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+      if (mr > or) { const d = rollDamage(g.weapon_tier, opp); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      else { const d = rollDamage(opp.weapon_tier, g); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
     }
+
     const won = oHp <= myHp;
 
     const denariiGained = won ? (200 + rand(0, 80)) * rewardMult : 30;
