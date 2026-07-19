@@ -516,7 +516,7 @@ function FacilityCard({
 function SkillCard({
   weaponType, label, level, denarii,
 }: {
-  weaponType: "gladius" | "spear" | "net" | "dual" | "beast_lion" | "beast_tiger";
+  weaponType: "gladius" | "spear" | "net" | "dual" | "beast_lion" | "beast_tiger" | "defense";
   label: string; level: number; denarii: number;
 }) {
   const qc = useQueryClient();
@@ -529,14 +529,16 @@ function SkillCard({
   const atMax = level >= 5;
   const cost = skillCost(level);
   const isBeast = weaponType.startsWith("beast");
+  const isDefense = weaponType === "defense";
+  const bonusText = isDefense ? `+${level * 5}% armor` : `+${level * 8}% power`;
   return (
     <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 p-3">
       <div>
         <div className="flex items-center gap-2 font-display">
-          {isBeast ? <Cat className="h-4 w-4 text-accent" /> : <Swords className="h-4 w-4 text-primary" />}
+          {isBeast ? <Cat className="h-4 w-4 text-accent" /> : isDefense ? <Shield className="h-4 w-4 text-primary" /> : <Swords className="h-4 w-4 text-primary" />}
           {label}
         </div>
-        <div className="mt-0.5 text-xs text-accent">{"★".repeat(level)}{"☆".repeat(5 - level)}  <span className="text-muted-foreground">+{level * 8}% power</span></div>
+        <div className="mt-0.5 text-xs text-accent">{"★".repeat(level)}{"☆".repeat(5 - level)}  <span className="text-muted-foreground">{bonusText}</span></div>
       </div>
       <Button size="sm" variant="outline"
         disabled={atMax || mut.isPending || denarii < cost}
