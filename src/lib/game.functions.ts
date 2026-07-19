@@ -254,14 +254,6 @@ export const trainGladiator = createServerFn({ method: "POST" })
 
 
 // ---------- EQUIP ----------
-const SLOT_COST_MULT: Record<string, number> = {
-  weapon: 1.0,
-  armor: 0.85,
-  helmet: 0.55,
-  legs: 0.55,
-  offhand: 0.7,
-};
-export const upgradeEquipment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
     gladiatorId: z.string().uuid(),
