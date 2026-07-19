@@ -135,15 +135,18 @@ export function armorMitigation(g: {
 }
 
 // Compute an actual damage roll from attacker weapon tier and defender armor.
+// Attacker level adds a small experience bonus to hit damage.
 function rollDamage(
   attackerWeaponTier: number,
   defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null },
   defenseLevel: number = 0,
+  attackerLevel: number = 1,
 ) {
   const dmg = weaponDamageRange(attackerWeaponTier);
   const mit = armorMitigation(defender, defenseLevel);
-  const min = Math.max(3, dmg.min - mit.max);
-  const max = Math.max(min + 1, dmg.max - mit.min);
+  const lvlBonus = Math.max(0, attackerLevel - 1) * 2; // +2 damage per level above 1
+  const min = Math.max(3, dmg.min + lvlBonus - mit.max);
+  const max = Math.max(min + 1, dmg.max + lvlBonus - mit.min);
   return rand(min, max);
 }
 
