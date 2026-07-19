@@ -195,7 +195,7 @@ export const upgradeFacility = createServerFn({ method: "POST" })
 export const upgradeSkill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
-    weaponType: z.enum(["gladius", "spear", "net", "dual", "beast_lion", "beast_tiger"]),
+    weaponType: z.enum(["gladius", "spear", "net", "dual", "beast_lion", "beast_tiger", "defense"]),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
