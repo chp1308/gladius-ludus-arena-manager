@@ -1121,3 +1121,38 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
 
     return { won, log, denariiGained, repGained };
   });
+
+
+// ============================================================
+// GLOBAL LEADERBOARDS — fame across all ludi and gladiators
+// ============================================================
+export const getLeaderboards = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase } = context;
+    const [ludi, glads] = await Promise.all([
+      supabase.from("profiles")
+        .select("id,ludus_name,reputation,training_level,scouting_level,medicus_level,armory_level")
+        .order("reputation", { ascending: false })
+        .limit(25),
+      supabase.from("gladiators")
+        .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,status")
+        .neq("status", "dead")
+        .order("wins", { ascending: false })
+        .order("level", { ascending: false })
+        .limit(25),
+    ]);
+    const ownerIds = [...new Set((glads.data ?? []).map(g => g.owner_id))];
+    const { data: owners } = ownerIds.length
+      ? await supabase.from("profiles").select("id,ludus_name").in("id", ownerIds)
+      : { data: [] as { id: string; ludus_name: string }[] };
+    const ownerMap = new Map((owners ?? []).map(o => [o.id, o.ludus_name]));
+    return {
+      ludi: (ludi.data ?? []).map((p, i) => ({ rank: i + 1, ...p })),
+      gladiators: (glads.data ?? []).map((g, i) => ({
+        rank: i + 1,
+        ...g,
+        ludus_name: ownerMap.get(g.owner_id) ?? "Unknown Ludus",
+      })),
+    };
+  });
