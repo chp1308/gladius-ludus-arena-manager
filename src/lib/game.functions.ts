@@ -112,7 +112,37 @@ function gladiatorPower(
   return Math.floor(raw * skillMod);
 }
 
-// ---------- READ ----------
+// Weapon tier increases hit range. Tier 1: 15–30, Tier 8: 36–65.
+export function weaponDamageRange(weaponTier: number) {
+  const t = Math.max(1, weaponTier || 1);
+  return { min: 15 + (t - 1) * 3, max: 30 + (t - 1) * 5 };
+}
+
+// Armor tiers reduce incoming damage. Averages helmet/cuirass/greaves/offhand.
+export function armorMitigation(g: {
+  armor_tier?: number | null; helmet_tier?: number | null;
+  legs_tier?: number | null; offhand_tier?: number | null;
+}) {
+  const a = g.armor_tier ?? 1, h = g.helmet_tier ?? 1;
+  const l = g.legs_tier ?? 1, o = g.offhand_tier ?? 1;
+  // Cuirass weighted highest; offhand (shield) contributes if worn.
+  const score = a * 1.5 + h * 1.0 + l * 1.0 + o * 0.8;
+  return { min: Math.floor(score * 0.35), max: Math.floor(score * 0.7) };
+}
+
+// Compute an actual damage roll from attacker weapon tier and defender armor.
+function rollDamage(
+  attackerWeaponTier: number,
+  defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null },
+) {
+  const dmg = weaponDamageRange(attackerWeaponTier);
+  const mit = armorMitigation(defender);
+  const min = Math.max(3, dmg.min - mit.max);
+  const max = Math.max(min + 1, dmg.max - mit.min);
+  return rand(min, max);
+}
+
+
 export const getLudusState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
