@@ -91,6 +91,23 @@ function generateGladiator(scoutingLevel: number) {
   };
 }
 
+// Per-weapon-type stat weights. Each set sums to 12, matching the old flat
+// `3 * (STR+AGI+STA+TEC)`; classes differ only in which stats matter most.
+// gladius: shield brawler, favors strength & endurance.
+// spear:   long reach, disciplined technique.
+// net:     tricky retiarius, agility & technique.
+// dual:    dimachaerus footwork, agility above all.
+// beasts:  raw predator, strength & agility, no technique.
+export const STAT_WEIGHTS: Record<string, { strength: number; agility: number; stamina: number; technique: number }> = {
+  gladius:     { strength: 4, agility: 2, stamina: 4, technique: 2 },
+  spear:       { strength: 2, agility: 3, stamina: 3, technique: 4 },
+  net:         { strength: 2, agility: 4, stamina: 2, technique: 4 },
+  dual:        { strength: 3, agility: 5, stamina: 2, technique: 2 },
+  beast_lion:  { strength: 5, agility: 3, stamina: 3, technique: 1 },
+  beast_tiger: { strength: 3, agility: 5, stamina: 3, technique: 1 },
+};
+const DEFAULT_WEIGHTS = { strength: 3, agility: 3, stamina: 3, technique: 3 };
+
 function gladiatorPower(
   g: {
     strength: number; agility: number; stamina: number; technique: number;
@@ -101,13 +118,14 @@ function gladiatorPower(
   },
   skillLevel: number,
 ) {
-  const base = 3 * (g.strength + g.agility + g.stamina + g.technique);
+  const w = STAT_WEIGHTS[g.weapon_type] ?? DEFAULT_WEIGHTS;
+  const base = w.strength * g.strength + w.agility * g.agility + w.stamina * g.stamina + w.technique * g.technique;
   const gear =
     g.weapon_tier * 12 + g.armor_tier * 9 +
     (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
-  // Level: flat bonus + 6% multiplicative per level (veterans hit harder).
-  const lvl = g.level * 14;
-  const levelMult = 1 + (g.level - 1) * 0.06;
+  // Level: small flat bonus + modest multiplicative per level.
+  const lvl = g.level * 6;
+  const levelMult = 1 + (g.level - 1) * 0.02;
   const healthMod = g.health / maxHealth(g.stamina);
   const raw = (base + gear + lvl) * healthMod * levelMult;
   const skillMod = 1 + skillLevel * 0.08; // +8% per skill level for the matching style
@@ -144,7 +162,7 @@ function rollDamage(
 ) {
   const dmg = weaponDamageRange(attackerWeaponTier);
   const mit = armorMitigation(defender, defenseLevel);
-  const lvlBonus = Math.max(0, attackerLevel - 1) * 2; // +2 damage per level above 1
+  const lvlBonus = Math.max(0, attackerLevel - 1); // +1 damage per level above 1
   const min = Math.max(3, dmg.min + lvlBonus - mit.max);
   const max = Math.max(min + 1, dmg.max + lvlBonus - mit.min);
   return rand(min, max);
@@ -1102,4 +1120,39 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     }).eq("id", userId);
 
     return { won, log, denariiGained, repGained };
+  });
+
+
+// ============================================================
+// GLOBAL LEADERBOARDS — fame across all ludi and gladiators
+// ============================================================
+export const getLeaderboards = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase } = context;
+    const [ludi, glads] = await Promise.all([
+      supabase.from("profiles")
+        .select("id,ludus_name,reputation,training_level,scouting_level,medicus_level,armory_level")
+        .order("reputation", { ascending: false })
+        .limit(25),
+      supabase.from("gladiators")
+        .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,status")
+        .neq("status", "dead")
+        .order("wins", { ascending: false })
+        .order("level", { ascending: false })
+        .limit(25),
+    ]);
+    const ownerIds = [...new Set((glads.data ?? []).map(g => g.owner_id))];
+    const { data: owners } = ownerIds.length
+      ? await supabase.from("profiles").select("id,ludus_name").in("id", ownerIds)
+      : { data: [] as { id: string; ludus_name: string }[] };
+    const ownerMap = new Map((owners ?? []).map(o => [o.id, o.ludus_name]));
+    return {
+      ludi: (ludi.data ?? []).map((p, i) => ({ rank: i + 1, ...p })),
+      gladiators: (glads.data ?? []).map((g, i) => ({
+        rank: i + 1,
+        ...g,
+        ludus_name: ownerMap.get(g.owner_id) ?? "Unknown Ludus",
+      })),
+    };
   });
