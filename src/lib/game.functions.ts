@@ -1030,9 +1030,13 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     const teamPower = team.reduce((sum, g) => sum + gladiatorPower(g, skillMap.get(g.weapon_type) ?? 0), 0);
     const enemyPower = Math.floor(teamPower * battle.powerScale + rand(-30, 30));
 
+    const defenseLevel = skillMap.get("defense") ?? 0;
+    const defenseReduction = 1 - defenseLevel * 0.05;
+
     const log: string[] = [];
     log.push(`${battle.label} begins. ${team.map(t => t.name).join(", ")} enter the sand.`);
     log.push(`Team power ${teamPower} vs ${enemyPower}.`);
+    if (defenseLevel > 0) log.push(`Defensive doctrine: rank ${defenseLevel} — the cohort shrugs off heavier blows.`);
 
     let teamHp = team.length * 100;
     let enemyHp = team.length * 100;
@@ -1040,7 +1044,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       const mr = teamPower + rand(0, 60);
       const or = enemyPower + rand(0, 60);
       if (mr > or) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
-      else { const d = rand(25, 45); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
+      else { const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction)); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
     }
     const won = enemyHp <= teamHp;
 
