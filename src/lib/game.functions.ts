@@ -162,7 +162,7 @@ function rollDamage(
 ) {
   const dmg = weaponDamageRange(attackerWeaponTier);
   const mit = armorMitigation(defender, defenseLevel);
-  const lvlBonus = Math.max(0, attackerLevel - 1) * 2; // +2 damage per level above 1
+  const lvlBonus = Math.max(0, attackerLevel - 1); // +1 damage per level above 1
   const min = Math.max(3, dmg.min + lvlBonus - mit.max);
   const max = Math.max(min + 1, dmg.max + lvlBonus - mit.min);
   return rand(min, max);
