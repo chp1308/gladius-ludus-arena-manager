@@ -364,8 +364,8 @@ function BuildingPanel({
               Icon={f.icon}
               level={state.profile?.[`${f.key}_level` as `training_level`] ?? 1}
               denarii={denarii}
-              weaponType={g.weapon_type}
             />
+
           );
         })()}
 
