@@ -122,21 +122,24 @@ export function weaponDamageRange(weaponTier: number) {
 export function armorMitigation(g: {
   armor_tier?: number | null; helmet_tier?: number | null;
   legs_tier?: number | null; offhand_tier?: number | null;
-}) {
+}, defenseLevel: number = 0) {
   const a = g.armor_tier ?? 1, h = g.helmet_tier ?? 1;
   const l = g.legs_tier ?? 1, o = g.offhand_tier ?? 1;
   // Cuirass weighted highest; offhand (shield) contributes if worn.
   const score = a * 1.5 + h * 1.0 + l * 1.0 + o * 0.8;
-  return { min: Math.floor(score * 0.35), max: Math.floor(score * 0.7) };
+  // Defensive Doctrine: each rank hardens armor effectiveness.
+  const defenseMod = 1 + defenseLevel * 0.15;
+  return { min: Math.floor(score * 0.35 * defenseMod), max: Math.floor(score * 0.7 * defenseMod) };
 }
 
 // Compute an actual damage roll from attacker weapon tier and defender armor.
 function rollDamage(
   attackerWeaponTier: number,
   defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null },
+  defenseLevel: number = 0,
 ) {
   const dmg = weaponDamageRange(attackerWeaponTier);
-  const mit = armorMitigation(defender);
+  const mit = armorMitigation(defender, defenseLevel);
   const min = Math.max(3, dmg.min - mit.max);
   const max = Math.max(min + 1, dmg.max - mit.min);
   return rand(min, max);
@@ -195,7 +198,7 @@ export const upgradeFacility = createServerFn({ method: "POST" })
 export const upgradeSkill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
-    weaponType: z.enum(["gladius", "spear", "net", "dual", "beast_lion", "beast_tiger"]),
+    weaponType: z.enum(["gladius", "spear", "net", "dual", "beast_lion", "beast_tiger", "defense"]),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -466,6 +469,10 @@ export const fightMatch = createServerFn({ method: "POST" })
       .from("ludus_skills").select("level")
       .eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
     const skillLevel = skillRow?.level ?? 0;
+    const { data: defenseRow } = await supabase
+      .from("ludus_skills").select("level")
+      .eq("owner_id", userId).eq("weapon_type", "defense").maybeSingle();
+    const defenseLevel = defenseRow?.level ?? 0;
 
     const myPower = gladiatorPower(g, skillLevel);
     const opponentPower = rand(tier.powerMin, tier.powerMax);
@@ -476,6 +483,7 @@ export const fightMatch = createServerFn({ method: "POST" })
     const log: string[] = [];
     log.push(`${g.name} enters ${tier.label} to face ${opponentName}.`);
     if (skillLevel > 0) log.push(`Style mastery: ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type} — rank ${skillLevel}.`);
+    if (defenseLevel > 0) log.push(`Defensive doctrine: rank ${defenseLevel} — your armor holds firmer.`);
     log.push(`The crowd roars. Power ${myPower} vs ${opponentPower}.`);
 
     // Derive opponent gear tier from arena strength (1..8).
@@ -485,7 +493,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       helmet_tier: oppGearTier, legs_tier: oppGearTier, offhand_tier: oppGearTier,
     };
     const myDmg = weaponDamageRange(g.weapon_tier);
-    const myMit = armorMitigation(g);
+    const myMit = armorMitigation(g, defenseLevel);
     log.push(`Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
 
     let myHp = 100, oppHp = 100;
@@ -498,7 +506,7 @@ export const fightMatch = createServerFn({ method: "POST" })
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
       } else {
-        const dmg = rollDamage(oppGearTier, g);
+        const dmg = rollDamage(oppGearTier, g, defenseLevel);
         myHp -= dmg;
         log.push(`Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`);
       }
@@ -781,8 +789,12 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
 
     const { data: mySkill } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
     const { data: oppSkill } = await supabaseAdmin.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", opp.weapon_type).maybeSingle();
+    const { data: myDefense } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", "defense").maybeSingle();
+    const { data: oppDefense } = await supabaseAdmin.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", "defense").maybeSingle();
     const myPower = gladiatorPower(g, mySkill?.level ?? 0);
     const oppPower = gladiatorPower(opp, oppSkill?.level ?? 0);
+    const myDefenseLevel = myDefense?.level ?? 0;
+    const oppDefenseLevel = oppDefense?.level ?? 0;
 
     const log: string[] = [];
     log.push(`${g.name} answers the call of ${opp.name}'s ludus.`);
@@ -791,12 +803,14 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const myDmg = weaponDamageRange(g.weapon_tier);
     const oppDmg = weaponDamageRange(opp.weapon_tier);
     log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg.`);
+    if (myDefenseLevel > 0) log.push(`${g.name} adopts defensive stance — rank ${myDefenseLevel}.`);
+    if (oppDefenseLevel > 0) log.push(`${opp.name} adopts defensive stance — rank ${oppDefenseLevel}.`);
     let myHp = 100, oHp = 100;
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
       const mr = myPower + rand(0, 40);
       const or = oppPower + rand(0, 40);
-      if (mr > or) { const d = rollDamage(g.weapon_tier, opp); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
-      else { const d = rollDamage(opp.weapon_tier, g); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+      if (mr > or) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
     }
 
     const won = oHp <= myHp;
@@ -1016,9 +1030,13 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     const teamPower = team.reduce((sum, g) => sum + gladiatorPower(g, skillMap.get(g.weapon_type) ?? 0), 0);
     const enemyPower = Math.floor(teamPower * battle.powerScale + rand(-30, 30));
 
+    const defenseLevel = skillMap.get("defense") ?? 0;
+    const defenseReduction = 1 - defenseLevel * 0.05;
+
     const log: string[] = [];
     log.push(`${battle.label} begins. ${team.map(t => t.name).join(", ")} enter the sand.`);
     log.push(`Team power ${teamPower} vs ${enemyPower}.`);
+    if (defenseLevel > 0) log.push(`Defensive doctrine: rank ${defenseLevel} — the cohort shrugs off heavier blows.`);
 
     let teamHp = team.length * 100;
     let enemyHp = team.length * 100;
@@ -1026,7 +1044,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       const mr = teamPower + rand(0, 60);
       const or = enemyPower + rand(0, 60);
       if (mr > or) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
-      else { const d = rand(25, 45); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
+      else { const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction)); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
     }
     const won = enemyHp <= teamHp;
 
