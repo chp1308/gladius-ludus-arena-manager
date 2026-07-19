@@ -364,6 +364,7 @@ function BuildingPanel({
               Icon={f.icon}
               level={state.profile?.[`${f.key}_level` as `training_level`] ?? 1}
               denarii={denarii}
+              weaponType={g.weapon_type}
             />
           );
         })()}
@@ -814,6 +815,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               cost={g.is_beast ? undefined : gearCost("helmet", getTier(SLOTS[0].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
               denarii={denarii}
+              weaponType={g.weapon_type}
             />
             <div />
 
@@ -834,6 +836,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                     cost={g.is_beast ? undefined : gearCost("weapon", getTier(SLOTS[3].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
                     denarii={denarii}
+                    weaponType={g.weapon_type}
                   />
                   <FaceAvatar g={g} size={110} />
                   {offhandSlot ? (
@@ -845,6 +848,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                       cost={g.is_beast ? undefined : gearCost("offhand", getTier(SLOTS[4].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
                       denarii={denarii}
+                      weaponType={g.weapon_type}
                     />
                   ) : (
                     <div className="flex h-20 w-20 items-center justify-center text-[10px] italic text-muted-foreground">
@@ -865,6 +869,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               cost={g.is_beast ? undefined : gearCost("armor", getTier(SLOTS[1].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
               denarii={denarii}
+              weaponType={g.weapon_type}
             />
             <div />
 
@@ -878,6 +883,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               cost={g.is_beast ? undefined : gearCost("legs", getTier(SLOTS[2].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
               denarii={denarii}
+              weaponType={g.weapon_type}
             />
             <div />
           </div>
