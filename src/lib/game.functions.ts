@@ -29,8 +29,17 @@ export const WEAPON_LABELS: Record<string, string> = {
 // Facility caps and effects
 const MAX_FACILITY = 5;
 const MAX_SKILL = 5;
+export const MAX_GEAR_TIER = 8;
 const FACILITY_COST = (curr: number) => 500 * (curr + 1); // 1->2 costs 1000
 const SKILL_COST = (curr: number) => 200 * (curr + 1);
+
+// Armory level required to CRAFT gear of a given tier.
+// Basic gear needs a village smith; masterwork needs the Master Forge.
+const ARMORY_REQ_FOR_TIER = [0, 1, 1, 2, 2, 3, 3, 4, 5];
+export function requiredArmoryLevel(tier: number): number {
+  const t = Math.max(1, Math.min(MAX_GEAR_TIER, tier));
+  return ARMORY_REQ_FOR_TIER[t] ?? 5;
+}
 
 // Stat cap grows with training facility (+10 per training-yard level)
 export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lvl1=25, lvl5=65
@@ -39,6 +48,9 @@ export const maxHealth = (stamina: number) => 100 + stamina * 5;
 // Training cost falls with training facility level
 export const trainCost = (trainingLevel: number) => Math.max(20, 50 - (trainingLevel - 1) * 6);
 // Gear upgrade cost by slot, tier, and armory level
+const SLOT_COST_MULT: Record<string, number> = {
+  weapon: 1.0, armor: 0.85, helmet: 0.55, legs: 0.55, offhand: 0.7,
+};
 export const gearCost = (slot: "weapon" | "armor" | "helmet" | "legs" | "offhand", currentTier: number, armoryLevel: number) => {
   const base = 150 * (currentTier + 1) * (SLOT_COST_MULT[slot] ?? 1);
   return Math.max(40, Math.floor(base * (1 - (armoryLevel - 1) * 0.1)));
