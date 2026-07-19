@@ -74,7 +74,10 @@ function ArenaPage() {
               </div>
             </div>
           </div>
-          <Link to="/ludus"><Button variant="ghost" size="sm">Back to Ludus</Button></Link>
+          <div className="flex items-center gap-2">
+            <Link to="/info"><Button variant="outline" size="sm">Codex</Button></Link>
+            <Link to="/ludus"><Button variant="ghost" size="sm">Back to Ludus</Button></Link>
+          </div>
         </div>
       </header>
 

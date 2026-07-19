@@ -105,9 +105,11 @@ function gladiatorPower(
   const gear =
     g.weapon_tier * 12 + g.armor_tier * 9 +
     (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
-  const lvl = g.level * 6;
+  // Level: flat bonus + 6% multiplicative per level (veterans hit harder).
+  const lvl = g.level * 14;
+  const levelMult = 1 + (g.level - 1) * 0.06;
   const healthMod = g.health / maxHealth(g.stamina);
-  const raw = (base + gear + lvl) * healthMod;
+  const raw = (base + gear + lvl) * healthMod * levelMult;
   const skillMod = 1 + skillLevel * 0.08; // +8% per skill level for the matching style
   return Math.floor(raw * skillMod);
 }
@@ -133,15 +135,18 @@ export function armorMitigation(g: {
 }
 
 // Compute an actual damage roll from attacker weapon tier and defender armor.
+// Attacker level adds a small experience bonus to hit damage.
 function rollDamage(
   attackerWeaponTier: number,
   defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null },
   defenseLevel: number = 0,
+  attackerLevel: number = 1,
 ) {
   const dmg = weaponDamageRange(attackerWeaponTier);
   const mit = armorMitigation(defender, defenseLevel);
-  const min = Math.max(3, dmg.min - mit.max);
-  const max = Math.max(min + 1, dmg.max - mit.min);
+  const lvlBonus = Math.max(0, attackerLevel - 1) * 2; // +2 damage per level above 1
+  const min = Math.max(3, dmg.min + lvlBonus - mit.max);
+  const max = Math.max(min + 1, dmg.max + lvlBonus - mit.min);
   return rand(min, max);
 }
 
@@ -502,11 +507,11 @@ export const fightMatch = createServerFn({ method: "POST" })
       const myRoll = myPower + rand(0, 40);
       const oppRoll = opponentPower + rand(0, 40);
       if (myRoll > oppRoll) {
-        const dmg = rollDamage(g.weapon_tier, opponent);
+        const dmg = rollDamage(g.weapon_tier, opponent, 0, g.level);
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
       } else {
-        const dmg = rollDamage(oppGearTier, g, defenseLevel);
+        const dmg = rollDamage(oppGearTier, g, defenseLevel, tier.reqLevel);
         myHp -= dmg;
         log.push(`Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`);
       }
@@ -809,8 +814,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
       const mr = myPower + rand(0, 40);
       const or = oppPower + rand(0, 40);
-      if (mr > or) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
-      else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+      if (mr > or) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel, opp.level); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
     }
 
     const won = oHp <= myHp;
