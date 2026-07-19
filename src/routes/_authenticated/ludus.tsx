@@ -959,10 +959,11 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 }
 
 function SlotButton({
-  slot, tier, disabled, onClick, cost, denarii, armoryLevel,
+  slot, tier, disabled, onClick, cost, denarii, armoryLevel, weaponType,
 }: {
   slot: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps> };
   tier: number; disabled: boolean; onClick: () => void; cost?: number; denarii?: number; armoryLevel?: number;
+  weaponType?: string;
 }) {
   const atMax = tier >= MAX_GEAR_TIER;
   const nextTier = tier + 1;
@@ -971,6 +972,7 @@ function SlotButton({
   const unaffordable = cost !== undefined && (denarii ?? 0) < cost;
   const { Icon, label } = slot;
   const emptyStars = Math.max(0, MAX_GEAR_TIER - tier);
+  const img = weaponType ? gearImage(slot.key, weaponType, tier) : null;
   const title = atMax
     ? `${label} — mastercraft (VIII)`
     : forgeLocked
@@ -985,19 +987,28 @@ function SlotButton({
       onClick={onClick}
       disabled={disabled || atMax || forgeLocked || unaffordable}
       title={title}
-      className="group relative flex h-20 w-20 flex-col items-center justify-center rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
+      className="group relative flex h-20 w-20 flex-col items-center justify-end overflow-hidden rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
     >
-      <Icon className="h-5 w-5 text-primary group-hover:text-accent" />
-      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="text-[9px] leading-none text-accent">
+      {img ? (
+        <img
+          src={img}
+          alt={label}
+          loading="lazy"
+          className="pointer-events-none absolute inset-0 m-auto h-14 w-14 object-contain opacity-95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] transition group-hover:scale-105"
+        />
+      ) : (
+        <Icon className="pointer-events-none absolute inset-0 m-auto h-6 w-6 text-primary group-hover:text-accent" />
+      )}
+      <div className="relative z-10 rounded bg-background/70 px-1 text-[9px] uppercase tracking-wider text-muted-foreground backdrop-blur-sm">{label}</div>
+      <div className="relative z-10 rounded bg-background/70 px-1 text-[9px] leading-none text-accent">
         {"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(emptyStars)}</span>
       </div>
       {forgeLocked ? (
-        <div className="mt-0.5 flex items-center gap-0.5 text-[10px] text-muted-foreground">
+        <div className="relative z-10 mt-0.5 flex items-center gap-0.5 rounded bg-background/70 px-1 text-[9px] text-muted-foreground backdrop-blur-sm">
           <Lock className="h-3 w-3" /> Forge {reqArmory}
         </div>
       ) : cost !== undefined && !atMax ? (
-        <div className={`mt-0.5 flex items-center gap-0.5 text-[10px] ${unaffordable ? "text-destructive" : "text-accent"}`}>
+        <div className={`relative z-10 mt-0.5 flex items-center gap-0.5 rounded bg-background/70 px-1 text-[9px] backdrop-blur-sm ${unaffordable ? "text-destructive" : "text-accent"}`}>
           <Coins className="h-3 w-3" /> {cost}
         </div>
       ) : null}
