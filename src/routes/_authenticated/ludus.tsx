@@ -17,6 +17,16 @@ import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock } from "lucide-react";
+import cityBg from "@/assets/ludus/city-bg.jpg";
+import bLudus from "@/assets/ludus/b-ludus.png";
+import bMarket from "@/assets/ludus/b-market.png";
+import bTraining from "@/assets/ludus/b-training.png";
+import bScouting from "@/assets/ludus/b-scouting.png";
+import bMedicus from "@/assets/ludus/b-medicus.png";
+import bArmory from "@/assets/ludus/b-armory.png";
+import bStudy from "@/assets/ludus/b-study.png";
+import bTemple from "@/assets/ludus/b-temple.png";
+import bChronicle from "@/assets/ludus/b-chronicle.png";
 
 
 export const Route = createFileRoute("/_authenticated/ludus")({
@@ -108,20 +118,20 @@ type Building = {
   name: string;
   flavor: string;
   Icon: React.ComponentType<{ className?: string }>;
-  tone: string; // gradient class
+  image: string;
   span?: string; // grid column span
 };
 
 const BUILDINGS: Building[] = [
-  { key: "ludus",    name: "Ludus Grounds",    flavor: "Your gladiators drill and rest.",           Icon: Home,        tone: "from-primary/25 to-primary/5", span: "md:col-span-2" },
-  { key: "market",   name: "Slave Market",     flavor: "Buy fresh blood from the provinces.",       Icon: Users,       tone: "from-accent/25 to-accent/5" },
-  { key: "training", name: "Training Yard",    flavor: "Higher stat caps and cheaper drills.",      Icon: Dumbbell,    tone: "from-secondary/60 to-secondary/10" },
-  { key: "scouting", name: "Scouting Network", flavor: "Stronger recruits, rare beasts.",           Icon: Search,      tone: "from-secondary/60 to-secondary/10" },
-  { key: "medicus",  name: "Valetudinarium",   flavor: "Faster healing, shorter injuries.",         Icon: Cross,       tone: "from-secondary/60 to-secondary/10" },
-  { key: "armory",   name: "The Forge",        flavor: "Unlock higher tiers of gear.",              Icon: Hammer,      tone: "from-primary/20 to-secondary/20" },
-  { key: "study",    name: "Study of Arms",    flavor: "Master a fighting style.",                  Icon: BookOpen,    tone: "from-accent/20 to-secondary/20" },
-  { key: "temple",   name: "Temple of Memory", flavor: "Honor the fallen in your Hall of Fame.",    Icon: Award,       tone: "from-accent/25 to-accent/5" },
-  { key: "chronicle",name: "Chronicle Stele",  flavor: "Every match, carved in stone.",             Icon: ScrollText,  tone: "from-secondary/50 to-background" },
+  { key: "ludus",    name: "Ludus Grounds",    flavor: "Your gladiators drill and rest.",        Icon: Home,       image: bLudus,     span: "md:col-span-2" },
+  { key: "market",   name: "Slave Market",     flavor: "Buy fresh blood from the provinces.",    Icon: Users,      image: bMarket },
+  { key: "training", name: "Training Yard",    flavor: "Higher stat caps and cheaper drills.",   Icon: Dumbbell,   image: bTraining },
+  { key: "scouting", name: "Scouting Network", flavor: "Stronger recruits, rare beasts.",        Icon: Search,     image: bScouting },
+  { key: "medicus",  name: "Valetudinarium",   flavor: "Faster healing, shorter injuries.",      Icon: Cross,      image: bMedicus },
+  { key: "armory",   name: "The Forge",        flavor: "Unlock higher tiers of gear.",           Icon: Hammer,     image: bArmory },
+  { key: "study",    name: "Study of Arms",    flavor: "Master a fighting style.",               Icon: BookOpen,   image: bStudy },
+  { key: "temple",   name: "Temple of Memory", flavor: "Honor the fallen in your Hall of Fame.", Icon: Award,      image: bTemple },
+  { key: "chronicle",name: "Chronicle Stele",  flavor: "Every match, carved in stone.",          Icon: ScrollText, image: bChronicle },
 ];
 
 function VillageView({
@@ -152,27 +162,51 @@ function VillageView({
         <p className="mt-1 font-serif italic text-muted-foreground">Walk the grounds — visit the forge, the market, the temple.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {BUILDINGS.map((b) => {
-          const Icon = b.Icon;
-          return (
-            <button
-              key={b.key}
-              onClick={() => setOpen(b.key)}
-              className={`group ornate-border relative flex flex-col items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br ${b.tone} p-5 text-center transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-relief)] ${b.span ?? ""}`}
-            >
-              <div className="pointer-events-none absolute inset-0 opacity-30 mix-blend-multiply" style={{ backgroundImage: "radial-gradient(circle at 20% 10%, rgba(255,255,255,0.4), transparent 40%), radial-gradient(circle at 80% 90%, rgba(0,0,0,0.15), transparent 40%)" }} />
-              <Icon className="relative z-10 mb-2 h-10 w-10 text-primary" />
-              <div className="relative z-10 font-display text-base tracking-wide">{b.name}</div>
-              <div className="relative z-10 mt-1 max-w-[18rem] font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
-              {badges[b.key] && (
-                <span className="relative z-10 mt-2 inline-flex items-center rounded-full border border-border/60 bg-background/70 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {badges[b.key]}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <div
+        className="ornate-border relative overflow-hidden rounded-xl p-4 md:p-6"
+        style={{
+          backgroundImage: `linear-gradient(to bottom, oklch(0.965 0.018 85 / 0.55) 0%, oklch(0.965 0.018 85 / 0.85) 55%, oklch(0.87 0.028 80 / 0.95) 100%), url(${cityBg})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center top",
+        }}
+      >
+        {/* ground shadow strip */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[oklch(0.35_0.04_60_/_0.25)] to-transparent" />
+
+        <div className="relative grid grid-cols-2 gap-4 md:grid-cols-4">
+          {BUILDINGS.map((b) => {
+            const Icon = b.Icon;
+            return (
+              <button
+                key={b.key}
+                onClick={() => setOpen(b.key)}
+                className={`group relative flex flex-col items-center overflow-hidden rounded-lg border border-border/70 bg-[oklch(0.99_0.012_85_/_0.72)] p-3 text-center backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-[oklch(0.99_0.012_85_/_0.9)] hover:shadow-[var(--shadow-relief)] ${b.span ?? ""}`}
+              >
+                <div className="relative flex h-32 w-full items-end justify-center md:h-36">
+                  {/* soft ground disc */}
+                  <div className="absolute bottom-1 h-4 w-4/5 rounded-[50%] bg-[oklch(0.35_0.04_60_/_0.25)] blur-md" />
+                  <img
+                    src={b.image}
+                    alt={b.name}
+                    loading="lazy"
+                    width={512}
+                    height={512}
+                    className="relative z-10 h-full w-auto object-contain drop-shadow-[0_6px_10px_oklch(0.2_0.01_60/0.35)] transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:scale-[1.03]"
+                  />
+                </div>
+                <div className="mt-2 flex items-center gap-1.5 font-display text-sm tracking-wide">
+                  <Icon className="h-4 w-4 text-primary" /> {b.name}
+                </div>
+                <div className="mt-0.5 max-w-[18rem] font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
+                {badges[b.key] && (
+                  <span className="mt-1.5 inline-flex items-center rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {badges[b.key]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <Dialog open={open !== null} onOpenChange={(o) => !o && setOpen(null)}>
