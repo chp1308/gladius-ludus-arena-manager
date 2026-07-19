@@ -28,6 +28,84 @@ import bStudy from "@/assets/ludus/b-study.png";
 import bTemple from "@/assets/ludus/b-temple.png";
 import bChronicle from "@/assets/ludus/b-chronicle.png";
 
+// gear tier art — 4 visual grades map to tiers 1-2 / 3-4 / 5-6 / 7-8
+import helmet1 from "@/assets/gear/helmet-1.png";
+import helmet2 from "@/assets/gear/helmet-2.png";
+import helmet3 from "@/assets/gear/helmet-3.png";
+import helmet4 from "@/assets/gear/helmet-4.png";
+import cuirass1 from "@/assets/gear/cuirass-1.png";
+import cuirass2 from "@/assets/gear/cuirass-2.png";
+import cuirass3 from "@/assets/gear/cuirass-3.png";
+import cuirass4 from "@/assets/gear/cuirass-4.png";
+import greaves1 from "@/assets/gear/greaves-1.png";
+import greaves2 from "@/assets/gear/greaves-2.png";
+import greaves3 from "@/assets/gear/greaves-3.png";
+import greaves4 from "@/assets/gear/greaves-4.png";
+import gladius1 from "@/assets/gear/gladius-1.png";
+import gladius2 from "@/assets/gear/gladius-2.png";
+import gladius3 from "@/assets/gear/gladius-3.png";
+import gladius4 from "@/assets/gear/gladius-4.png";
+import spear1 from "@/assets/gear/spear-1.png";
+import spear2 from "@/assets/gear/spear-2.png";
+import spear3 from "@/assets/gear/spear-3.png";
+import spear4 from "@/assets/gear/spear-4.png";
+import trident1 from "@/assets/gear/trident-1.png";
+import trident2 from "@/assets/gear/trident-2.png";
+import trident3 from "@/assets/gear/trident-3.png";
+import trident4 from "@/assets/gear/trident-4.png";
+import net1 from "@/assets/gear/net-1.png";
+import net2 from "@/assets/gear/net-2.png";
+import net3 from "@/assets/gear/net-3.png";
+import net4 from "@/assets/gear/net-4.png";
+import scutum1 from "@/assets/gear/scutum-1.png";
+import scutum2 from "@/assets/gear/scutum-2.png";
+import scutum3 from "@/assets/gear/scutum-3.png";
+import scutum4 from "@/assets/gear/scutum-4.png";
+import parma1 from "@/assets/gear/parma-1.png";
+import parma2 from "@/assets/gear/parma-2.png";
+import parma3 from "@/assets/gear/parma-3.png";
+import parma4 from "@/assets/gear/parma-4.png";
+
+const GEAR_ART: Record<string, [string, string, string, string]> = {
+  helmet:  [helmet1, helmet2, helmet3, helmet4],
+  cuirass: [cuirass1, cuirass2, cuirass3, cuirass4],
+  greaves: [greaves1, greaves2, greaves3, greaves4],
+  gladius: [gladius1, gladius2, gladius3, gladius4],
+  spear:   [spear1, spear2, spear3, spear4],
+  trident: [trident1, trident2, trident3, trident4],
+  net:     [net1, net2, net3, net4],
+  scutum:  [scutum1, scutum2, scutum3, scutum4],
+  parma:   [parma1, parma2, parma3, parma4],
+};
+
+// Which art family does a slot use? Weapon/off-hand depend on the fighter's class.
+function gearCategory(slotKey: SlotKey, weaponType: string): keyof typeof GEAR_ART | null {
+  if (slotKey === "helmet") return "helmet";
+  if (slotKey === "armor") return "cuirass";
+  if (slotKey === "legs") return "greaves";
+  if (slotKey === "weapon") {
+    if (weaponType === "gladius" || weaponType === "dual") return "gladius";
+    if (weaponType === "spear") return "spear";
+    if (weaponType === "net") return "trident";
+    return null;
+  }
+  if (slotKey === "offhand") {
+    if (weaponType === "gladius") return "scutum";
+    if (weaponType === "spear") return "parma";
+    if (weaponType === "net") return "net";
+    if (weaponType === "dual") return "gladius";
+    return null;
+  }
+  return null;
+}
+
+function gearImage(slotKey: SlotKey, weaponType: string, tier: number): string | null {
+  const cat = gearCategory(slotKey, weaponType);
+  if (!cat) return null;
+  const grade = Math.min(4, Math.max(1, Math.ceil(tier / 2))); // 1-2→1, 3-4→2, 5-6→3, 7-8→4
+  return GEAR_ART[cat][grade - 1] ?? null;
+}
+
 
 export const Route = createFileRoute("/_authenticated/ludus")({
   component: LudusPage,
