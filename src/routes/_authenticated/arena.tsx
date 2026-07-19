@@ -179,6 +179,7 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
           <div className="mx-auto max-w-md text-center">
             <div className="font-display text-lg text-primary">{selectedTier.label}</div>
             <div className="font-serif text-xs italic text-muted-foreground">{selectedTier.flavor}</div>
+            <div className="mt-1 text-xs text-accent">Opponent power {selectedTier.powerMin}–{selectedTier.powerMax}</div>
             <Button
               className="mt-3"
               size="lg"
@@ -208,6 +209,7 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
                 <div className="text-xs text-accent">~{t.reward}d · +{t.rep} fame</div>
               </div>
               <div className="mt-1 font-serif text-xs italic text-muted-foreground">{t.flavor}</div>
+              <div className="mt-1 text-xs text-muted-foreground">Foe power {t.powerMin}–{t.powerMax}</div>
               {lock && <div className="mt-1 text-xs text-destructive">🔒 {lock}</div>}
             </button>
           );
