@@ -206,10 +206,7 @@ function LudusPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <EditMottoButton
-              currentDescription={data.profile?.description ?? ""}
-              ludusId={data.profile?.id ?? ""}
-            />
+            <Link to="/profile"><Button variant="outline" size="sm"><ScrollText className="mr-1 h-4 w-4" /> Public Profile</Button></Link>
             <Link to="/info"><Button variant="outline" size="sm"><BookOpen className="mr-1 h-4 w-4" /> Codex</Button></Link>
             <Link to="/leaderboard"><Button variant="outline" size="sm"><Trophy className="mr-1 h-4 w-4" /> Champions</Button></Link>
             <Link to="/arena"><Button size="sm"><Swords className="mr-1 h-4 w-4" /> Arena</Button></Link>
@@ -217,6 +214,7 @@ function LudusPage() {
           </div>
         </div>
       </header>
+
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <VillageView state={data} recruitCost={recruitCost} recruitPending={recruitMut.isPending} onRecruit={() => recruitMut.mutate()} />
