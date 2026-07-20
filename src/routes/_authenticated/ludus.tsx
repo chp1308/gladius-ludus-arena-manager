@@ -772,7 +772,156 @@ function NetIcon({ className }: SlotIconProps) {
       <path d="M3 12 H21 M12 3 V21 M5 5 L 19 19 M19 5 L 5 19" />
     </svg>
   );
+
+function SaddleIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 14 Q 6 8 12 8 Q 18 8 21 14 Q 18 16 12 16 Q 6 16 3 14 Z" fill="currentColor" opacity="0.15" />
+      <path d="M3 14 Q 6 8 12 8 Q 18 8 21 14" />
+      <path d="M3 14 Q 6 18 12 18 Q 18 18 21 14" />
+      <path d="M10 8 L 10 5 M14 8 L 14 5" />
+      <path d="M8 14 L 16 14" />
+    </svg>
+  );
 }
+
+// Detailed species-specific beast portrait: lion mane, tiger stripes, elephant tusks, rhino horn.
+function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: number }) {
+  const s = size;
+  const bg = "radial-gradient(circle at 30% 25%, hsl(35 30% 22%), hsl(20 35% 8%))";
+  const wrap = "relative overflow-hidden rounded-full border border-accent/60 shadow-inner";
+
+  if (weaponType === "beast_lion") {
+    return (
+      <div className={wrap} style={{ width: s, height: s, background: bg }}>
+        <svg viewBox="0 0 100 100" width={s} height={s}>
+          {/* mane */}
+          <g fill="#7a4a1a">
+            {Array.from({ length: 18 }).map((_, i) => {
+              const a = (i / 18) * Math.PI * 2;
+              return <ellipse key={i} cx={50 + Math.cos(a) * 30} cy={52 + Math.sin(a) * 30} rx="10" ry="7" transform={`rotate(${(a * 180) / Math.PI} ${50 + Math.cos(a) * 30} ${52 + Math.sin(a) * 30})`} />;
+            })}
+          </g>
+          <circle cx="50" cy="52" r="26" fill="#c88a3a" />
+          {/* muzzle */}
+          <ellipse cx="50" cy="64" rx="14" ry="10" fill="#e6b878" />
+          <ellipse cx="50" cy="60" rx="3" ry="2.2" fill="#2a1408" />
+          <path d="M50 62 L 50 70" stroke="#2a1408" strokeWidth="1.2" />
+          <path d="M50 70 Q 44 74 40 72 M50 70 Q 56 74 60 72" stroke="#2a1408" strokeWidth="1.2" fill="none" />
+          {/* eyes */}
+          <ellipse cx="41" cy="50" rx="3" ry="2.2" fill="#fff" />
+          <ellipse cx="59" cy="50" rx="3" ry="2.2" fill="#fff" />
+          <circle cx="41" cy="50" r="1.5" fill="#3a2a10" />
+          <circle cx="59" cy="50" r="1.5" fill="#3a2a10" />
+          {/* ears */}
+          <path d="M28 34 Q 30 24 38 30 Z" fill="#7a4a1a" />
+          <path d="M72 34 Q 70 24 62 30 Z" fill="#7a4a1a" />
+          {/* whiskers */}
+          <path d="M36 66 L 24 64 M36 68 L 24 70 M64 66 L 76 64 M64 68 L 76 70" stroke="#f0d8a0" strokeWidth="0.6" />
+        </svg>
+      </div>
+    );
+  }
+  if (weaponType === "beast_tiger") {
+    return (
+      <div className={wrap} style={{ width: s, height: s, background: bg }}>
+        <svg viewBox="0 0 100 100" width={s} height={s}>
+          <circle cx="50" cy="52" r="30" fill="#e08a2a" />
+          {/* stripes */}
+          <g stroke="#1a0a04" strokeWidth="2.6" strokeLinecap="round" fill="none">
+            <path d="M28 40 Q 34 44 30 52" />
+            <path d="M72 40 Q 66 44 70 52" />
+            <path d="M40 30 L 44 40" />
+            <path d="M60 30 L 56 40" />
+            <path d="M32 60 Q 38 66 34 74" />
+            <path d="M68 60 Q 62 66 66 74" />
+            <path d="M46 76 L 44 82" />
+            <path d="M54 76 L 56 82" />
+          </g>
+          {/* muzzle */}
+          <ellipse cx="50" cy="64" rx="14" ry="10" fill="#f6dcae" />
+          <ellipse cx="50" cy="60" rx="3" ry="2.2" fill="#2a1408" />
+          <path d="M50 62 L 50 70" stroke="#2a1408" strokeWidth="1.2" />
+          <path d="M50 70 Q 44 74 40 72 M50 70 Q 56 74 60 72" stroke="#2a1408" strokeWidth="1.2" fill="none" />
+          {/* fangs */}
+          <path d="M46 72 L 47 76 L 48 72 Z M52 72 L 53 76 L 54 72 Z" fill="#fff" />
+          {/* eyes */}
+          <ellipse cx="41" cy="50" rx="3.2" ry="2.2" fill="#f4d857" />
+          <ellipse cx="59" cy="50" rx="3.2" ry="2.2" fill="#f4d857" />
+          <path d="M41 50 L 41 52 M59 50 L 59 52" stroke="#1a0a04" strokeWidth="1.6" strokeLinecap="round" />
+          {/* ears */}
+          <path d="M28 32 Q 30 22 38 28 L 34 34 Z" fill="#e08a2a" stroke="#1a0a04" strokeWidth="1" />
+          <path d="M72 32 Q 70 22 62 28 L 66 34 Z" fill="#e08a2a" stroke="#1a0a04" strokeWidth="1" />
+        </svg>
+      </div>
+    );
+  }
+  if (weaponType === "beast_elephant") {
+    return (
+      <div className={wrap} style={{ width: s, height: s, background: bg }}>
+        <svg viewBox="0 0 100 100" width={s} height={s}>
+          {/* ears */}
+          <ellipse cx="22" cy="52" rx="14" ry="20" fill="#8a8a92" />
+          <ellipse cx="78" cy="52" rx="14" ry="20" fill="#8a8a92" />
+          <ellipse cx="22" cy="52" rx="10" ry="16" fill="#a5a5b0" />
+          <ellipse cx="78" cy="52" rx="10" ry="16" fill="#a5a5b0" />
+          {/* head */}
+          <ellipse cx="50" cy="46" rx="24" ry="26" fill="#9a9aa2" />
+          {/* forehead ridge */}
+          <path d="M34 36 Q 50 30 66 36" stroke="#6a6a72" strokeWidth="1.4" fill="none" />
+          {/* eyes */}
+          <ellipse cx="40" cy="46" rx="2.4" ry="1.8" fill="#fff" />
+          <ellipse cx="60" cy="46" rx="2.4" ry="1.8" fill="#fff" />
+          <circle cx="40" cy="46" r="1.2" fill="#1a1108" />
+          <circle cx="60" cy="46" r="1.2" fill="#1a1108" />
+          {/* trunk */}
+          <path d="M44 58 Q 40 74 46 86 Q 52 90 56 84 Q 52 78 54 70 Q 56 62 56 58 Z" fill="#9a9aa2" stroke="#6a6a72" strokeWidth="0.8" />
+          <path d="M46 66 L 54 66 M46 72 L 54 72 M48 78 L 54 78" stroke="#6a6a72" strokeWidth="0.6" />
+          {/* tusks */}
+          <path d="M40 68 Q 34 78 32 90 Q 36 88 40 78 Z" fill="#f0e6c8" stroke="#c8b880" strokeWidth="0.6" />
+          <path d="M60 68 Q 66 78 68 90 Q 64 88 60 78 Z" fill="#f0e6c8" stroke="#c8b880" strokeWidth="0.6" />
+        </svg>
+      </div>
+    );
+  }
+  if (weaponType === "beast_rhino") {
+    return (
+      <div className={wrap} style={{ width: s, height: s, background: bg }}>
+        <svg viewBox="0 0 100 100" width={s} height={s}>
+          {/* head */}
+          <ellipse cx="50" cy="50" rx="30" ry="24" fill="#7a7a80" />
+          {/* armor plates */}
+          <path d="M20 50 Q 26 40 34 44" stroke="#4a4a52" strokeWidth="1.2" fill="none" />
+          <path d="M80 50 Q 74 40 66 44" stroke="#4a4a52" strokeWidth="1.2" fill="none" />
+          <path d="M28 62 Q 40 68 50 66 Q 60 68 72 62" stroke="#4a4a52" strokeWidth="1.2" fill="none" />
+          {/* horn (big) */}
+          <path d="M46 44 Q 50 18 54 44 Q 52 46 50 46 Q 48 46 46 44 Z" fill="#e6d8b0" stroke="#8a7a4a" strokeWidth="0.8" />
+          {/* small horn */}
+          <path d="M48 50 Q 50 42 52 50 Z" fill="#e6d8b0" stroke="#8a7a4a" strokeWidth="0.6" />
+          {/* nostrils */}
+          <ellipse cx="44" cy="66" rx="1.8" ry="1.2" fill="#1a1108" />
+          <ellipse cx="56" cy="66" rx="1.8" ry="1.2" fill="#1a1108" />
+          <path d="M40 70 Q 50 74 60 70" stroke="#3a3038" strokeWidth="1" fill="none" />
+          {/* eyes */}
+          <ellipse cx="34" cy="46" rx="2" ry="1.6" fill="#fff" />
+          <ellipse cx="66" cy="46" rx="2" ry="1.6" fill="#fff" />
+          <circle cx="34" cy="46" r="1" fill="#1a1108" />
+          <circle cx="66" cy="46" r="1" fill="#1a1108" />
+          {/* ears */}
+          <ellipse cx="26" cy="30" rx="4" ry="6" fill="#6a6a70" transform="rotate(-20 26 30)" />
+          <ellipse cx="74" cy="30" rx="4" ry="6" fill="#6a6a70" transform="rotate(20 74 30)" />
+        </svg>
+      </div>
+    );
+  }
+  // fallback
+  return (
+    <div className={wrap} style={{ width: s, height: s, background: bg }}>
+      <Cat className="absolute inset-0 m-auto text-accent" style={{ width: s * 0.55, height: s * 0.55 }} />
+    </div>
+  );
+}
+
 
 const SLOTS: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps>; tierField: keyof Gladiator }[] = [
   { key: "helmet",  label: "Helmet",   Icon: HardHat,    tierField: "helmet_tier" as keyof Gladiator },
