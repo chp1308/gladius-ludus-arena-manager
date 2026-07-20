@@ -1025,6 +1025,7 @@ function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: num
           <path d="M28 32 Q 30 22 38 28 L 34 34 Z" fill="#e08a2a" stroke="#1a0a04" strokeWidth="1" />
           <path d="M72 32 Q 70 22 62 28 L 66 34 Z" fill="#e08a2a" stroke="#1a0a04" strokeWidth="1" />
         </svg>
+        {overlay}
       </div>
     );
   }
