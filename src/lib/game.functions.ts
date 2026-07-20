@@ -66,19 +66,23 @@ function generateGladiator(scoutingLevel: number) {
   // Better scouting = better base stats + chance of beast
   const beastChance = Math.min(0.02 + scoutingLevel * 0.03, 0.2);
   if (Math.random() < beastChance) {
-    const isLion = Math.random() < 0.6;
+    // Weighted species roll: lion 40%, tiger 30%, rhino 20%, elephant 10%.
+    const r = Math.random();
+    const species: "lion" | "tiger" | "rhino" | "elephant" =
+      r < 0.40 ? "lion" : r < 0.70 ? "tiger" : r < 0.90 ? "rhino" : "elephant";
+    const profiles = {
+      lion:     { name: "Roaring Lion",   origin: "Numidia",  wt: "beast_lion" as const,     s: rand(9, 14),  a: rand(6, 10),  st: rand(7, 11),  t: rand(1, 3) },
+      tiger:    { name: "Prowling Tiger", origin: "India",    wt: "beast_tiger" as const,    s: rand(8, 12),  a: rand(9, 14),  st: rand(7, 11),  t: rand(1, 3) },
+      rhino:    { name: "Armored Rhino",  origin: "Aethiopia",wt: "beast_rhino" as const,    s: rand(12, 16), a: rand(3, 6),   st: rand(11, 15), t: rand(1, 2) },
+      elephant: { name: "War Elephant",   origin: "Mauretania",wt:"beast_elephant" as const, s: rand(13, 18), a: rand(2, 5),   st: rand(13, 18), t: rand(1, 2) },
+    };
+    const p = profiles[species];
     return {
-      name: isLion ? "Roaring Lion" : "Prowling Tiger",
-      origin: isLion ? "Numidia" : "India",
-      class: "Beast",
-      weapon_type: isLion ? "beast_lion" : "beast_tiger",
-      is_beast: true,
-      strength: isLion ? rand(9, 14) : rand(8, 12),
-      agility: isLion ? rand(6, 10) : rand(9, 14),
-      stamina: rand(7, 11),
-      technique: rand(1, 3),
+      name: p.name, origin: p.origin, class: "Beast", weapon_type: p.wt,
+      is_beast: true, strength: p.s, agility: p.a, stamina: p.st, technique: p.t,
     };
   }
+
   const bonus = Math.floor((scoutingLevel - 1) * 0.8);
   const name = `${pick(PRAENOMEN)}${Math.random() < 0.5 ? " " + pick(COGNOMEN) : ""}`.trim();
   return {
