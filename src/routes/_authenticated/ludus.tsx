@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, honorGladiator,
-  upgradeFacility, upgradeSkill, WEAPON_LABELS,
+  upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, pantryCapacity,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
