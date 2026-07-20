@@ -695,63 +695,161 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
   }
 
   const rng = seedFrom(g.name + "|" + g.origin);
-  const skins = ["#f0c9a5", "#e0b088", "#c48c67", "#a0704f", "#7a4f31", "#5a3620"];
+  const skins = [
+    { base: "#f0c9a5", shade: "#c99a76", light: "#ffe1c2" },
+    { base: "#e0b088", shade: "#a87a55", light: "#f5cfa8" },
+    { base: "#c48c67", shade: "#8a5a3a", light: "#e0aa82" },
+    { base: "#a0704f", shade: "#6a4222", light: "#c08a68" },
+    { base: "#7a4f31", shade: "#4a2810", light: "#9a6a48" },
+    { base: "#5a3620", shade: "#2f1608", light: "#7a4c34" },
+  ];
   const hairs = ["#1a1208", "#2b1a0d", "#3a2416", "#5a3a1a", "#8a5a2a", "#c89a4a", "#e3d5b0", "#7a7a7a"];
   const eyes  = ["#3a2a1a", "#5a3a20", "#3a5a3a", "#2a4a6a", "#4a3a2a"];
-  const skin = skins[Math.floor(rng() * skins.length)];
+  const sk = skins[Math.floor(rng() * skins.length)];
+  const skin = sk.base, skinShade = sk.shade, skinLight = sk.light;
   const hair = hairs[Math.floor(rng() * hairs.length)];
   const eye  = eyes[Math.floor(rng() * eyes.length)];
   const beard = rng() < 0.55;
   const helmet = rng() < 0.25;
   const scar = rng() < 0.3;
-  const noseW = 4 + rng() * 3;
-  const mouthCurve = rng() < 0.7 ? 2 : -1; // mostly stern
+  const stubble = !beard && rng() < 0.5;
+  const mouthCurve = rng() < 0.75 ? 2 : -1; // mostly stern
+  const noseW = 3.5 + rng() * 2.5;
+  const gid = Math.floor(rng() * 1e9).toString(36);
 
   const s = size;
   return (
     <div
-      className="relative overflow-hidden rounded-full border border-primary/50 shadow-inner"
-      style={{ width: s, height: s, background: "radial-gradient(circle at 30% 25%, hsl(35 25% 22%), hsl(20 30% 10%))" }}
+      className="relative overflow-hidden rounded-full border border-primary/50 shadow-[inset_0_0_18px_rgba(0,0,0,0.55)]"
+      style={{ width: s, height: s, background: "radial-gradient(circle at 30% 20%, hsl(35 30% 26%), hsl(20 35% 8%) 75%)" }}
     >
       <svg viewBox="0 0 100 100" width={s} height={s} shapeRendering="geometricPrecision">
+        <defs>
+          <radialGradient id={`sk-${gid}`} cx="45%" cy="35%" r="70%">
+            <stop offset="0%" stopColor={skinLight} />
+            <stop offset="55%" stopColor={skin} />
+            <stop offset="100%" stopColor={skinShade} />
+          </radialGradient>
+          <radialGradient id={`hr-${gid}`} cx="50%" cy="20%" r="80%">
+            <stop offset="0%" stopColor={hair} stopOpacity="1" />
+            <stop offset="100%" stopColor="#000" stopOpacity="0.6" />
+          </radialGradient>
+          <linearGradient id={`tn-${gid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4a3524" />
+            <stop offset="100%" stopColor="#1e140b" />
+          </linearGradient>
+          <radialGradient id={`ir-${gid}`} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={eye} stopOpacity="1" />
+            <stop offset="100%" stopColor="#000" stopOpacity="0.8" />
+          </radialGradient>
+        </defs>
+
         {/* shoulders / tunic */}
-        <path d="M5 100 Q 50 65 95 100 Z" fill="#3b2a1c" />
-        <path d="M20 92 Q 50 78 80 92 L 80 100 L 20 100 Z" fill="#8b1a1a" opacity="0.7" />
-        {/* neck */}
-        <rect x="42" y="60" width="16" height="14" fill={skin} />
+        <path d="M2 100 Q 50 62 98 100 Z" fill={`url(#tn-${gid})`} />
+        <path d="M18 94 Q 50 76 82 94 L 82 100 L 18 100 Z" fill="#8b1a1a" opacity="0.75" />
+        <path d="M18 94 Q 50 76 82 94" fill="none" stroke="#c9a24a" strokeWidth="0.8" opacity="0.7" />
+
+        {/* neck with shading */}
+        <path d="M40 58 L 40 76 Q 50 82 60 76 L 60 58 Z" fill={skin} />
+        <path d="M40 74 Q 50 80 60 74 L 60 78 Q 50 84 40 78 Z" fill={skinShade} opacity="0.7" />
+
         {/* head */}
-        <ellipse cx="50" cy="45" rx="22" ry="26" fill={skin} />
-        {/* jaw shadow */}
-        <path d="M28 48 Q 50 78 72 48" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
+        <ellipse cx="50" cy="45" rx="22" ry="27" fill={`url(#sk-${gid})`} />
+        {/* jawline shadow */}
+        <path d="M28 50 Q 50 78 72 50" fill="none" stroke={skinShade} strokeWidth="1.2" opacity="0.55" />
+        {/* cheek highlights */}
+        <ellipse cx="38" cy="54" rx="4" ry="2.5" fill={skinLight} opacity="0.35" />
+        <ellipse cx="62" cy="54" rx="4" ry="2.5" fill={skinLight} opacity="0.35" />
+        {/* temple shadow */}
+        <path d="M28 40 Q 32 48 30 56" stroke={skinShade} strokeWidth="1" fill="none" opacity="0.4" />
+        <path d="M72 40 Q 68 48 70 56" stroke={skinShade} strokeWidth="1" fill="none" opacity="0.4" />
+
         {/* hair */}
         {!helmet && (
-          <path d={`M28 38 Q 30 20 50 18 Q 70 20 72 38 Q 68 30 50 28 Q 32 30 28 38 Z`} fill={hair} />
+          <>
+            <path d={`M27 40 Q 26 18 50 15 Q 74 18 73 40 Q 68 30 60 28 Q 50 26 40 28 Q 32 30 27 40 Z`} fill={`url(#hr-${gid})`} />
+            {/* strand details */}
+            <path d="M32 34 Q 40 26 50 24 Q 60 26 68 34" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.4" />
+            <path d="M34 30 L 38 24 M44 26 L 46 20 M54 26 L 56 20 M62 30 L 66 24" stroke={hair} strokeWidth="0.6" opacity="0.7" />
+          </>
         )}
         {helmet && (
           <>
-            <path d="M26 42 Q 26 18 50 16 Q 74 18 74 42 L 72 44 Q 50 32 28 44 Z" fill="#8a7a4a" stroke="#5a4a20" strokeWidth="1" />
-            <rect x="48" y="14" width="4" height="10" fill="#b22222" />
-            <path d="M46 12 Q 50 4 54 12 Q 60 8 58 18 Q 50 14 42 18 Q 40 8 46 12 Z" fill="#b22222" />
+            <path d="M24 44 Q 24 16 50 14 Q 76 16 76 44 L 74 46 Q 50 32 26 46 Z" fill="#9a8a52" stroke="#3a2a10" strokeWidth="1" />
+            <path d="M24 44 Q 24 16 50 14 Q 76 16 76 44" fill="none" stroke="#e6d69a" strokeWidth="0.6" opacity="0.7" />
+            {/* rivets */}
+            <circle cx="30" cy="38" r="1" fill="#3a2a10" />
+            <circle cx="70" cy="38" r="1" fill="#3a2a10" />
+            <circle cx="50" cy="18" r="1" fill="#3a2a10" />
+            {/* crest */}
+            <path d="M40 12 Q 50 -2 60 12 Q 66 6 62 20 Q 50 12 38 20 Q 34 6 40 12 Z" fill="#b22222" />
+            <path d="M42 14 Q 50 6 58 14" stroke="#e04a4a" strokeWidth="0.6" fill="none" />
           </>
         )}
-        {/* eyes */}
-        <ellipse cx="41" cy="46" rx="2.6" ry="1.8" fill="#fff" />
-        <ellipse cx="59" cy="46" rx="2.6" ry="1.8" fill="#fff" />
-        <circle cx="41" cy="46" r="1.3" fill={eye} />
-        <circle cx="59" cy="46" r="1.3" fill={eye} />
+
+        {/* eye sockets */}
+        <ellipse cx="41" cy="47" rx="4.5" ry="2.6" fill={skinShade} opacity="0.5" />
+        <ellipse cx="59" cy="47" rx="4.5" ry="2.6" fill={skinShade} opacity="0.5" />
+        {/* eye whites */}
+        <ellipse cx="41" cy="47" rx="3" ry="1.9" fill="#f4ece0" />
+        <ellipse cx="59" cy="47" rx="3" ry="1.9" fill="#f4ece0" />
+        {/* iris */}
+        <circle cx="41" cy="47" r="1.6" fill={`url(#ir-${gid})`} />
+        <circle cx="59" cy="47" r="1.6" fill={`url(#ir-${gid})`} />
+        {/* pupil + highlight */}
+        <circle cx="41" cy="47" r="0.7" fill="#000" />
+        <circle cx="59" cy="47" r="0.7" fill="#000" />
+        <circle cx="41.7" cy="46.3" r="0.4" fill="#fff" />
+        <circle cx="59.7" cy="46.3" r="0.4" fill="#fff" />
+        {/* upper eyelid shadow */}
+        <path d="M38 45.5 Q 41 44 44 45.5" stroke="#000" strokeWidth="0.6" fill="none" opacity="0.5" />
+        <path d="M56 45.5 Q 59 44 62 45.5" stroke="#000" strokeWidth="0.6" fill="none" opacity="0.5" />
+
         {/* brows */}
-        <path d="M37 42 L 45 41" stroke={hair} strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M55 41 L 63 42" stroke={hair} strokeWidth="1.6" strokeLinecap="round" />
-        {/* nose */}
-        <path d={`M50 48 Q ${50 - noseW / 2} 54 50 57 Q ${50 + noseW / 2} 54 50 48`} fill="rgba(0,0,0,0.15)" />
+        <path d="M36 42 Q 41 40 46 42" stroke={hair} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+        <path d="M54 42 Q 59 40 64 42" stroke={hair} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+
+        {/* nose with shading */}
+        <path d={`M50 48 Q ${50 - noseW / 2} 55 48 59 Q 50 60 52 59 Q ${50 + noseW / 2} 55 50 48`} fill={skinShade} opacity="0.35" />
+        <path d="M47.5 59 Q 50 61 52.5 59" stroke={skinShade} strokeWidth="0.6" fill="none" opacity="0.7" />
+        <ellipse cx="48.5" cy="59.5" rx="0.6" ry="0.4" fill={skinShade} opacity="0.7" />
+        <ellipse cx="51.5" cy="59.5" rx="0.6" ry="0.4" fill={skinShade} opacity="0.7" />
+        {/* nose bridge highlight */}
+        <path d="M50 48 L 50 57" stroke={skinLight} strokeWidth="0.5" opacity="0.5" />
+
         {/* mouth */}
-        <path d={`M44 62 Q 50 ${62 + mouthCurve} 56 62`} stroke="#3a1a1a" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+        <path d={`M43 64 Q 50 ${64 + mouthCurve} 57 64`} stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+        <path d={`M44 65.5 Q 50 ${66.5 + mouthCurve * 0.4} 56 65.5`} stroke="#7a2418" strokeWidth="0.6" fill="none" opacity="0.6" />
+
+        {/* stubble dots */}
+        {stubble && (
+          <g fill={hair} opacity="0.35">
+            {Array.from({ length: 36 }).map((_, i) => {
+              const x = 34 + (i % 9) * 3.6 + (Math.floor(i / 9) % 2 ? 1.5 : 0);
+              const y = 60 + Math.floor(i / 9) * 2.2;
+              return <circle key={i} cx={x} cy={y} r="0.35" />;
+            })}
+          </g>
+        )}
+
         {/* beard */}
         {beard && (
-          <path d="M32 55 Q 34 72 50 74 Q 66 72 68 55 Q 60 66 50 66 Q 40 66 32 55 Z" fill={hair} opacity="0.85" />
+          <>
+            <path d="M30 54 Q 32 74 50 76 Q 68 74 70 54 Q 60 68 50 68 Q 40 68 30 54 Z" fill={hair} opacity="0.92" />
+            <path d="M34 58 Q 40 72 50 72 Q 60 72 66 58" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.3" />
+          </>
         )}
+
         {/* scar */}
-        {scar && <path d="M40 38 L 44 52" stroke="#6a2a1a" strokeWidth="0.8" />}
+        {scar && (
+          <>
+            <path d="M40 36 L 44 54" stroke="#6a2a1a" strokeWidth="0.9" />
+            <path d="M40.4 36.5 L 44.4 54.5" stroke="#c98a72" strokeWidth="0.4" opacity="0.8" />
+          </>
+        )}
+
+        {/* soft vignette */}
+        <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="6" />
       </svg>
     </div>
   );
