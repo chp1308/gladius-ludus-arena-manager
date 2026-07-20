@@ -48,15 +48,23 @@ function LeaderboardPage() {
           {isLoading && <p className="text-sm text-muted-foreground">Consulting the heralds…</p>}
           <div className="space-y-1">
             {(data?.ludi ?? []).map((l) => (
-              <div key={l.id} className="flex items-center justify-between border-b border-border/40 py-2 text-sm">
+              <Link
+                key={l.id}
+                to="/ludus/$id"
+                params={{ id: l.id }}
+                className="flex items-center justify-between border-b border-border/40 py-2 text-sm transition hover:bg-secondary/40"
+              >
                 <div className="flex items-center gap-3">
                   <span className={`w-6 text-right font-mono ${l.rank <= 3 ? "text-primary font-bold" : "text-muted-foreground"}`}>
                     {l.rank}
                   </span>
-                  <span className="font-serif text-foreground">{l.ludus_name}</span>
+                  <span className="font-serif text-foreground underline-offset-4 hover:underline">{l.ludus_name}</span>
+                  {l.best_rank && l.best_rank < l.rank && (
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">best #{l.best_rank}</span>
+                  )}
                 </div>
                 <Badge variant="secondary" className="font-mono">{l.reputation} fame</Badge>
-              </div>
+              </Link>
             ))}
             {!isLoading && (data?.ludi ?? []).length === 0 && (
               <p className="text-sm italic text-muted-foreground">No ludi have earned fame yet.</p>
