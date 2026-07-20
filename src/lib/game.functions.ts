@@ -118,7 +118,7 @@ export const STAT_WEIGHTS: Record<string, { strength: number; agility: number; s
 
 const DEFAULT_WEIGHTS = { strength: 3, agility: 3, stamina: 3, technique: 3 };
 
-function gladiatorPower(
+export function gladiatorPower(
   g: {
     strength: number; agility: number; stamina: number; technique: number;
     level: number; weapon_tier: number; armor_tier: number;
