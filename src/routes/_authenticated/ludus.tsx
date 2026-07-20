@@ -495,7 +495,7 @@ function ArmoryTierTable({ armoryLevel }: { armoryLevel: number }) {
 function FacilityCard({
   facility, label, desc, Icon, level, denarii,
 }: {
-  facility: "training" | "scouting" | "medicus" | "armory";
+  facility: "training" | "scouting" | "medicus" | "armory" | "pantry";
   label: string; desc: string;
   Icon: React.ComponentType<{ className?: string }>;
   level: number; denarii: number;
