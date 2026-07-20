@@ -990,6 +990,7 @@ function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: num
           {/* whiskers */}
           <path d="M36 66 L 24 64 M36 68 L 24 70 M64 66 L 76 64 M64 68 L 76 70" stroke="#f0d8a0" strokeWidth="0.6" />
         </svg>
+        {overlay}
       </div>
     );
   }
