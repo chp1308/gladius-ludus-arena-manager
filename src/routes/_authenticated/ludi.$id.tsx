@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getPublicLudus, WEAPON_LABELS } from "@/lib/game.functions";
 
-export const Route = createFileRoute("/_authenticated/ludus/$id")({
+export const Route = createFileRoute("/_authenticated/ludi/$id")({
   head: () => ({
     meta: [
       { title: "Visit Ludus — Gladius Ludus" },

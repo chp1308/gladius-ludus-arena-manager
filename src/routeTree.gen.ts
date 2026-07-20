@@ -17,6 +17,7 @@ import { Route as AuthenticatedLudusRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedLeaderboardRouteImport } from './routes/_authenticated/leaderboard'
 import { Route as AuthenticatedInfoRouteImport } from './routes/_authenticated/info'
 import { Route as AuthenticatedArenaRouteImport } from './routes/_authenticated/arena'
+import { Route as AuthenticatedLudusIdRouteImport } from './routes/_authenticated/ludus.$id'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -58,6 +59,11 @@ const AuthenticatedArenaRoute = AuthenticatedArenaRouteImport.update({
   path: '/arena',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedLudusIdRoute = AuthenticatedLudusIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedLudusRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -66,7 +72,8 @@ export interface FileRoutesByFullPath {
   '/arena': typeof AuthenticatedArenaRoute
   '/info': typeof AuthenticatedInfoRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
-  '/ludus': typeof AuthenticatedLudusRoute
+  '/ludus': typeof AuthenticatedLudusRouteWithChildren
+  '/ludus/$id': typeof AuthenticatedLudusIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -75,7 +82,8 @@ export interface FileRoutesByTo {
   '/arena': typeof AuthenticatedArenaRoute
   '/info': typeof AuthenticatedInfoRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
-  '/ludus': typeof AuthenticatedLudusRoute
+  '/ludus': typeof AuthenticatedLudusRouteWithChildren
+  '/ludus/$id': typeof AuthenticatedLudusIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -86,7 +94,8 @@ export interface FileRoutesById {
   '/_authenticated/arena': typeof AuthenticatedArenaRoute
   '/_authenticated/info': typeof AuthenticatedInfoRoute
   '/_authenticated/leaderboard': typeof AuthenticatedLeaderboardRoute
-  '/_authenticated/ludus': typeof AuthenticatedLudusRoute
+  '/_authenticated/ludus': typeof AuthenticatedLudusRouteWithChildren
+  '/_authenticated/ludus/$id': typeof AuthenticatedLudusIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/info'
     | '/leaderboard'
     | '/ludus'
+    | '/ludus/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/info'
     | '/leaderboard'
     | '/ludus'
+    | '/ludus/$id'
   id:
     | '__root__'
     | '/'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/_authenticated/info'
     | '/_authenticated/leaderboard'
     | '/_authenticated/ludus'
+    | '/_authenticated/ludus/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -184,21 +196,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedArenaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/ludus/$id': {
+      id: '/_authenticated/ludus/$id'
+      path: '/$id'
+      fullPath: '/ludus/$id'
+      preLoaderRoute: typeof AuthenticatedLudusIdRouteImport
+      parentRoute: typeof AuthenticatedLudusRoute
+    }
   }
 }
+
+interface AuthenticatedLudusRouteChildren {
+  AuthenticatedLudusIdRoute: typeof AuthenticatedLudusIdRoute
+}
+
+const AuthenticatedLudusRouteChildren: AuthenticatedLudusRouteChildren = {
+  AuthenticatedLudusIdRoute: AuthenticatedLudusIdRoute,
+}
+
+const AuthenticatedLudusRouteWithChildren =
+  AuthenticatedLudusRoute._addFileChildren(AuthenticatedLudusRouteChildren)
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedArenaRoute: typeof AuthenticatedArenaRoute
   AuthenticatedInfoRoute: typeof AuthenticatedInfoRoute
   AuthenticatedLeaderboardRoute: typeof AuthenticatedLeaderboardRoute
-  AuthenticatedLudusRoute: typeof AuthenticatedLudusRoute
+  AuthenticatedLudusRoute: typeof AuthenticatedLudusRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedArenaRoute: AuthenticatedArenaRoute,
   AuthenticatedInfoRoute: AuthenticatedInfoRoute,
   AuthenticatedLeaderboardRoute: AuthenticatedLeaderboardRoute,
-  AuthenticatedLudusRoute: AuthenticatedLudusRoute,
+  AuthenticatedLudusRoute: AuthenticatedLudusRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =
