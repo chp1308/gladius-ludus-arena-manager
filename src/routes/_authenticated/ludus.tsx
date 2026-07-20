@@ -365,20 +365,31 @@ function BuildingPanel({
           </Card>
         )}
 
-        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory") && (() => {
+        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory" || buildingKey === "pantry") && (() => {
           const f = FACILITIES.find(x => x.key === buildingKey)!;
+          const level = (state.profile as unknown as Record<string, number>)?.[`${f.key}_level`] ?? 1;
           return (
             <FacilityCard
               facility={f.key}
               label={f.label}
               desc={f.desc}
               Icon={f.icon}
-              level={state.profile?.[`${f.key}_level` as `training_level`] ?? 1}
+              level={level}
               denarii={denarii}
             />
-
           );
         })()}
+
+        {buildingKey === "pantry" && (
+          <Card className="inscribed ornate-border">
+            <CardContent className="pt-6">
+              <p className="mb-3 font-serif text-sm italic text-muted-foreground">
+                Your pantry holds enough grain, oil, and salted meat to feed a growing familia. Every rank adds room for three more gladiators and one more beast.
+              </p>
+              <PantryTable pantryLevel={(state.profile as unknown as { pantry_level?: number })?.pantry_level ?? 1} />
+            </CardContent>
+          </Card>
+        )}
 
         {buildingKey === "armory" && (
           <Card className="inscribed ornate-border">
