@@ -1001,15 +1001,68 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
       <div className="grid gap-6 md:grid-cols-[260px_1fr]">
         {/* Paperdoll */}
         <div className="ornate-border rounded-lg bg-gradient-to-b from-secondary/40 to-background/60 p-4">
+          {g.is_beast ? (
+            <>
+              <div className="grid grid-cols-3 items-center justify-items-center gap-3">
+                {/* row 1: head armor */}
+                <div />
+                <SlotButton
+                  slot={{ key: "helmet", label: "Head Armor", Icon: HardHat }}
+                  tier={getTier("helmet_tier")}
+                  disabled={upgradeMut.isPending}
+                  onClick={() => upgradeMut.mutate("helmet")}
+                  cost={gearCost("helmet", getTier("helmet_tier"), armoryLevel)}
+                  armoryLevel={armoryLevel}
+                  denarii={denarii}
+                />
+                <div />
+                {/* row 2: body · portrait · saddle */}
+                <SlotButton
+                  slot={{ key: "armor", label: "Body Armor", Icon: Shield }}
+                  tier={getTier("armor_tier")}
+                  disabled={upgradeMut.isPending}
+                  onClick={() => upgradeMut.mutate("armor")}
+                  cost={gearCost("armor", getTier("armor_tier"), armoryLevel)}
+                  armoryLevel={armoryLevel}
+                  denarii={denarii}
+                />
+                <FaceAvatar g={g} size={110} />
+                <SlotButton
+                  slot={{ key: "offhand", label: "Saddle", Icon: SaddleIcon }}
+                  tier={getTier("offhand_tier")}
+                  disabled={upgradeMut.isPending}
+                  onClick={() => upgradeMut.mutate("offhand")}
+                  cost={gearCost("offhand", getTier("offhand_tier"), armoryLevel)}
+                  armoryLevel={armoryLevel}
+                  denarii={denarii}
+                />
+                {/* row 3: leg armor */}
+                <div />
+                <SlotButton
+                  slot={{ key: "legs", label: "Leg Armor", Icon: Footprints }}
+                  tier={getTier("legs_tier")}
+                  disabled={upgradeMut.isPending}
+                  onClick={() => upgradeMut.mutate("legs")}
+                  cost={gearCost("legs", getTier("legs_tier"), armoryLevel)}
+                  armoryLevel={armoryLevel}
+                  denarii={denarii}
+                />
+                <div />
+              </div>
+              <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">
+                Barded for the arena — head, flanks, legs, and saddle.
+              </p>
+            </>
+          ) : (
           <div className="grid grid-cols-3 items-center justify-items-center gap-3">
             {/* row 1 */}
             <div />
             <SlotButton
               slot={SLOTS[0]}
               tier={getTier(SLOTS[0].tierField)}
-              disabled={g.is_beast || upgradeMut.isPending}
+              disabled={upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("helmet")}
-              cost={g.is_beast ? undefined : gearCost("helmet", getTier(SLOTS[0].tierField), armoryLevel)}
+              cost={gearCost("helmet", getTier(SLOTS[0].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
               denarii={denarii}
               weaponType={g.weapon_type}
@@ -1028,9 +1081,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   <SlotButton
                     slot={weaponSlot}
                     tier={getTier(SLOTS[3].tierField)}
-                    disabled={g.is_beast || upgradeMut.isPending}
+                    disabled={upgradeMut.isPending}
                     onClick={() => upgradeMut.mutate("weapon")}
-                    cost={g.is_beast ? undefined : gearCost("weapon", getTier(SLOTS[3].tierField), armoryLevel)}
+                    cost={gearCost("weapon", getTier(SLOTS[3].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
                     denarii={denarii}
                     weaponType={g.weapon_type}
@@ -1040,9 +1093,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                     <SlotButton
                       slot={offhandSlot}
                       tier={getTier(SLOTS[4].tierField)}
-                      disabled={g.is_beast || upgradeMut.isPending}
+                      disabled={upgradeMut.isPending}
                       onClick={() => upgradeMut.mutate("offhand")}
-                      cost={g.is_beast ? undefined : gearCost("offhand", getTier(SLOTS[4].tierField), armoryLevel)}
+                      cost={gearCost("offhand", getTier(SLOTS[4].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
                       denarii={denarii}
                       weaponType={g.weapon_type}
@@ -1061,9 +1114,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
             <SlotButton
               slot={SLOTS[1]}
               tier={getTier(SLOTS[1].tierField)}
-              disabled={g.is_beast || upgradeMut.isPending}
+              disabled={upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("armor")}
-              cost={g.is_beast ? undefined : gearCost("armor", getTier(SLOTS[1].tierField), armoryLevel)}
+              cost={gearCost("armor", getTier(SLOTS[1].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
               denarii={denarii}
               weaponType={g.weapon_type}
@@ -1075,19 +1128,18 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
             <SlotButton
               slot={SLOTS[2]}
               tier={getTier(SLOTS[2].tierField)}
-              disabled={g.is_beast || upgradeMut.isPending}
+              disabled={upgradeMut.isPending}
               onClick={() => upgradeMut.mutate("legs")}
-              cost={g.is_beast ? undefined : gearCost("legs", getTier(SLOTS[2].tierField), armoryLevel)}
+              cost={gearCost("legs", getTier(SLOTS[2].tierField), armoryLevel)}
                     armoryLevel={armoryLevel}
               denarii={denarii}
               weaponType={g.weapon_type}
             />
             <div />
           </div>
-          {g.is_beast && (
-            <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">Beasts fight with tooth and claw — no gear.</p>
           )}
         </div>
+
 
         {/* Right side: vitals, stats, actions */}
         <div className="space-y-4">
