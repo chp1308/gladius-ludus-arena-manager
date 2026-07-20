@@ -269,6 +269,17 @@ export const recruitGladiator = createServerFn({ method: "POST" })
     if (profile.denarii < COST) throw new Error(`Scouting fee: ${COST} denarii`);
 
     const g = generateGladiator(profile.scouting_level);
+
+    // Pantry capacity gate — count living roster by type.
+    const { data: roster } = await supabase
+      .from("gladiators").select("is_beast,status").eq("owner_id", userId);
+    const living = (roster ?? []).filter((r) => r.status !== "dead");
+    const humans = living.filter((r) => !r.is_beast).length;
+    const beasts = living.filter((r) => r.is_beast).length;
+    const cap = pantryCapacity((profile as unknown as { pantry_level: number }).pantry_level ?? 1);
+    if (g.is_beast && beasts >= cap.beasts) throw new Error(`Your pantry cannot feed another beast (${beasts}/${cap.beasts}). Upgrade the Pantry.`);
+    if (!g.is_beast && humans >= cap.humans) throw new Error(`Your pantry is full (${humans}/${cap.humans} gladiators). Upgrade the Pantry.`);
+
     const { error: insertErr } = await supabase.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
     if (insertErr) throw new Error(insertErr.message);
     const { error: updErr } = await supabase.from("profiles").update({ denarii: profile.denarii - COST }).eq("id", userId);
