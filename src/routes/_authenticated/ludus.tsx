@@ -772,6 +772,9 @@ function NetIcon({ className }: SlotIconProps) {
       <path d="M3 12 H21 M12 3 V21 M5 5 L 19 19 M19 5 L 5 19" />
     </svg>
   );
+}
+
+
 
 function SaddleIcon({ className }: SlotIconProps) {
   return (
