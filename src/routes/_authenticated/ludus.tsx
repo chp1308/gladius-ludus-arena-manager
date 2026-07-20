@@ -1169,8 +1169,11 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 
 
 
-        {/* Right side: vitals, stats, actions */}
+        {/* Right side: portrait, vitals, stats, actions */}
         <div className="space-y-4">
+          <div className="flex justify-center">
+            <FaceAvatar g={g} size={120} />
+          </div>
           <div>
             <div className="mb-1 flex items-center justify-between text-xs">
               <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> Health</span>
