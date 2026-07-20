@@ -1085,6 +1085,7 @@ function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: num
           <ellipse cx="26" cy="30" rx="4" ry="6" fill="#6a6a70" transform="rotate(-20 26 30)" />
           <ellipse cx="74" cy="30" rx="4" ry="6" fill="#6a6a70" transform="rotate(20 74 30)" />
         </svg>
+        {overlay}
       </div>
     );
   }
