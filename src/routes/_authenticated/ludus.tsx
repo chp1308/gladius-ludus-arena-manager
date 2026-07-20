@@ -787,6 +787,41 @@ function SaddleIcon({ className }: SlotIconProps) {
     </svg>
   );
 }
+// Beast head armor — chamfron plate with brow spike.
+function BeastHeadIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 6 Q 12 3 17 6 L 18 12 Q 18 18 12 21 Q 6 18 6 12 Z" fill="currentColor" opacity="0.15" />
+      <path d="M7 6 Q 12 3 17 6 L 18 12 Q 18 18 12 21 Q 6 18 6 12 Z" />
+      <path d="M12 3 L 12 0.5" />
+      <circle cx="9.5" cy="12" r="0.9" fill="currentColor" />
+      <circle cx="14.5" cy="12" r="0.9" fill="currentColor" />
+      <path d="M10 17 L 14 17" />
+    </svg>
+  );
+}
+// Beast body armor — barding with straps.
+function BeastBardingIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" fill="currentColor" opacity="0.15" />
+      <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" />
+      <path d="M8 6 L 8 20 M16 6 L 16 20" />
+      <path d="M4 10 L 20 10" />
+    </svg>
+  );
+}
+// Beast leg armor — greave rings around a hoofed leg.
+function BeastLegIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3 L 15 3 L 14 20 L 10 20 Z" fill="currentColor" opacity="0.15" />
+      <path d="M9 3 L 15 3 L 14 20 L 10 20 Z" />
+      <path d="M9 8 L 15 8 M9 13 L 15 13" />
+      <path d="M8 20 L 16 20 L 15 22 L 9 22 Z" fill="currentColor" opacity="0.35" />
+    </svg>
+  );
+}
 
 // Detailed species-specific beast portrait: lion mane, tiger stripes, elephant tusks, rhino horn.
 function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: number }) {
@@ -1003,11 +1038,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
         <div className="ornate-border rounded-lg bg-gradient-to-b from-secondary/40 to-background/60 p-4">
           {g.is_beast ? (
             <>
-              <div className="grid grid-cols-3 items-center justify-items-center gap-3">
-                {/* row 1: head armor */}
-                <div />
+              <div className="grid grid-cols-2 items-center justify-items-center gap-3">
                 <SlotButton
-                  slot={{ key: "helmet", label: "Head Armor", Icon: HardHat }}
+                  slot={{ key: "helmet", label: "Head Armor", Icon: BeastHeadIcon }}
                   tier={getTier("helmet_tier")}
                   disabled={upgradeMut.isPending}
                   onClick={() => upgradeMut.mutate("helmet")}
@@ -1015,10 +1048,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   armoryLevel={armoryLevel}
                   denarii={denarii}
                 />
-                <div />
-                {/* row 2: body · portrait · saddle */}
                 <SlotButton
-                  slot={{ key: "armor", label: "Body Armor", Icon: Shield }}
+                  slot={{ key: "armor", label: "Body Armor", Icon: BeastBardingIcon }}
                   tier={getTier("armor_tier")}
                   disabled={upgradeMut.isPending}
                   onClick={() => upgradeMut.mutate("armor")}
@@ -1026,7 +1057,15 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   armoryLevel={armoryLevel}
                   denarii={denarii}
                 />
-                <FaceAvatar g={g} size={110} />
+                <SlotButton
+                  slot={{ key: "legs", label: "Leg Armor", Icon: BeastLegIcon }}
+                  tier={getTier("legs_tier")}
+                  disabled={upgradeMut.isPending}
+                  onClick={() => upgradeMut.mutate("legs")}
+                  cost={gearCost("legs", getTier("legs_tier"), armoryLevel)}
+                  armoryLevel={armoryLevel}
+                  denarii={denarii}
+                />
                 <SlotButton
                   slot={{ key: "offhand", label: "Saddle", Icon: SaddleIcon }}
                   tier={getTier("offhand_tier")}
@@ -1036,18 +1075,6 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   armoryLevel={armoryLevel}
                   denarii={denarii}
                 />
-                {/* row 3: leg armor */}
-                <div />
-                <SlotButton
-                  slot={{ key: "legs", label: "Leg Armor", Icon: Footprints }}
-                  tier={getTier("legs_tier")}
-                  disabled={upgradeMut.isPending}
-                  onClick={() => upgradeMut.mutate("legs")}
-                  cost={gearCost("legs", getTier("legs_tier"), armoryLevel)}
-                  armoryLevel={armoryLevel}
-                  denarii={denarii}
-                />
-                <div />
               </div>
               <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">
                 Barded for the arena — head, flanks, legs, and saddle.
@@ -1069,7 +1096,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
             />
             <div />
 
-            {/* row 2: weapon (main-hand, viewer left = character's right) · face · offhand */}
+            {/* row 2: weapon (viewer left = character's right) · off-hand */}
             {(() => {
               const lo = loadoutFor(g.weapon_type);
               const weaponSlot = { ...SLOTS[3], label: lo.weapon.label, Icon: lo.weapon.Icon };
@@ -1088,7 +1115,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                     denarii={denarii}
                     weaponType={g.weapon_type}
                   />
-                  <FaceAvatar g={g} size={110} />
+                  <div />
                   {offhandSlot ? (
                     <SlotButton
                       slot={offhandSlot}
@@ -1141,8 +1168,12 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
         </div>
 
 
-        {/* Right side: vitals, stats, actions */}
+
+        {/* Right side: portrait, vitals, stats, actions */}
         <div className="space-y-4">
+          <div className="flex justify-center">
+            <FaceAvatar g={g} size={120} />
+          </div>
           <div>
             <div className="mb-1 flex items-center justify-between text-xs">
               <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> Health</span>
