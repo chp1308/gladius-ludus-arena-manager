@@ -238,8 +238,9 @@ export function pantryCapacity(pantryLevel: number) {
 export const upgradeSkill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
-    weaponType: z.enum(["gladius", "spear", "net", "dual", "beast_lion", "beast_tiger", "defense"]),
+    weaponType: z.enum(["gladius", "spear", "net", "dual", "beast_lion", "beast_tiger", "beast_elephant", "beast_rhino", "defense"]),
   }).parse(input))
+
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: profile } = await supabase.from("profiles").select("denarii").eq("id", userId).maybeSingle();
