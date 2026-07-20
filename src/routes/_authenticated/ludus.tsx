@@ -206,6 +206,10 @@ function LudusPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <EditMottoButton
+              currentDescription={data.profile?.description ?? ""}
+              ludusId={data.profile?.id ?? ""}
+            />
             <Link to="/info"><Button variant="outline" size="sm"><BookOpen className="mr-1 h-4 w-4" /> Codex</Button></Link>
             <Link to="/leaderboard"><Button variant="outline" size="sm"><Trophy className="mr-1 h-4 w-4" /> Champions</Button></Link>
             <Link to="/arena"><Button size="sm"><Swords className="mr-1 h-4 w-4" /> Arena</Button></Link>
