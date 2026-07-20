@@ -352,7 +352,7 @@ export const upgradeEquipment = createServerFn({ method: "POST" })
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("Gladiator has fallen");
-    if (g.is_beast) throw new Error("Beasts do not wear gear");
+    if (g.is_beast && data.slot === "weapon") throw new Error("Beasts have no weapon slot");
 
     const tierField = `${data.slot}_tier` as
       "weapon_tier" | "armor_tier" | "helmet_tier" | "legs_tier" | "offhand_tier";
