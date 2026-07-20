@@ -1272,11 +1272,11 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 }
 
 function SlotButton({
-  slot, tier, disabled, onClick, cost, denarii, armoryLevel, weaponType,
+  slot, tier, disabled, onClick, cost, denarii, armoryLevel, weaponType, isBeast,
 }: {
   slot: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps> };
   tier: number; disabled: boolean; onClick: () => void; cost?: number; denarii?: number; armoryLevel?: number;
-  weaponType?: string;
+  weaponType?: string; isBeast?: boolean;
 }) {
   const atMax = tier >= MAX_GEAR_TIER;
   const nextTier = tier + 1;
@@ -1285,7 +1285,7 @@ function SlotButton({
   const unaffordable = cost !== undefined && (denarii ?? 0) < cost;
   const { Icon, label } = slot;
   const emptyStars = Math.max(0, MAX_GEAR_TIER - tier);
-  const img = weaponType ? gearImage(slot.key, weaponType, tier) : null;
+  const img = isBeast ? gearImage(slot.key, weaponType ?? "", tier, true) : (weaponType ? gearImage(slot.key, weaponType, tier) : null);
   const title = atMax
     ? `${label} — mastercraft (VIII)`
     : forgeLocked
