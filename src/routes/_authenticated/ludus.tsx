@@ -66,6 +66,22 @@ import parma1 from "@/assets/gear/parma-1.png";
 import parma2 from "@/assets/gear/parma-2.png";
 import parma3 from "@/assets/gear/parma-3.png";
 import parma4 from "@/assets/gear/parma-4.png";
+import beastHead1 from "@/assets/gear/beast-head-1.png";
+import beastHead2 from "@/assets/gear/beast-head-2.png";
+import beastHead3 from "@/assets/gear/beast-head-3.png";
+import beastHead4 from "@/assets/gear/beast-head-4.png";
+import beastBody1 from "@/assets/gear/beast-body-1.png";
+import beastBody2 from "@/assets/gear/beast-body-2.png";
+import beastBody3 from "@/assets/gear/beast-body-3.png";
+import beastBody4 from "@/assets/gear/beast-body-4.png";
+import beastLegs1 from "@/assets/gear/beast-legs-1.png";
+import beastLegs2 from "@/assets/gear/beast-legs-2.png";
+import beastLegs3 from "@/assets/gear/beast-legs-3.png";
+import beastLegs4 from "@/assets/gear/beast-legs-4.png";
+import beastSaddle1 from "@/assets/gear/beast-saddle-1.png";
+import beastSaddle2 from "@/assets/gear/beast-saddle-2.png";
+import beastSaddle3 from "@/assets/gear/beast-saddle-3.png";
+import beastSaddle4 from "@/assets/gear/beast-saddle-4.png";
 
 const GEAR_ART: Record<string, [string, string, string, string]> = {
   helmet:  [helmet1, helmet2, helmet3, helmet4],
@@ -77,6 +93,10 @@ const GEAR_ART: Record<string, [string, string, string, string]> = {
   net:     [net1, net2, net3, net4],
   scutum:  [scutum1, scutum2, scutum3, scutum4],
   parma:   [parma1, parma2, parma3, parma4],
+  beast_head:   [beastHead1, beastHead2, beastHead3, beastHead4],
+  beast_body:   [beastBody1, beastBody2, beastBody3, beastBody4],
+  beast_legs:   [beastLegs1, beastLegs2, beastLegs3, beastLegs4],
+  beast_saddle: [beastSaddle1, beastSaddle2, beastSaddle3, beastSaddle4],
 };
 
 // Which art family does a slot use? Weapon/off-hand depend on the fighter's class.
