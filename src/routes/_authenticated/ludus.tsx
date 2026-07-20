@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat } from "lucide-react";
 import cityBg from "@/assets/ludus/city-bg.jpg";
 import bLudus from "@/assets/ludus/b-ludus.png";
 import bMarket from "@/assets/ludus/b-market.png";
@@ -27,6 +27,7 @@ import bArmory from "@/assets/ludus/b-armory.png";
 import bStudy from "@/assets/ludus/b-study.png";
 import bTemple from "@/assets/ludus/b-temple.png";
 import bChronicle from "@/assets/ludus/b-chronicle.png";
+import bPantry from "@/assets/ludus/b-pantry.png";
 
 // gear tier art — 4 visual grades map to tiers 1-2 / 3-4 / 5-6 / 7-8
 import helmet1 from "@/assets/gear/helmet-1.png";
@@ -119,6 +120,7 @@ const FACILITIES = [
   { key: "scouting", label: "Scouting Network", desc: "Better recruits, higher chance of beasts", icon: Search },
   { key: "medicus", label: "Valetudinarium", desc: "Cheaper healing, shorter injuries", icon: Cross },
   { key: "armory", label: "Armory", desc: "Cheaper weapon & armor upgrades", icon: Hammer },
+  { key: "pantry", label: "Pantry", desc: "Stores grain, meat, and amphorae — houses more gladiators and beasts", icon: Wheat },
 ] as const;
 
 const SKILL_TREE = [
@@ -192,7 +194,7 @@ function LudusPage() {
 // -----------------------------------------------------------
 // VILLAGE — map of interactive buildings replacing the tab menu
 // -----------------------------------------------------------
-type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "study" | "temple" | "chronicle";
+type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "pantry" | "study" | "temple" | "chronicle";
 
 type Building = {
   key: BuildingKey;
@@ -210,6 +212,7 @@ const BUILDINGS: Building[] = [
   { key: "scouting", name: "Scouting Network", flavor: "Stronger recruits, rare beasts.",        Icon: Search,     image: bScouting },
   { key: "medicus",  name: "Valetudinarium",   flavor: "Faster healing, shorter injuries.",      Icon: Cross,      image: bMedicus },
   { key: "armory",   name: "The Forge",        flavor: "Unlock higher tiers of gear.",           Icon: Hammer,     image: bArmory },
+  { key: "pantry",   name: "Pantry",           flavor: "Feed more mouths — expand your roster.", Icon: Wheat,      image: bPantry },
   { key: "study",    name: "Study of Arms",    flavor: "Master a fighting style.",               Icon: BookOpen,   image: bStudy },
   { key: "temple",   name: "Temple of Memory", flavor: "Honor the fallen in your Hall of Fame.", Icon: Award,      image: bTemple },
   { key: "chronicle",name: "Chronicle Stele",  flavor: "Every match, carved in stone.",          Icon: ScrollText, image: bChronicle },
@@ -224,14 +227,19 @@ function VillageView({
   const denarii = state.profile?.denarii ?? 0;
   const scoutingLevel = state.profile?.scouting_level ?? 1;
   const dead = state.gladiators.filter(g => g.status === "dead").length;
-  const roster = state.gladiators.filter(g => g.status !== "dead").length;
+  const living = state.gladiators.filter(g => g.status !== "dead");
+  const humans = living.filter(g => !g.is_beast).length;
+  const beasts = living.filter(g => g.is_beast).length;
+  const pantryLvl = (state.profile as unknown as { pantry_level?: number })?.pantry_level ?? 1;
+  const cap = pantryCapacity(pantryLvl);
 
   const badges: Partial<Record<BuildingKey, string>> = {
-    ludus: `${roster}`,
+    ludus: `${living.length}`,
     training: `Lv ${state.profile?.training_level ?? 1}`,
     scouting: `Lv ${state.profile?.scouting_level ?? 1}`,
     medicus:  `Lv ${state.profile?.medicus_level ?? 1}`,
     armory:   `Lv ${state.profile?.armory_level ?? 1}`,
+    pantry:   `${humans}/${cap.humans} · ${beasts}/${cap.beasts}`,
     temple:   dead > 0 ? `${dead} fallen` : undefined,
     chronicle: state.matches.length ? `${state.matches.length}` : undefined,
   };
