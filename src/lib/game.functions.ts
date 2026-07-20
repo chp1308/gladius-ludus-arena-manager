@@ -110,9 +110,12 @@ export const STAT_WEIGHTS: Record<string, { strength: number; agility: number; s
   spear:       { strength: 2, agility: 3, stamina: 3, technique: 4 },
   net:         { strength: 2, agility: 4, stamina: 2, technique: 4 },
   dual:        { strength: 3, agility: 5, stamina: 2, technique: 2 },
-  beast_lion:  { strength: 5, agility: 3, stamina: 3, technique: 1 },
-  beast_tiger: { strength: 3, agility: 5, stamina: 3, technique: 1 },
+  beast_lion:     { strength: 5, agility: 3, stamina: 3, technique: 1 },
+  beast_tiger:    { strength: 3, agility: 5, stamina: 3, technique: 1 },
+  beast_elephant: { strength: 5, agility: 1, stamina: 5, technique: 1 },
+  beast_rhino:    { strength: 6, agility: 2, stamina: 4, technique: 0 },
 };
+
 const DEFAULT_WEIGHTS = { strength: 3, agility: 3, stamina: 3, technique: 3 };
 
 function gladiatorPower(
