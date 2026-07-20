@@ -1237,7 +1237,7 @@ export const getPublicLudus = createServerFn({ method: "GET" })
     if (!profile) throw new Error("Ludus not found");
 
     const { data: glads } = await supabase.from("gladiators")
-      .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique")
+      .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique,origin")
       .eq("owner_id", data.id)
       .neq("status", "dead")
       .order("wins", { ascending: false })
