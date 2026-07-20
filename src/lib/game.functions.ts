@@ -1292,16 +1292,22 @@ export const getPublicLudus = createServerFn({ method: "GET" })
       .eq("owner_id", data.id)
       .neq("status", "dead");
 
-    let showcase: unknown[] = [];
+    type ShowcaseGlad = {
+      id: string; name: string; class: string; weapon_type: string;
+      is_beast: boolean; level: number; wins: number; losses: number;
+      status: string; best_rank: number | null;
+      strength: number; agility: number; stamina: number; technique: number;
+      origin: string;
+    };
+    let showcase: ShowcaseGlad[] = [];
     if (picks.length > 0) {
       const { data: glads } = await supabase.from("gladiators")
         .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique,origin")
         .in("id", picks)
         .neq("status", "dead");
       const order = new Map(picks.map((id, i) => [id, i]));
-      showcase = (glads ?? []).slice().sort(
-        (a: { id: string }, b: { id: string }) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99),
-      );
+      showcase = ((glads ?? []) as unknown as ShowcaseGlad[]).slice()
+        .sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
     } else {
       const { data: glads } = await supabase.from("gladiators")
         .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique,origin")
@@ -1310,7 +1316,7 @@ export const getPublicLudus = createServerFn({ method: "GET" })
         .order("wins", { ascending: false })
         .order("level", { ascending: false })
         .limit(limit);
-      showcase = glads ?? [];
+      showcase = (glads ?? []) as unknown as ShowcaseGlad[];
     }
 
     return {
