@@ -953,8 +953,14 @@ function BeastLegIcon({ className }: SlotIconProps) {
 // Detailed species-specific beast portrait: lion mane, tiger stripes, elephant tusks, rhino horn.
 function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: number }) {
   const s = size;
-  const bg = "radial-gradient(circle at 30% 25%, hsl(35 30% 22%), hsl(20 35% 8%))";
-  const wrap = "relative overflow-hidden rounded-full border border-accent/60 shadow-inner";
+  const bg = "radial-gradient(circle at 30% 20%, hsl(35 40% 26%), hsl(20 45% 6%) 75%)";
+  const wrap = "relative overflow-hidden rounded-full border border-accent/60 shadow-[inset_0_0_18px_rgba(0,0,0,0.6)]";
+  const overlay = (
+    <svg viewBox="0 0 100 100" width={s} height={s} className="pointer-events-none absolute inset-0">
+      <ellipse cx="36" cy="30" rx="18" ry="12" fill="#fff" opacity="0.08" />
+      <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="8" />
+    </svg>
+  );
 
   if (weaponType === "beast_lion") {
     return (
