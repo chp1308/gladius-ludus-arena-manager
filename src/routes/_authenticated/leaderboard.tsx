@@ -50,7 +50,7 @@ function LeaderboardPage() {
             {(data?.ludi ?? []).map((l) => (
               <Link
                 key={l.id}
-                to="/ludus/$id"
+                to="/ludi/$id"
                 params={{ id: l.id }}
                 className="flex items-center justify-between border-b border-border/40 py-2 text-sm transition hover:bg-secondary/40"
               >
@@ -93,7 +93,7 @@ function LeaderboardPage() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Lv {g.level} · {g.is_beast ? WEAPON_LABELS[g.weapon_type] ?? g.class : `${g.class} · ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type}`} ·{" "}
-                      <Link to="/ludus/$id" params={{ id: g.owner_id }} className="underline-offset-4 hover:text-primary hover:underline">
+                      <Link to="/ludi/$id" params={{ id: g.owner_id }} className="underline-offset-4 hover:text-primary hover:underline">
                         {g.ludus_name}
                       </Link>
                     </div>
