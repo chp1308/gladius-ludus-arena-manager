@@ -787,6 +787,41 @@ function SaddleIcon({ className }: SlotIconProps) {
     </svg>
   );
 }
+// Beast head armor — chamfron plate with brow spike.
+function BeastHeadIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 6 Q 12 3 17 6 L 18 12 Q 18 18 12 21 Q 6 18 6 12 Z" fill="currentColor" opacity="0.15" />
+      <path d="M7 6 Q 12 3 17 6 L 18 12 Q 18 18 12 21 Q 6 18 6 12 Z" />
+      <path d="M12 3 L 12 0.5" />
+      <circle cx="9.5" cy="12" r="0.9" fill="currentColor" />
+      <circle cx="14.5" cy="12" r="0.9" fill="currentColor" />
+      <path d="M10 17 L 14 17" />
+    </svg>
+  );
+}
+// Beast body armor — barding with straps.
+function BeastBardingIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" fill="currentColor" opacity="0.15" />
+      <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" />
+      <path d="M8 6 L 8 20 M16 6 L 16 20" />
+      <path d="M4 10 L 20 10" />
+    </svg>
+  );
+}
+// Beast leg armor — greave rings around a hoofed leg.
+function BeastLegIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3 L 15 3 L 14 20 L 10 20 Z" fill="currentColor" opacity="0.15" />
+      <path d="M9 3 L 15 3 L 14 20 L 10 20 Z" />
+      <path d="M9 8 L 15 8 M9 13 L 15 13" />
+      <path d="M8 20 L 16 20 L 15 22 L 9 22 Z" fill="currentColor" opacity="0.35" />
+    </svg>
+  );
+}
 
 // Detailed species-specific beast portrait: lion mane, tiger stripes, elephant tusks, rhino horn.
 function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: number }) {
