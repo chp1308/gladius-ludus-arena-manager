@@ -491,6 +491,30 @@ function ArmoryTierTable({ armoryLevel }: { armoryLevel: number }) {
   );
 }
 
+function PantryTable({ pantryLevel }: { pantryLevel: number }) {
+  return (
+    <div className="grid grid-cols-5 gap-2">
+      {Array.from({ length: 5 }, (_, i) => i + 1).map((lvl) => {
+        const cap = pantryCapacity(lvl);
+        const unlocked = pantryLevel >= lvl;
+        const current = pantryLevel === lvl;
+        return (
+          <div
+            key={lvl}
+            className={`rounded border p-2 text-center text-xs ${current ? "border-accent bg-accent/10" : unlocked ? "border-primary/50 bg-primary/5" : "border-border bg-muted/40 text-muted-foreground"}`}
+          >
+            <div className="font-display text-base">{ROMAN[lvl - 1]}</div>
+            <div className="mt-0.5 text-[11px]">{cap.humans} <span className="text-muted-foreground">gld</span></div>
+            <div className="text-[11px]">{cap.beasts} <span className="text-muted-foreground">beast</span></div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+
 
 function FacilityCard({
   facility, label, desc, Icon, level, denarii,
