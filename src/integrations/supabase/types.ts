@@ -230,6 +230,7 @@ export type Database = {
         Row: {
           armory_level: number
           best_rank: number | null
+          bio: string
           created_at: string
           denarii: number
           description: string
@@ -239,12 +240,15 @@ export type Database = {
           pantry_level: number
           reputation: number
           scouting_level: number
+          showcase_gladiator_ids: string[]
+          showcase_limit: number
           training_level: number
           updated_at: string
         }
         Insert: {
           armory_level?: number
           best_rank?: number | null
+          bio?: string
           created_at?: string
           denarii?: number
           description?: string
@@ -254,12 +258,15 @@ export type Database = {
           pantry_level?: number
           reputation?: number
           scouting_level?: number
+          showcase_gladiator_ids?: string[]
+          showcase_limit?: number
           training_level?: number
           updated_at?: string
         }
         Update: {
           armory_level?: number
           best_rank?: number | null
+          bio?: string
           created_at?: string
           denarii?: number
           description?: string
@@ -269,6 +276,8 @@ export type Database = {
           pantry_level?: number
           reputation?: number
           scouting_level?: number
+          showcase_gladiator_ids?: string[]
+          showcase_limit?: number
           training_level?: number
           updated_at?: string
         }
