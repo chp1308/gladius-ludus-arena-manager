@@ -15,7 +15,7 @@ const COGNOMEN = ["the Bull", "the Wolf", "the Swift", "the Iron", "of Capua", "
 
 // Human weapon styles — like Domina's fighting styles
 const WEAPON_TYPES = ["gladius", "spear", "net", "dual"] as const;
-type WeaponType = typeof WEAPON_TYPES[number] | "beast_lion" | "beast_tiger";
+type WeaponType = typeof WEAPON_TYPES[number] | "beast_lion" | "beast_tiger" | "beast_elephant" | "beast_rhino";
 
 export const WEAPON_LABELS: Record<string, string> = {
   gladius: "Gladius & Shield",
@@ -24,7 +24,10 @@ export const WEAPON_LABELS: Record<string, string> = {
   dual: "Dual Blades",
   beast_lion: "Lion",
   beast_tiger: "Tiger",
+  beast_elephant: "War Elephant",
+  beast_rhino: "Armored Rhino",
 };
+
 
 // Facility caps and effects
 const MAX_FACILITY = 5;
