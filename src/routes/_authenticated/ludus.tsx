@@ -130,8 +130,11 @@ const SKILL_TREE = [
   { key: "dual", label: "Dual Blades" },
   { key: "beast_lion", label: "Lion Handling" },
   { key: "beast_tiger", label: "Tiger Handling" },
+  { key: "beast_elephant", label: "Elephant Handling" },
+  { key: "beast_rhino", label: "Rhino Handling" },
   { key: "defense", label: "Defensive Doctrine" },
 ] as const;
+
 
 function facilityCost(curr: number) { return 500 * (curr + 1); }
 function skillCost(curr: number) { return 200 * (curr + 1); }
