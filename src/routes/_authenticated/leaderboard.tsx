@@ -85,9 +85,17 @@ function LeaderboardPage() {
                     {g.rank}
                   </span>
                   <div>
-                    <div className="font-serif text-foreground">{g.name}</div>
+                    <div className="font-serif text-foreground">
+                      {g.name}
+                      {g.best_rank && g.best_rank < g.rank && (
+                        <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground">best #{g.best_rank}</span>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground">
-                      Lv {g.level} · {g.is_beast ? WEAPON_LABELS[g.weapon_type] ?? g.class : `${g.class} · ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type}`} · {g.ludus_name}
+                      Lv {g.level} · {g.is_beast ? WEAPON_LABELS[g.weapon_type] ?? g.class : `${g.class} · ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type}`} ·{" "}
+                      <Link to="/ludus/$id" params={{ id: g.owner_id }} className="underline-offset-4 hover:text-primary hover:underline">
+                        {g.ludus_name}
+                      </Link>
                     </div>
                   </div>
                 </div>
