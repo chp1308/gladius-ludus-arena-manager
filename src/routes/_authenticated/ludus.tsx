@@ -1074,6 +1074,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("helmet", getTier("helmet_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
                 <SlotButton
                   slot={{ key: "armor", label: "Body Armor", Icon: BeastBardingIcon }}
@@ -1083,6 +1084,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("armor", getTier("armor_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
                 <SlotButton
                   slot={{ key: "legs", label: "Leg Armor", Icon: BeastLegIcon }}
@@ -1092,6 +1094,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("legs", getTier("legs_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
                 <SlotButton
                   slot={{ key: "offhand", label: "Saddle", Icon: SaddleIcon }}
@@ -1101,6 +1104,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("offhand", getTier("offhand_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
               </div>
               <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">
