@@ -195,14 +195,14 @@ export const getLudusState = createServerFn({ method: "GET" })
 export const upgradeFacility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
-    facility: z.enum(["training", "scouting", "medicus", "armory"]),
+    facility: z.enum(["training", "scouting", "medicus", "armory", "pantry"]),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
-    const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level";
-    const curr = profile[col] as number;
+    const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level";
+    const curr = (profile as unknown as Record<string, number>)[col];
     if (curr >= MAX_FACILITY) throw new Error("Facility already at max level");
     const cost = FACILITY_COST(curr);
     if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
@@ -211,11 +211,18 @@ export const upgradeFacility = createServerFn({ method: "POST" })
       data.facility === "training" ? { denarii: profile.denarii - cost, training_level: next } :
       data.facility === "scouting" ? { denarii: profile.denarii - cost, scouting_level: next } :
       data.facility === "medicus" ? { denarii: profile.denarii - cost, medicus_level: next } :
+      data.facility === "pantry" ? { denarii: profile.denarii - cost, pantry_level: next } :
       { denarii: profile.denarii - cost, armory_level: next };
-    const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
+    const { error } = await supabase.from("profiles").update(patch as never).eq("id", userId);
     if (error) throw new Error(error.message);
     return { ok: true, cost, newLevel: next };
   });
+
+// Pantry capacity: level 1 = 3 humans / 1 beast; +3 humans and +1 beast per level.
+export function pantryCapacity(pantryLevel: number) {
+  const lvl = Math.max(1, pantryLevel);
+  return { humans: lvl * 3, beasts: lvl };
+}
 
 // ---------- SKILL UPGRADE ----------
 export const upgradeSkill = createServerFn({ method: "POST" })
@@ -262,6 +269,17 @@ export const recruitGladiator = createServerFn({ method: "POST" })
     if (profile.denarii < COST) throw new Error(`Scouting fee: ${COST} denarii`);
 
     const g = generateGladiator(profile.scouting_level);
+
+    // Pantry capacity gate — count living roster by type.
+    const { data: roster } = await supabase
+      .from("gladiators").select("is_beast,status").eq("owner_id", userId);
+    const living = (roster ?? []).filter((r) => r.status !== "dead");
+    const humans = living.filter((r) => !r.is_beast).length;
+    const beasts = living.filter((r) => r.is_beast).length;
+    const cap = pantryCapacity((profile as unknown as { pantry_level: number }).pantry_level ?? 1);
+    if (g.is_beast && beasts >= cap.beasts) throw new Error(`Your pantry cannot feed another beast (${beasts}/${cap.beasts}). Upgrade the Pantry.`);
+    if (!g.is_beast && humans >= cap.humans) throw new Error(`Your pantry is full (${humans}/${cap.humans} gladiators). Upgrade the Pantry.`);
+
     const { error: insertErr } = await supabase.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
     if (insertErr) throw new Error(insertErr.message);
     const { error: updErr } = await supabase.from("profiles").update({ denarii: profile.denarii - COST }).eq("id", userId);

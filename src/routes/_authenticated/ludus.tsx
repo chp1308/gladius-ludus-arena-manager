@@ -7,7 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, WEAPON_LABELS,
-  ARENA_TIERS, statCap, maxHealth, trainCost, gearCost,
+  ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, pantryCapacity,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat } from "lucide-react";
 import cityBg from "@/assets/ludus/city-bg.jpg";
 import bLudus from "@/assets/ludus/b-ludus.png";
 import bMarket from "@/assets/ludus/b-market.png";
@@ -27,6 +27,7 @@ import bArmory from "@/assets/ludus/b-armory.png";
 import bStudy from "@/assets/ludus/b-study.png";
 import bTemple from "@/assets/ludus/b-temple.png";
 import bChronicle from "@/assets/ludus/b-chronicle.png";
+import bPantry from "@/assets/ludus/b-pantry.png";
 
 // gear tier art — 4 visual grades map to tiers 1-2 / 3-4 / 5-6 / 7-8
 import helmet1 from "@/assets/gear/helmet-1.png";
@@ -119,6 +120,7 @@ const FACILITIES = [
   { key: "scouting", label: "Scouting Network", desc: "Better recruits, higher chance of beasts", icon: Search },
   { key: "medicus", label: "Valetudinarium", desc: "Cheaper healing, shorter injuries", icon: Cross },
   { key: "armory", label: "Armory", desc: "Cheaper weapon & armor upgrades", icon: Hammer },
+  { key: "pantry", label: "Pantry", desc: "Stores grain, meat, and amphorae — houses more gladiators and beasts", icon: Wheat },
 ] as const;
 
 const SKILL_TREE = [
@@ -192,7 +194,7 @@ function LudusPage() {
 // -----------------------------------------------------------
 // VILLAGE — map of interactive buildings replacing the tab menu
 // -----------------------------------------------------------
-type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "study" | "temple" | "chronicle";
+type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "pantry" | "study" | "temple" | "chronicle";
 
 type Building = {
   key: BuildingKey;
@@ -210,6 +212,7 @@ const BUILDINGS: Building[] = [
   { key: "scouting", name: "Scouting Network", flavor: "Stronger recruits, rare beasts.",        Icon: Search,     image: bScouting },
   { key: "medicus",  name: "Valetudinarium",   flavor: "Faster healing, shorter injuries.",      Icon: Cross,      image: bMedicus },
   { key: "armory",   name: "The Forge",        flavor: "Unlock higher tiers of gear.",           Icon: Hammer,     image: bArmory },
+  { key: "pantry",   name: "Pantry",           flavor: "Feed more mouths — expand your roster.", Icon: Wheat,      image: bPantry },
   { key: "study",    name: "Study of Arms",    flavor: "Master a fighting style.",               Icon: BookOpen,   image: bStudy },
   { key: "temple",   name: "Temple of Memory", flavor: "Honor the fallen in your Hall of Fame.", Icon: Award,      image: bTemple },
   { key: "chronicle",name: "Chronicle Stele",  flavor: "Every match, carved in stone.",          Icon: ScrollText, image: bChronicle },
@@ -224,14 +227,19 @@ function VillageView({
   const denarii = state.profile?.denarii ?? 0;
   const scoutingLevel = state.profile?.scouting_level ?? 1;
   const dead = state.gladiators.filter(g => g.status === "dead").length;
-  const roster = state.gladiators.filter(g => g.status !== "dead").length;
+  const living = state.gladiators.filter(g => g.status !== "dead");
+  const humans = living.filter(g => !g.is_beast).length;
+  const beasts = living.filter(g => g.is_beast).length;
+  const pantryLvl = (state.profile as unknown as { pantry_level?: number })?.pantry_level ?? 1;
+  const cap = pantryCapacity(pantryLvl);
 
   const badges: Partial<Record<BuildingKey, string>> = {
-    ludus: `${roster}`,
+    ludus: `${living.length}`,
     training: `Lv ${state.profile?.training_level ?? 1}`,
     scouting: `Lv ${state.profile?.scouting_level ?? 1}`,
     medicus:  `Lv ${state.profile?.medicus_level ?? 1}`,
     armory:   `Lv ${state.profile?.armory_level ?? 1}`,
+    pantry:   `${humans}/${cap.humans} · ${beasts}/${cap.beasts}`,
     temple:   dead > 0 ? `${dead} fallen` : undefined,
     chronicle: state.matches.length ? `${state.matches.length}` : undefined,
   };
@@ -357,20 +365,31 @@ function BuildingPanel({
           </Card>
         )}
 
-        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory") && (() => {
+        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory" || buildingKey === "pantry") && (() => {
           const f = FACILITIES.find(x => x.key === buildingKey)!;
+          const level = (state.profile as unknown as Record<string, number>)?.[`${f.key}_level`] ?? 1;
           return (
             <FacilityCard
               facility={f.key}
               label={f.label}
               desc={f.desc}
               Icon={f.icon}
-              level={state.profile?.[`${f.key}_level` as `training_level`] ?? 1}
+              level={level}
               denarii={denarii}
             />
-
           );
         })()}
+
+        {buildingKey === "pantry" && (
+          <Card className="inscribed ornate-border">
+            <CardContent className="pt-6">
+              <p className="mb-3 font-serif text-sm italic text-muted-foreground">
+                Your pantry holds enough grain, oil, and salted meat to feed a growing familia. Every rank adds room for three more gladiators and one more beast.
+              </p>
+              <PantryTable pantryLevel={(state.profile as unknown as { pantry_level?: number })?.pantry_level ?? 1} />
+            </CardContent>
+          </Card>
+        )}
 
         {buildingKey === "armory" && (
           <Card className="inscribed ornate-border">
@@ -472,11 +491,35 @@ function ArmoryTierTable({ armoryLevel }: { armoryLevel: number }) {
   );
 }
 
+function PantryTable({ pantryLevel }: { pantryLevel: number }) {
+  return (
+    <div className="grid grid-cols-5 gap-2">
+      {Array.from({ length: 5 }, (_, i) => i + 1).map((lvl) => {
+        const cap = pantryCapacity(lvl);
+        const unlocked = pantryLevel >= lvl;
+        const current = pantryLevel === lvl;
+        return (
+          <div
+            key={lvl}
+            className={`rounded border p-2 text-center text-xs ${current ? "border-accent bg-accent/10" : unlocked ? "border-primary/50 bg-primary/5" : "border-border bg-muted/40 text-muted-foreground"}`}
+          >
+            <div className="font-display text-base">{ROMAN[lvl - 1]}</div>
+            <div className="mt-0.5 text-[11px]">{cap.humans} <span className="text-muted-foreground">gld</span></div>
+            <div className="text-[11px]">{cap.beasts} <span className="text-muted-foreground">beast</span></div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+
 
 function FacilityCard({
   facility, label, desc, Icon, level, denarii,
 }: {
-  facility: "training" | "scouting" | "medicus" | "armory";
+  facility: "training" | "scouting" | "medicus" | "armory" | "pantry";
   label: string; desc: string;
   Icon: React.ComponentType<{ className?: string }>;
   level: number; denarii: number;

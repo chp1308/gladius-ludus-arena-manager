@@ -231,6 +231,7 @@ export type Database = {
           id: string
           ludus_name: string
           medicus_level: number
+          pantry_level: number
           reputation: number
           scouting_level: number
           training_level: number
@@ -243,6 +244,7 @@ export type Database = {
           id: string
           ludus_name?: string
           medicus_level?: number
+          pantry_level?: number
           reputation?: number
           scouting_level?: number
           training_level?: number
@@ -255,6 +257,7 @@ export type Database = {
           id?: string
           ludus_name?: string
           medicus_level?: number
+          pantry_level?: number
           reputation?: number
           scouting_level?: number
           training_level?: number
