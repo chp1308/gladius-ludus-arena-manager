@@ -662,15 +662,9 @@ function seedFrom(str: string) {
 // Procedurally generated portrait — SVG bust with varied skin, hair, beard, eyes.
 function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
   if (g.is_beast) {
-    return (
-      <div
-        className="flex items-center justify-center rounded-full border border-accent/60 bg-gradient-to-br from-accent/30 to-primary/20"
-        style={{ width: size, height: size }}
-      >
-        <Cat className="text-accent" style={{ width: size * 0.55, height: size * 0.55 }} />
-      </div>
-    );
+    return <BeastAvatar weaponType={g.weapon_type} size={size} />;
   }
+
   const rng = seedFrom(g.name + "|" + g.origin);
   const skins = ["#f0c9a5", "#e0b088", "#c48c67", "#a0704f", "#7a4f31", "#5a3620"];
   const hairs = ["#1a1208", "#2b1a0d", "#3a2416", "#5a3a1a", "#8a5a2a", "#c89a4a", "#e3d5b0", "#7a7a7a"];
