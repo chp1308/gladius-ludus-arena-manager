@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedLudusRouteImport } from './routes/_authenticated/ludus'
 import { Route as AuthenticatedLeaderboardRouteImport } from './routes/_authenticated/leaderboard'
 import { Route as AuthenticatedInfoRouteImport } from './routes/_authenticated/info'
@@ -37,6 +38,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedLudusRoute = AuthenticatedLudusRouteImport.update({
   id: '/ludus',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/info': typeof AuthenticatedInfoRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/ludus': typeof AuthenticatedLudusRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/ludi/$id': typeof AuthenticatedLudiIdRoute
 }
 export interface FileRoutesByTo {
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/info': typeof AuthenticatedInfoRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/ludus': typeof AuthenticatedLudusRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/ludi/$id': typeof AuthenticatedLudiIdRoute
 }
 export interface FileRoutesById {
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/_authenticated/info': typeof AuthenticatedInfoRoute
   '/_authenticated/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/_authenticated/ludus': typeof AuthenticatedLudusRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/ludi/$id': typeof AuthenticatedLudiIdRoute
 }
 export interface FileRouteTypes {
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/info'
     | '/leaderboard'
     | '/ludus'
+    | '/profile'
     | '/ludi/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/info'
     | '/leaderboard'
     | '/ludus'
+    | '/profile'
     | '/ludi/$id'
   id:
     | '__root__'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/_authenticated/info'
     | '/_authenticated/leaderboard'
     | '/_authenticated/ludus'
+    | '/_authenticated/profile'
     | '/_authenticated/ludi/$id'
   fileRoutesById: FileRoutesById
 }
@@ -167,6 +179,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/ludus': {
       id: '/_authenticated/ludus'
@@ -211,6 +230,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedInfoRoute: typeof AuthenticatedInfoRoute
   AuthenticatedLeaderboardRoute: typeof AuthenticatedLeaderboardRoute
   AuthenticatedLudusRoute: typeof AuthenticatedLudusRoute
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedLudiIdRoute: typeof AuthenticatedLudiIdRoute
 }
 
@@ -219,6 +239,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedInfoRoute: AuthenticatedInfoRoute,
   AuthenticatedLeaderboardRoute: AuthenticatedLeaderboardRoute,
   AuthenticatedLudusRoute: AuthenticatedLudusRoute,
+  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedLudiIdRoute: AuthenticatedLudiIdRoute,
 }
 

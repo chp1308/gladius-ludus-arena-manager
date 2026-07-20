@@ -1224,29 +1224,105 @@ export const updateLudusDescription = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateLudusProfile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    description?: string;
+    bio?: string;
+    showcase_limit?: number;
+    showcase_gladiator_ids?: string[];
+  }) =>
+    z.object({
+      description: z.string().max(500).optional(),
+      bio: z.string().max(1500).optional(),
+      showcase_limit: z.number().int().min(1).max(12).optional(),
+      showcase_gladiator_ids: z.array(z.string().uuid()).max(12).optional(),
+    }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const patch: Record<string, unknown> = {};
+    if (data.description !== undefined) patch.description = data.description;
+    if (data.bio !== undefined) patch.bio = data.bio;
+    if (data.showcase_limit !== undefined) patch.showcase_limit = data.showcase_limit;
+    if (data.showcase_gladiator_ids !== undefined) patch.showcase_gladiator_ids = data.showcase_gladiator_ids;
+    if (Object.keys(patch).length === 0) return { ok: true };
+    const { error } = await supabase.from("profiles")
+      .update(patch as never).eq("id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getMyLudusRoster = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles")
+      .select("id,ludus_name,description,bio,showcase_limit,showcase_gladiator_ids")
+      .eq("id", userId).maybeSingle();
+    const { data: glads } = await supabase.from("gladiators")
+      .select("id,name,class,weapon_type,is_beast,level,wins,losses,status")
+      .eq("owner_id", userId)
+      .neq("status", "dead")
+      .order("level", { ascending: false });
+    return { profile, roster: glads ?? [] };
+  });
+
 export const getPublicLudus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { data: profile, error } = await supabase.from("profiles")
-      .select("id,ludus_name,description,reputation,best_rank,training_level,scouting_level,medicus_level,armory_level,pantry_level,created_at")
+      .select("id,ludus_name,description,bio,showcase_limit,showcase_gladiator_ids,reputation,best_rank,training_level,scouting_level,medicus_level,armory_level,pantry_level,created_at")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!profile) throw new Error("Ludus not found");
 
-    const { data: glads } = await supabase.from("gladiators")
-      .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique,origin")
+    const p = profile as typeof profile & {
+      bio: string;
+      showcase_limit: number;
+      showcase_gladiator_ids: string[];
+    };
+    const limit = Math.max(1, Math.min(12, p.showcase_limit ?? 8));
+    const picks = (p.showcase_gladiator_ids ?? []).slice(0, limit);
+
+    const { count: rosterCount } = await supabase.from("gladiators")
+      .select("id", { count: "exact", head: true })
       .eq("owner_id", data.id)
-      .neq("status", "dead")
-      .order("wins", { ascending: false })
-      .order("level", { ascending: false })
-      .limit(8);
+      .neq("status", "dead");
+
+    type ShowcaseGlad = {
+      id: string; name: string; class: string; weapon_type: string;
+      is_beast: boolean; level: number; wins: number; losses: number;
+      status: string; best_rank: number | null;
+      strength: number; agility: number; stamina: number; technique: number;
+      origin: string;
+    };
+    let showcase: ShowcaseGlad[] = [];
+    if (picks.length > 0) {
+      const { data: glads } = await supabase.from("gladiators")
+        .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique,origin")
+        .in("id", picks)
+        .neq("status", "dead");
+      const order = new Map(picks.map((id, i) => [id, i]));
+      showcase = ((glads ?? []) as unknown as ShowcaseGlad[]).slice()
+        .sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+    } else {
+      const { data: glads } = await supabase.from("gladiators")
+        .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique,origin")
+        .eq("owner_id", data.id)
+        .neq("status", "dead")
+        .order("wins", { ascending: false })
+        .order("level", { ascending: false })
+        .limit(limit);
+      showcase = (glads ?? []) as unknown as ShowcaseGlad[];
+    }
 
     return {
-      profile,
-      showcase: glads ?? [],
+      profile: p,
+      showcase,
+      roster_count: rosterCount ?? 0,
     };
   });
 

@@ -86,10 +86,31 @@ function VisitLudusPage() {
                 <FacilityStat label="Forge" level={data.profile.armory_level} />
                 <FacilityStat label="Pantry" level={data.profile.pantry_level} />
               </div>
+
+              {data.profile.bio?.trim() && (
+                <div className="mt-4 rounded-md border border-border/40 bg-background/40 p-4">
+                  <div className="mb-2 text-[10px] uppercase tracking-widest text-muted-foreground">About the Lanista</div>
+                  <p className="whitespace-pre-wrap font-serif text-sm text-foreground/90">{data.profile.bio}</p>
+                </div>
+              )}
+
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <FacilityStat label="Training" level={data.profile.training_level} />
+                <FacilityStat label="Scouting" level={data.profile.scouting_level} />
+                <FacilityStat label="Valetudinarium" level={data.profile.medicus_level} />
+                <FacilityStat label="Forge" level={data.profile.armory_level} />
+                <FacilityStat label="Pantry" level={data.profile.pantry_level} />
+              </div>
             </Card>
 
             <div className="mt-6">
-              <h2 className="mb-3 font-display text-lg tracking-widest text-primary">Showcased Fighters</h2>
+              <div className="mb-3 flex items-baseline justify-between">
+                <h2 className="font-display text-lg tracking-widest text-primary">Showcased Fighters</h2>
+                <span className="text-xs text-muted-foreground">
+                  {data.showcase.length} shown · {data.roster_count} total in this ludus
+                </span>
+              </div>
+
               {data.showcase.length === 0 ? (
                 <p className="text-sm italic text-muted-foreground">No gladiators walk this ludus's sands.</p>
               ) : (
