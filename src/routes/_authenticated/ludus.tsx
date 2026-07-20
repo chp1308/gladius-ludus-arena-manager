@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, honorGladiator,
-  upgradeFacility, upgradeSkill, WEAPON_LABELS,
+  upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, pantryCapacity,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
@@ -206,6 +206,10 @@ function LudusPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <EditMottoButton
+              currentDescription={data.profile?.description ?? ""}
+              ludusId={data.profile?.id ?? ""}
+            />
             <Link to="/info"><Button variant="outline" size="sm"><BookOpen className="mr-1 h-4 w-4" /> Codex</Button></Link>
             <Link to="/leaderboard"><Button variant="outline" size="sm"><Trophy className="mr-1 h-4 w-4" /> Champions</Button></Link>
             <Link to="/arena"><Button size="sm"><Swords className="mr-1 h-4 w-4" /> Arena</Button></Link>
@@ -1451,5 +1455,51 @@ function HallOfFame({ state }: { state: State }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function EditMottoButton({ currentDescription, ludusId }: { currentDescription: string; ludusId: string }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(currentDescription);
+  const qc = useQueryClient();
+  const update = useServerFn(updateLudusDescription);
+  const mut = useMutation({
+    mutationFn: (description: string) => update({ data: { description } }),
+    onSuccess: () => {
+      toast.success("Motto inscribed.");
+      qc.invalidateQueries({ queryKey: ["ludus-state"] });
+      qc.invalidateQueries({ queryKey: ["public-ludus", ludusId] });
+      setOpen(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => { setText(currentDescription); setOpen(true); }}>
+        <ScrollText className="mr-1 h-4 w-4" /> Motto
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Ludus Motto</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">Visible to any visitor of your ludus. Up to 500 characters.</p>
+          <textarea
+            className="min-h-[140px] w-full rounded-md border border-border/60 bg-background p-3 font-serif text-sm outline-none focus:border-primary"
+            maxLength={500}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Blood, honor, denarii — carve your ludus's creed…"
+          />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{text.length}/500</span>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button size="sm" disabled={mut.isPending} onClick={() => mut.mutate(text)}>Save</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

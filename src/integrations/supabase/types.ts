@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           agility: number
           armor_tier: number
+          best_rank: number | null
           class: string
           created_at: string
           experience: number
@@ -45,6 +46,7 @@ export type Database = {
         Insert: {
           agility?: number
           armor_tier?: number
+          best_rank?: number | null
           class?: string
           created_at?: string
           experience?: number
@@ -72,6 +74,7 @@ export type Database = {
         Update: {
           agility?: number
           armor_tier?: number
+          best_rank?: number | null
           class?: string
           created_at?: string
           experience?: number
@@ -226,8 +229,10 @@ export type Database = {
       profiles: {
         Row: {
           armory_level: number
+          best_rank: number | null
           created_at: string
           denarii: number
+          description: string
           id: string
           ludus_name: string
           medicus_level: number
@@ -239,8 +244,10 @@ export type Database = {
         }
         Insert: {
           armory_level?: number
+          best_rank?: number | null
           created_at?: string
           denarii?: number
+          description?: string
           id: string
           ludus_name?: string
           medicus_level?: number
@@ -252,8 +259,10 @@ export type Database = {
         }
         Update: {
           armory_level?: number
+          best_rank?: number | null
           created_at?: string
           denarii?: number
+          description?: string
           id?: string
           ludus_name?: string
           medicus_level?: number
