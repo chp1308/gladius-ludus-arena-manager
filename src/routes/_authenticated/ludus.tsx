@@ -564,7 +564,7 @@ function FacilityCard({
 function SkillCard({
   weaponType, label, level, denarii,
 }: {
-  weaponType: "gladius" | "spear" | "net" | "dual" | "beast_lion" | "beast_tiger" | "defense";
+  weaponType: "gladius" | "spear" | "net" | "dual" | "beast_lion" | "beast_tiger" | "beast_elephant" | "beast_rhino" | "defense";
   label: string; level: number; denarii: number;
 }) {
   const qc = useQueryClient();
