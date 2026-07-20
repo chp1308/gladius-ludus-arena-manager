@@ -1204,8 +1204,13 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 
         {/* Right side: portrait, vitals, stats, actions */}
         <div className="space-y-4">
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-1">
             <FaceAvatar g={g} size={120} />
+            <div className="mt-1 flex items-center gap-1.5 rounded-full border border-primary/40 bg-secondary/50 px-3 py-0.5 text-xs">
+              <Swords className="h-3 w-3 text-primary" />
+              <span className="uppercase tracking-widest text-muted-foreground">Power</span>
+              <span className="font-display text-sm text-primary">{gladiatorPower(g, skillLevel)}</span>
+            </div>
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between text-xs">
