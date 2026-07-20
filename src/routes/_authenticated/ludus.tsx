@@ -66,6 +66,22 @@ import parma1 from "@/assets/gear/parma-1.png";
 import parma2 from "@/assets/gear/parma-2.png";
 import parma3 from "@/assets/gear/parma-3.png";
 import parma4 from "@/assets/gear/parma-4.png";
+import beastHead1 from "@/assets/gear/beast-head-1.png";
+import beastHead2 from "@/assets/gear/beast-head-2.png";
+import beastHead3 from "@/assets/gear/beast-head-3.png";
+import beastHead4 from "@/assets/gear/beast-head-4.png";
+import beastBody1 from "@/assets/gear/beast-body-1.png";
+import beastBody2 from "@/assets/gear/beast-body-2.png";
+import beastBody3 from "@/assets/gear/beast-body-3.png";
+import beastBody4 from "@/assets/gear/beast-body-4.png";
+import beastLegs1 from "@/assets/gear/beast-legs-1.png";
+import beastLegs2 from "@/assets/gear/beast-legs-2.png";
+import beastLegs3 from "@/assets/gear/beast-legs-3.png";
+import beastLegs4 from "@/assets/gear/beast-legs-4.png";
+import beastSaddle1 from "@/assets/gear/beast-saddle-1.png";
+import beastSaddle2 from "@/assets/gear/beast-saddle-2.png";
+import beastSaddle3 from "@/assets/gear/beast-saddle-3.png";
+import beastSaddle4 from "@/assets/gear/beast-saddle-4.png";
 
 const GEAR_ART: Record<string, [string, string, string, string]> = {
   helmet:  [helmet1, helmet2, helmet3, helmet4],
@@ -77,10 +93,21 @@ const GEAR_ART: Record<string, [string, string, string, string]> = {
   net:     [net1, net2, net3, net4],
   scutum:  [scutum1, scutum2, scutum3, scutum4],
   parma:   [parma1, parma2, parma3, parma4],
+  beast_head:   [beastHead1, beastHead2, beastHead3, beastHead4],
+  beast_body:   [beastBody1, beastBody2, beastBody3, beastBody4],
+  beast_legs:   [beastLegs1, beastLegs2, beastLegs3, beastLegs4],
+  beast_saddle: [beastSaddle1, beastSaddle2, beastSaddle3, beastSaddle4],
 };
 
 // Which art family does a slot use? Weapon/off-hand depend on the fighter's class.
-function gearCategory(slotKey: SlotKey, weaponType: string): keyof typeof GEAR_ART | null {
+function gearCategory(slotKey: SlotKey, weaponType: string, isBeast = false): keyof typeof GEAR_ART | null {
+  if (isBeast) {
+    if (slotKey === "helmet") return "beast_head";
+    if (slotKey === "armor") return "beast_body";
+    if (slotKey === "legs") return "beast_legs";
+    if (slotKey === "offhand") return "beast_saddle";
+    return null;
+  }
   if (slotKey === "helmet") return "helmet";
   if (slotKey === "armor") return "cuirass";
   if (slotKey === "legs") return "greaves";
@@ -100,8 +127,8 @@ function gearCategory(slotKey: SlotKey, weaponType: string): keyof typeof GEAR_A
   return null;
 }
 
-function gearImage(slotKey: SlotKey, weaponType: string, tier: number): string | null {
-  const cat = gearCategory(slotKey, weaponType);
+function gearImage(slotKey: SlotKey, weaponType: string, tier: number, isBeast = false): string | null {
+  const cat = gearCategory(slotKey, weaponType, isBeast);
   if (!cat) return null;
   const grade = Math.min(4, Math.max(1, Math.ceil(tier / 2))); // 1-2→1, 3-4→2, 5-6→3, 7-8→4
   return GEAR_ART[cat][grade - 1] ?? null;
@@ -1047,6 +1074,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("helmet", getTier("helmet_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
                 <SlotButton
                   slot={{ key: "armor", label: "Body Armor", Icon: BeastBardingIcon }}
@@ -1056,6 +1084,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("armor", getTier("armor_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
                 <SlotButton
                   slot={{ key: "legs", label: "Leg Armor", Icon: BeastLegIcon }}
@@ -1065,6 +1094,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("legs", getTier("legs_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
                 <SlotButton
                   slot={{ key: "offhand", label: "Saddle", Icon: SaddleIcon }}
@@ -1074,6 +1104,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                   cost={gearCost("offhand", getTier("offhand_tier"), armoryLevel)}
                   armoryLevel={armoryLevel}
                   denarii={denarii}
+                  isBeast
                 />
               </div>
               <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">
@@ -1245,11 +1276,11 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
 }
 
 function SlotButton({
-  slot, tier, disabled, onClick, cost, denarii, armoryLevel, weaponType,
+  slot, tier, disabled, onClick, cost, denarii, armoryLevel, weaponType, isBeast,
 }: {
   slot: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps> };
   tier: number; disabled: boolean; onClick: () => void; cost?: number; denarii?: number; armoryLevel?: number;
-  weaponType?: string;
+  weaponType?: string; isBeast?: boolean;
 }) {
   const atMax = tier >= MAX_GEAR_TIER;
   const nextTier = tier + 1;
@@ -1258,7 +1289,7 @@ function SlotButton({
   const unaffordable = cost !== undefined && (denarii ?? 0) < cost;
   const { Icon, label } = slot;
   const emptyStars = Math.max(0, MAX_GEAR_TIER - tier);
-  const img = weaponType ? gearImage(slot.key, weaponType, tier) : null;
+  const img = isBeast ? gearImage(slot.key, weaponType ?? "", tier, true) : (weaponType ? gearImage(slot.key, weaponType, tier) : null);
   const title = atMax
     ? `${label} — mastercraft (VIII)`
     : forgeLocked
