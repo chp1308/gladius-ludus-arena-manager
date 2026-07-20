@@ -1161,27 +1161,92 @@ export const getLeaderboards = createServerFn({ method: "GET" })
     const { supabase } = context;
     const [ludi, glads] = await Promise.all([
       supabase.from("profiles")
-        .select("id,ludus_name,reputation,training_level,scouting_level,medicus_level,armory_level")
+        .select("id,ludus_name,reputation,training_level,scouting_level,medicus_level,armory_level,best_rank")
         .order("reputation", { ascending: false })
         .limit(25),
       supabase.from("gladiators")
-        .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,status")
+        .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank")
         .neq("status", "dead")
         .order("wins", { ascending: false })
         .order("level", { ascending: false })
         .limit(25),
     ]);
-    const ownerIds = [...new Set((glads.data ?? []).map(g => g.owner_id))];
+
+    // Persist best_rank (lower is better) for anyone whose current rank beats their stored best.
+    const ludiRows = ludi.data ?? [];
+    const gladRows = glads.data ?? [];
+    await Promise.all([
+      ...ludiRows.map((p, i) => {
+        const rank = i + 1;
+        if (p.best_rank == null || rank < p.best_rank) {
+          return supabase.from("profiles").update({ best_rank: rank } as never).eq("id", p.id);
+        }
+        return Promise.resolve();
+      }),
+      ...gladRows.map((g, i) => {
+        const rank = i + 1;
+        if (g.best_rank == null || rank < g.best_rank) {
+          return supabase.from("gladiators").update({ best_rank: rank } as never).eq("id", g.id);
+        }
+        return Promise.resolve();
+      }),
+    ]);
+
+    const ownerIds = [...new Set(gladRows.map(g => g.owner_id))];
     const { data: owners } = ownerIds.length
       ? await supabase.from("profiles").select("id,ludus_name").in("id", ownerIds)
       : { data: [] as { id: string; ludus_name: string }[] };
     const ownerMap = new Map((owners ?? []).map(o => [o.id, o.ludus_name]));
     return {
-      ludi: (ludi.data ?? []).map((p, i) => ({ rank: i + 1, ...p })),
-      gladiators: (glads.data ?? []).map((g, i) => ({
+      ludi: ludiRows.map((p, i) => ({ rank: i + 1, ...p, best_rank: Math.min(i + 1, p.best_rank ?? i + 1) })),
+      gladiators: gladRows.map((g, i) => ({
         rank: i + 1,
         ...g,
+        best_rank: Math.min(i + 1, g.best_rank ?? i + 1),
         ludus_name: ownerMap.get(g.owner_id) ?? "Unknown Ludus",
       })),
     };
   });
+
+// ============================================================
+// PUBLIC LUDUS PROFILE — visit another ludus
+// ============================================================
+export const updateLudusDescription = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { description: string }) =>
+    z.object({ description: z.string().max(500) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase.from("profiles")
+      .update({ description: data.description } as never)
+      .eq("id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getPublicLudus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: profile, error } = await supabase.from("profiles")
+      .select("id,ludus_name,description,reputation,best_rank,training_level,scouting_level,medicus_level,armory_level,pantry_level,created_at")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!profile) throw new Error("Ludus not found");
+
+    const { data: glads } = await supabase.from("gladiators")
+      .select("id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank,strength,agility,stamina,technique,portrait_seed")
+      .eq("owner_id", data.id)
+      .neq("status", "dead")
+      .order("wins", { ascending: false })
+      .order("level", { ascending: false })
+      .limit(8);
+
+    return {
+      profile,
+      showcase: glads ?? [],
+    };
+  });
+
