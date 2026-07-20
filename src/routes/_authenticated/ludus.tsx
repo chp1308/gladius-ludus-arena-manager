@@ -100,7 +100,14 @@ const GEAR_ART: Record<string, [string, string, string, string]> = {
 };
 
 // Which art family does a slot use? Weapon/off-hand depend on the fighter's class.
-function gearCategory(slotKey: SlotKey, weaponType: string): keyof typeof GEAR_ART | null {
+function gearCategory(slotKey: SlotKey, weaponType: string, isBeast = false): keyof typeof GEAR_ART | null {
+  if (isBeast) {
+    if (slotKey === "helmet") return "beast_head";
+    if (slotKey === "armor") return "beast_body";
+    if (slotKey === "legs") return "beast_legs";
+    if (slotKey === "offhand") return "beast_saddle";
+    return null;
+  }
   if (slotKey === "helmet") return "helmet";
   if (slotKey === "armor") return "cuirass";
   if (slotKey === "legs") return "greaves";
@@ -120,8 +127,8 @@ function gearCategory(slotKey: SlotKey, weaponType: string): keyof typeof GEAR_A
   return null;
 }
 
-function gearImage(slotKey: SlotKey, weaponType: string, tier: number): string | null {
-  const cat = gearCategory(slotKey, weaponType);
+function gearImage(slotKey: SlotKey, weaponType: string, tier: number, isBeast = false): string | null {
+  const cat = gearCategory(slotKey, weaponType, isBeast);
   if (!cat) return null;
   const grade = Math.min(4, Math.max(1, Math.ceil(tier / 2))); // 1-2→1, 3-4→2, 5-6→3, 7-8→4
   return GEAR_ART[cat][grade - 1] ?? null;
