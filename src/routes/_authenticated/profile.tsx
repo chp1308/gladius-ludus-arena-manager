@@ -29,6 +29,7 @@ function PublicProfilePage() {
     queryFn: () => fetchMine({}),
   });
 
+  const [ludusName, setLudusName] = useState("");
   const [motto, setMotto] = useState("");
   const [bio, setBio] = useState("");
   const [limit, setLimit] = useState(8);
@@ -37,9 +38,11 @@ function PublicProfilePage() {
   useEffect(() => {
     if (!data?.profile) return;
     const p = data.profile as unknown as {
+      ludus_name: string | null;
       description: string | null; bio: string | null;
       showcase_limit: number | null; showcase_gladiator_ids: string[] | null;
     };
+    setLudusName(p.ludus_name ?? "");
     setMotto(p.description ?? "");
     setBio(p.bio ?? "");
     setLimit(p.showcase_limit ?? 8);
@@ -48,6 +51,7 @@ function PublicProfilePage() {
 
   const mut = useMutation({
     mutationFn: () => save({ data: {
+      ludus_name: ludusName.trim(),
       description: motto, bio,
       showcase_limit: limit,
       showcase_gladiator_ids: picks,
@@ -100,6 +104,21 @@ function PublicProfilePage() {
 
         {data && (
           <>
+            <Card className="p-6">
+              <h2 className="mb-3 font-display text-lg tracking-widest text-primary">Ludus Name</h2>
+              <p className="mb-2 text-xs text-muted-foreground">The name rival lanistae see. 3–40 characters.</p>
+              <input
+                type="text"
+                minLength={3}
+                maxLength={40}
+                value={ludusName}
+                onChange={(e) => setLudusName(e.target.value)}
+                placeholder="Ludus Magnus of Capua"
+                className="w-full rounded-md border border-border/60 bg-background p-3 font-serif text-base outline-none focus:border-primary"
+              />
+              <div className="mt-1 text-right text-xs text-muted-foreground">{ludusName.length}/40</div>
+            </Card>
+
             <Card className="p-6">
               <h2 className="mb-3 font-display text-lg tracking-widest text-primary">Motto</h2>
               <p className="mb-2 text-xs text-muted-foreground">A short creed shown at the top of your ludus page. Up to 500 characters.</p>
