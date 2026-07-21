@@ -29,6 +29,7 @@ function PublicProfilePage() {
     queryFn: () => fetchMine({}),
   });
 
+  const [ludusName, setLudusName] = useState("");
   const [motto, setMotto] = useState("");
   const [bio, setBio] = useState("");
   const [limit, setLimit] = useState(8);
@@ -37,9 +38,11 @@ function PublicProfilePage() {
   useEffect(() => {
     if (!data?.profile) return;
     const p = data.profile as unknown as {
+      ludus_name: string | null;
       description: string | null; bio: string | null;
       showcase_limit: number | null; showcase_gladiator_ids: string[] | null;
     };
+    setLudusName(p.ludus_name ?? "");
     setMotto(p.description ?? "");
     setBio(p.bio ?? "");
     setLimit(p.showcase_limit ?? 8);
@@ -48,6 +51,7 @@ function PublicProfilePage() {
 
   const mut = useMutation({
     mutationFn: () => save({ data: {
+      ludus_name: ludusName.trim(),
       description: motto, bio,
       showcase_limit: limit,
       showcase_gladiator_ids: picks,
