@@ -114,7 +114,9 @@ function InfoPage() {
           </Section>
 
           <Section title="Round Combat" icon={<Swords className="h-5 w-5" />}>
-            <p>Each round both fighters roll <span className="text-foreground">Power + 0–40</span>. Highest roll lands a hit; damage is then rolled from their weapon tier + level bonus, minus the target's armor mitigation.</p>
+            <p>Each round a fighter's chance to land the hit is:</p>
+            <div className="rounded-md bg-background/60 p-3 font-mono text-xs text-foreground">WinChance = 5% + 90% × (Power^0.75 / (Power^0.75 + EnemyPower^0.75))</div>
+            <p>This gives a 5% minimum upset chance and a 95% maximum dominance chance. The winner then rolls damage from their weapon tier + level bonus, minus the target's armor mitigation.</p>
             <p>First fighter to 0 HP loses. In <span className="text-foreground">Sine Missione</span> death matches, the loser is lost forever.</p>
           </Section>
         </div>

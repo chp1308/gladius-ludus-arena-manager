@@ -142,6 +142,16 @@ export function gladiatorPower(
   return Math.floor(raw * skillMod);
 }
 
+// Probability that fighter A wins an exchange against fighter B.
+// 5% minimum upset chance, 90% scaled by the 0.75-power ratio, 95% maximum.
+export function winChance(powerA: number, powerB: number): number {
+  const a = Math.max(0, powerA);
+  const b = Math.max(0, powerB);
+  if (a === 0 && b === 0) return 0.5;
+  const ratio = Math.pow(a, 0.75) / (Math.pow(a, 0.75) + Math.pow(b, 0.75));
+  return 0.05 + 0.90 * ratio;
+}
+
 // Weapon tier increases hit range. Tier 1: 15–30, Tier 8: 36–65.
 export function weaponDamageRange(weaponTier: number) {
   const t = Math.max(1, weaponTier || 1);
@@ -546,14 +556,13 @@ export const fightMatch = createServerFn({ method: "POST" })
     };
     const myDmg = weaponDamageRange(g.weapon_tier);
     const myMit = armorMitigation(g, defenseLevel);
-    log.push(`Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
+    const myChance = winChance(myPower, opponentPower);
+    log.push(`Win chance: ${Math.round(myChance * 100)}%. Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
 
     let myHp = 100, oppHp = 100;
     const rounds = rand(3, 5);
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
-      const myRoll = myPower + rand(0, 40);
-      const oppRoll = opponentPower + rand(0, 40);
-      if (myRoll > oppRoll) {
+      if (Math.random() < myChance) {
         const dmg = rollDamage(g.weapon_tier, opponent, 0, g.level);
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
@@ -854,14 +863,13 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     log.push(`Power ${myPower} vs ${oppPower}.`);
     const myDmg = weaponDamageRange(g.weapon_tier);
     const oppDmg = weaponDamageRange(opp.weapon_tier);
-    log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg.`);
+    const myChance = winChance(myPower, oppPower);
+    log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg. Win chance: ${Math.round(myChance * 100)}%.`);
     if (myDefenseLevel > 0) log.push(`${g.name} adopts defensive stance — rank ${myDefenseLevel}.`);
     if (oppDefenseLevel > 0) log.push(`${opp.name} adopts defensive stance — rank ${oppDefenseLevel}.`);
     let myHp = 100, oHp = 100;
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
-      const mr = myPower + rand(0, 40);
-      const or = oppPower + rand(0, 40);
-      if (mr > or) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
+      if (Math.random() < myChance) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
       else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel, opp.level); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
     }
 
@@ -1090,12 +1098,13 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     log.push(`Team power ${teamPower} vs ${enemyPower}.`);
     if (defenseLevel > 0) log.push(`Defensive doctrine: rank ${defenseLevel} — the cohort shrugs off heavier blows.`);
 
+    const teamChance = winChance(teamPower, enemyPower);
+    log.push(`Cohort win chance per exchange: ${Math.round(teamChance * 100)}%.`);
+
     let teamHp = team.length * 100;
     let enemyHp = team.length * 100;
     for (let i = 1; i <= 6 && teamHp > 0 && enemyHp > 0; i++) {
-      const mr = teamPower + rand(0, 60);
-      const or = enemyPower + rand(0, 60);
-      if (mr > or) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
+      if (Math.random() < teamChance) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
       else { const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction)); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
     }
     const won = enemyHp <= teamHp;
