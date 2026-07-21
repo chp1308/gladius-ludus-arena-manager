@@ -142,6 +142,16 @@ export function gladiatorPower(
   return Math.floor(raw * skillMod);
 }
 
+// Probability that fighter A wins an exchange against fighter B.
+// 5% minimum upset chance, 90% scaled by the 0.75-power ratio, 95% maximum.
+export function winChance(powerA: number, powerB: number): number {
+  const a = Math.max(0, powerA);
+  const b = Math.max(0, powerB);
+  if (a === 0 && b === 0) return 0.5;
+  const ratio = Math.pow(a, 0.75) / (Math.pow(a, 0.75) + Math.pow(b, 0.75));
+  return 0.05 + 0.90 * ratio;
+}
+
 // Weapon tier increases hit range. Tier 1: 15–30, Tier 8: 36–65.
 export function weaponDamageRange(weaponTier: number) {
   const t = Math.max(1, weaponTier || 1);
