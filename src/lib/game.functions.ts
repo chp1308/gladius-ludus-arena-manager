@@ -1227,12 +1227,14 @@ export const updateLudusDescription = createServerFn({ method: "POST" })
 export const updateLudusProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: {
+    ludus_name?: string;
     description?: string;
     bio?: string;
     showcase_limit?: number;
     showcase_gladiator_ids?: string[];
   }) =>
     z.object({
+      ludus_name: z.string().trim().min(3).max(40).optional(),
       description: z.string().max(500).optional(),
       bio: z.string().max(1500).optional(),
       showcase_limit: z.number().int().min(1).max(12).optional(),
@@ -1241,6 +1243,7 @@ export const updateLudusProfile = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const patch: Record<string, unknown> = {};
+    if (data.ludus_name !== undefined) patch.ludus_name = data.ludus_name;
     if (data.description !== undefined) patch.description = data.description;
     if (data.bio !== undefined) patch.bio = data.bio;
     if (data.showcase_limit !== undefined) patch.showcase_limit = data.showcase_limit;
