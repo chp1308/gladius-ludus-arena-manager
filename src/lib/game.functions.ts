@@ -1098,12 +1098,13 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     log.push(`Team power ${teamPower} vs ${enemyPower}.`);
     if (defenseLevel > 0) log.push(`Defensive doctrine: rank ${defenseLevel} — the cohort shrugs off heavier blows.`);
 
+    const teamChance = winChance(teamPower, enemyPower);
+    log.push(`Cohort win chance per exchange: ${Math.round(teamChance * 100)}%.`);
+
     let teamHp = team.length * 100;
     let enemyHp = team.length * 100;
     for (let i = 1; i <= 6 && teamHp > 0 && enemyHp > 0; i++) {
-      const mr = teamPower + rand(0, 60);
-      const or = enemyPower + rand(0, 60);
-      if (mr > or) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
+      if (Math.random() < teamChance) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
       else { const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction)); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
     }
     const won = enemyHp <= teamHp;
