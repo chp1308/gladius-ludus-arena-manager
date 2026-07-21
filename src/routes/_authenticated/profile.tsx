@@ -105,6 +105,21 @@ function PublicProfilePage() {
         {data && (
           <>
             <Card className="p-6">
+              <h2 className="mb-3 font-display text-lg tracking-widest text-primary">Ludus Name</h2>
+              <p className="mb-2 text-xs text-muted-foreground">The name rival lanistae see. 3–40 characters.</p>
+              <input
+                type="text"
+                minLength={3}
+                maxLength={40}
+                value={ludusName}
+                onChange={(e) => setLudusName(e.target.value)}
+                placeholder="Ludus Magnus of Capua"
+                className="w-full rounded-md border border-border/60 bg-background p-3 font-serif text-base outline-none focus:border-primary"
+              />
+              <div className="mt-1 text-right text-xs text-muted-foreground">{ludusName.length}/40</div>
+            </Card>
+
+            <Card className="p-6">
               <h2 className="mb-3 font-display text-lg tracking-widest text-primary">Motto</h2>
               <p className="mb-2 text-xs text-muted-foreground">A short creed shown at the top of your ludus page. Up to 500 characters.</p>
               <textarea
