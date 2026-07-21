@@ -556,14 +556,13 @@ export const fightMatch = createServerFn({ method: "POST" })
     };
     const myDmg = weaponDamageRange(g.weapon_tier);
     const myMit = armorMitigation(g, defenseLevel);
-    log.push(`Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
+    const myChance = winChance(myPower, opponentPower);
+    log.push(`Win chance: ${Math.round(myChance * 100)}%. Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
 
     let myHp = 100, oppHp = 100;
     const rounds = rand(3, 5);
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
-      const myRoll = myPower + rand(0, 40);
-      const oppRoll = opponentPower + rand(0, 40);
-      if (myRoll > oppRoll) {
+      if (Math.random() < myChance) {
         const dmg = rollDamage(g.weapon_tier, opponent, 0, g.level);
         oppHp -= dmg;
         log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
