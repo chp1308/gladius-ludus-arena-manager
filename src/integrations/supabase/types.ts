@@ -348,42 +348,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_pvp_profiles: {
-        Args: { p_ids: string[] }
-        Returns: {
-          id: string
-          ludus_name: string
-          description: string
-          bio: string
-          reputation: number
-          best_rank: number | null
-          training_level: number
-          scouting_level: number
-          medicus_level: number
-          armory_level: number
-          pantry_level: number
-          showcase_limit: number
-          showcase_gladiator_ids: string[]
-          created_at: string
-        }[]
-      }
-      get_reputation_leaderboard: {
-        Args: { p_limit?: number }
-        Returns: {
-          id: string
-          ludus_name: string
-          reputation: number
-          best_rank: number | null
-          training_level: number
-          scouting_level: number
-          medicus_level: number
-          armory_level: number
-        }[]
-      }
-      spend_denarii: {
-        Args: { p_amount: number; p_user: string }
-        Returns: number
-      }
+      [_ in never]: never
     }
     Enums: {
       [_ in never]: never
