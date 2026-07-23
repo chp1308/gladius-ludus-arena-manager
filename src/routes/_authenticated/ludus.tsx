@@ -768,6 +768,95 @@ function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: num
 }
 
 
+type SlotKey = "helmet" | "armor" | "legs" | "weapon" | "offhand";
+type SlotIconProps = { className?: string };
+
+type WeaponLoadout = {
+  weapon: { label: string; Icon: React.ComponentType<SlotIconProps> };
+  offhand: { label: string; Icon: React.ComponentType<SlotIconProps> } | null;
+};
+const LOADOUTS: Record<string, WeaponLoadout> = {
+  gladius: { weapon: { label: "Gladius", Icon: Sword }, offhand: { label: "Scutum", Icon: Shield } },
+  spear:   { weapon: { label: "Spear",   Icon: SpearIcon }, offhand: { label: "Parma", Icon: ShieldHalf } },
+  net:     { weapon: { label: "Trident", Icon: TridentIcon }, offhand: { label: "Net", Icon: NetIcon } },
+  dual:    { weapon: { label: "Sword",   Icon: Sword }, offhand: { label: "Sword", Icon: Sword } },
+};
+function loadoutFor(weaponType: string): WeaponLoadout {
+  return LOADOUTS[weaponType] ?? { weapon: { label: "Weapon", Icon: Swords }, offhand: { label: "Off-hand", Icon: Shield } };
+}
+
+function SpearIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20 L 20 4" />
+      <path d="M20 4 L 15 4 L 20 9 Z" fill="currentColor" />
+      <path d="M6 18 L 3 21" />
+    </svg>
+  );
+}
+function TridentIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22 L 12 10" />
+      <path d="M6 8 L 6 3 M12 8 L 12 2 M18 8 L 18 3" />
+      <path d="M4 8 L 20 8" />
+      <path d="M9 12 L 15 12" />
+    </svg>
+  );
+}
+function NetIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12 H21 M12 3 V21 M5 5 L 19 19 M19 5 L 5 19" />
+    </svg>
+  );
+}
+function SaddleIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 14 Q 6 8 12 8 Q 18 8 21 14 Q 18 16 12 16 Q 6 16 3 14 Z" fill="currentColor" opacity="0.15" />
+      <path d="M3 14 Q 6 8 12 8 Q 18 8 21 14" />
+      <path d="M3 14 Q 6 18 12 18 Q 18 18 21 14" />
+      <path d="M10 8 L 10 5 M14 8 L 14 5" />
+      <path d="M8 14 L 16 14" />
+    </svg>
+  );
+}
+function BeastHeadIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 6 Q 12 3 17 6 L 18 12 Q 18 18 12 21 Q 6 18 6 12 Z" fill="currentColor" opacity="0.15" />
+      <path d="M7 6 Q 12 3 17 6 L 18 12 Q 18 18 12 21 Q 6 18 6 12 Z" />
+      <path d="M12 3 L 12 0.5" />
+      <circle cx="9.5" cy="12" r="0.9" fill="currentColor" />
+      <circle cx="14.5" cy="12" r="0.9" fill="currentColor" />
+      <path d="M10 17 L 14 17" />
+    </svg>
+  );
+}
+function BeastBardingIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" fill="currentColor" opacity="0.15" />
+      <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" />
+      <path d="M8 6 L 8 20 M16 6 L 16 20" />
+    </svg>
+  );
+}
+function BeastLegIcon({ className }: SlotIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="12" r="4" fill="currentColor" opacity="0.15" />
+      <circle cx="8" cy="12" r="4" />
+      <circle cx="16" cy="12" r="4" fill="currentColor" opacity="0.15" />
+      <circle cx="16" cy="12" r="4" />
+      <path d="M6 12 L 10 12 M14 12 L 18 12" />
+    </svg>
+  );
+}
+
+
 const SLOTS: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconProps>; tierField: keyof Gladiator }[] = [
   { key: "helmet",  label: "Helmet",   Icon: HardHat,    tierField: "helmet_tier" as keyof Gladiator },
   { key: "armor",   label: "Cuirass",  Icon: Shield,     tierField: "armor_tier" },
