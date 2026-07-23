@@ -695,26 +695,26 @@ function seedFrom(str: string) {
 // Realistic portraits: pool of AI-generated headshots grouped by weapon type
 // so each class shows fighters wielding the correct armament. Picked
 // deterministically by gladiator id so each fighter keeps a stable face.
-import gladius1 from "@/assets/portraits/gladius_1.jpg";
-import gladius2 from "@/assets/portraits/gladius_2.jpg";
-import gladius3 from "@/assets/portraits/gladius_3.jpg";
-import gladius4 from "@/assets/portraits/gladius_4.jpg";
-import gladius5 from "@/assets/portraits/gladius_5.jpg";
-import spear1 from "@/assets/portraits/spear_1.jpg";
-import spear2 from "@/assets/portraits/spear_2.jpg";
-import spear3 from "@/assets/portraits/spear_3.jpg";
-import spear4 from "@/assets/portraits/spear_4.jpg";
-import spear5 from "@/assets/portraits/spear_5.jpg";
-import net1 from "@/assets/portraits/net_1.jpg";
-import net2 from "@/assets/portraits/net_2.jpg";
-import net3 from "@/assets/portraits/net_3.jpg";
-import net4 from "@/assets/portraits/net_4.jpg";
-import net5 from "@/assets/portraits/net_5.jpg";
-import dual1 from "@/assets/portraits/dual_1.jpg";
-import dual2 from "@/assets/portraits/dual_2.jpg";
-import dual3 from "@/assets/portraits/dual_3.jpg";
-import dual4 from "@/assets/portraits/dual_4.jpg";
-import dual5 from "@/assets/portraits/dual_5.jpg";
+import pGladius1 from "@/assets/portraits/gladius_1.jpg";
+import pGladius2 from "@/assets/portraits/gladius_2.jpg";
+import pGladius3 from "@/assets/portraits/gladius_3.jpg";
+import pGladius4 from "@/assets/portraits/gladius_4.jpg";
+import pGladius5 from "@/assets/portraits/gladius_5.jpg";
+import pSpear1 from "@/assets/portraits/spear_1.jpg";
+import pSpear2 from "@/assets/portraits/spear_2.jpg";
+import pSpear3 from "@/assets/portraits/spear_3.jpg";
+import pSpear4 from "@/assets/portraits/spear_4.jpg";
+import pSpear5 from "@/assets/portraits/spear_5.jpg";
+import pNet1 from "@/assets/portraits/net_1.jpg";
+import pNet2 from "@/assets/portraits/net_2.jpg";
+import pNet3 from "@/assets/portraits/net_3.jpg";
+import pNet4 from "@/assets/portraits/net_4.jpg";
+import pNet5 from "@/assets/portraits/net_5.jpg";
+import pDual1 from "@/assets/portraits/dual_1.jpg";
+import pDual2 from "@/assets/portraits/dual_2.jpg";
+import pDual3 from "@/assets/portraits/dual_3.jpg";
+import pDual4 from "@/assets/portraits/dual_4.jpg";
+import pDual5 from "@/assets/portraits/dual_5.jpg";
 import beastLion from "@/assets/portraits/beast_lion.jpg";
 import beastTiger from "@/assets/portraits/beast_tiger.jpg";
 import beastElephant from "@/assets/portraits/beast_elephant.jpg";
@@ -722,9 +722,9 @@ import beastRhino from "@/assets/portraits/beast_rhino.jpg";
 
 const PORTRAITS_BY_WEAPON: Record<string, string[]> = {
   gladius: [gladius1, gladius2, gladius3, gladius4, gladius5],
-  spear: [spear1, spear2, spear3, spear4, spear5],
-  net: [net1, net2, net3, net4, net5],
-  dual: [dual1, dual2, dual3, dual4, dual5],
+  spear: [pSpear1, pSpear2, pSpear3, pSpear4, pSpear5],
+  net: [pNet1, pNet2, pNet3, pNet4, pNet5],
+  dual: [pDual1, pDual2, pDual3, pDual4, pDual5],
 };
 const ALL_HUMAN_PORTRAITS = Object.values(PORTRAITS_BY_WEAPON).flat();
 const BEAST_PORTRAITS: Record<string, string> = {
