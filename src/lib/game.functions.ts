@@ -219,21 +219,25 @@ export const upgradeFacility = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level";
     const curr = (profile as unknown as Record<string, number>)[col];
     if (curr >= MAX_FACILITY) throw new Error("Facility already at max level");
     const cost = FACILITY_COST(curr);
-    if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
     const next = curr + 1;
-    const patch =
-      data.facility === "training" ? { denarii: profile.denarii - cost, training_level: next } :
-      data.facility === "scouting" ? { denarii: profile.denarii - cost, scouting_level: next } :
-      data.facility === "medicus" ? { denarii: profile.denarii - cost, medicus_level: next } :
-      data.facility === "pantry" ? { denarii: profile.denarii - cost, pantry_level: next } :
-      { denarii: profile.denarii - cost, armory_level: next };
-    const { error } = await supabase.from("profiles").update(patch as never).eq("id", userId);
+
+    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
+    if (spent == null) throw new Error(`Need ${cost} denarii`);
+
+    const levelPatch =
+      data.facility === "training" ? { training_level: next } :
+      data.facility === "scouting" ? { scouting_level: next } :
+      data.facility === "medicus" ? { medicus_level: next } :
+      data.facility === "pantry" ? { pantry_level: next } :
+      { armory_level: next };
+    const { error } = await supabaseAdmin.from("profiles").update(levelPatch as never).eq("id", userId);
     if (error) throw new Error(error.message);
     return { ok: true, cost, newLevel: next };
   });
@@ -253,6 +257,7 @@ export const upgradeSkill = createServerFn({ method: "POST" })
 
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("denarii").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const { data: existing } = await supabase
@@ -264,18 +269,19 @@ export const upgradeSkill = createServerFn({ method: "POST" })
     const curr = existing?.level ?? 0;
     if (curr >= MAX_SKILL) throw new Error("Skill already mastered");
     const cost = SKILL_COST(curr);
-    if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
+
+    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
+    if (spent == null) throw new Error(`Need ${cost} denarii`);
 
     if (existing) {
-      const { error } = await supabase.from("ludus_skills").update({ level: curr + 1 }).eq("id", existing.id);
+      const { error } = await supabaseAdmin.from("ludus_skills").update({ level: curr + 1 }).eq("id", existing.id);
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await supabase.from("ludus_skills").insert({
+      const { error } = await supabaseAdmin.from("ludus_skills").insert({
         owner_id: userId, weapon_type: data.weaponType, level: 1,
       });
       if (error) throw new Error(error.message);
     }
-    await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
     return { ok: true, cost, newLevel: curr + 1 };
   });
 
@@ -284,10 +290,10 @@ export const recruitGladiator = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const COST = Math.max(60, 100 - (profile.scouting_level - 1) * 10);
-    if (profile.denarii < COST) throw new Error(`Scouting fee: ${COST} denarii`);
 
     const g = generateGladiator(profile.scouting_level);
 
@@ -301,10 +307,11 @@ export const recruitGladiator = createServerFn({ method: "POST" })
     if (g.is_beast && beasts >= cap.beasts) throw new Error(`Your pantry cannot feed another beast (${beasts}/${cap.beasts}). Upgrade the Pantry.`);
     if (!g.is_beast && humans >= cap.humans) throw new Error(`Your pantry is full (${humans}/${cap.humans} gladiators). Upgrade the Pantry.`);
 
-    const { error: insertErr } = await supabase.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
+    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: COST });
+    if (spent == null) throw new Error(`Scouting fee: ${COST} denarii`);
+
+    const { error: insertErr } = await supabaseAdmin.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
     if (insertErr) throw new Error(insertErr.message);
-    const { error: updErr } = await supabase.from("profiles").update({ denarii: profile.denarii - COST }).eq("id", userId);
-    if (updErr) throw new Error(updErr.message);
     return { ok: true, isBeast: g.is_beast, name: g.name };
   });
 
@@ -318,18 +325,23 @@ export const trainGladiator = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const COST = Math.max(20, 50 - (profile.training_level - 1) * 6);
-    if (profile.denarii < COST) throw new Error(`Training costs ${COST} denarii`);
 
-    const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
+    const { data: g } = await supabase.from("gladiators")
+      .select("id,status,injury_until,strength,agility,stamina,technique,health,total_invested")
+      .eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("Gladiator has fallen");
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
 
     const cap = statCap(profile.training_level);
     if ((g[data.stat] as number) >= cap) throw new Error(`Stat capped at ${cap} — upgrade Training Yard`);
+
+    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: COST });
+    if (spent == null) throw new Error(`Training costs ${COST} denarii`);
 
     // Better training = bigger gains
     const bigChance = 0.2 + profile.training_level * 0.1;
@@ -341,9 +353,8 @@ export const trainGladiator = createServerFn({ method: "POST" })
       data.stat === "agility" ? { ...basePatch, agility: newVal } :
       data.stat === "stamina" ? { ...basePatch, stamina: newVal, health: Math.min(maxHealth(newVal), g.health + (newVal - g.stamina) * 5) } :
       { ...basePatch, technique: newVal };
-    const { error } = await supabase.from("gladiators").update(patch).eq("id", g.id);
+    const { error } = await supabaseAdmin.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
-    await supabase.from("profiles").update({ denarii: profile.denarii - COST }).eq("id", userId);
     return { ok: true, gain, stat: data.stat };
   });
 
@@ -357,9 +368,12 @@ export const upgradeEquipment = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
-    const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
+    const { data: g } = await supabase.from("gladiators")
+      .select("id,status,is_beast,weapon_tier,armor_tier,helmet_tier,legs_tier,offhand_tier,total_invested")
+      .eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("Gladiator has fallen");
     if (g.is_beast && data.slot === "weapon") throw new Error("Beasts have no weapon slot");
@@ -372,13 +386,13 @@ export const upgradeEquipment = createServerFn({ method: "POST" })
     const reqArmory = requiredArmoryLevel(nextTier);
     if (profile.armory_level < reqArmory) throw new Error(`The armory must be level ${reqArmory} to forge tier ${nextTier} gear`);
     const cost = gearCost(data.slot, currentTier, profile.armory_level);
-    if (profile.denarii < cost) throw new Error(`Need ${cost} denarii`);
+
+    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
+    if (spent == null) throw new Error(`Need ${cost} denarii`);
 
     const patch = { [tierField]: currentTier + 1, total_invested: (g.total_invested ?? 0) + cost };
-    const { error } = await supabase.from("gladiators").update(patch as never).eq("id", g.id);
-
+    const { error } = await supabaseAdmin.from("gladiators").update(patch as never).eq("id", g.id);
     if (error) throw new Error(error.message);
-    await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
     return { ok: true, cost };
   });
 
@@ -389,6 +403,7 @@ export const healGladiator = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ gladiatorId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
@@ -400,14 +415,16 @@ export const healGladiator = createServerFn({ method: "POST" })
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
     const baseCost = Math.max(30, missing * 2);
     const cost = Math.max(15, Math.floor(baseCost * (1 - (profile.medicus_level - 1) * 0.12)));
-    if (profile.denarii < cost) throw new Error(`Physician needs ${cost} denarii`);
-    const { error } = await supabase.from("gladiators").update({
+
+    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
+    if (spent == null) throw new Error(`Physician needs ${cost} denarii`);
+
+    const { error } = await supabaseAdmin.from("gladiators").update({
       health: hpMax,
       injury_until: null,
       total_invested: (g.total_invested ?? 0) + cost,
     }).eq("id", g.id);
     if (error) throw new Error(error.message);
-    await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
     return { ok: true, cost };
   });
 
@@ -417,8 +434,9 @@ export const dismissGladiator = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({ gladiatorId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase.from("gladiators").delete().eq("id", data.gladiatorId).eq("owner_id", userId);
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("gladiators").delete().eq("id", data.gladiatorId).eq("owner_id", userId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -515,6 +533,7 @@ export const fightMatch = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
@@ -615,10 +634,10 @@ export const fightMatch = createServerFn({ method: "POST" })
       losses: g.losses + (won ? 0 : 1),
     };
 
-    const { error: gErr } = await supabase.from("gladiators").update(gladPatch).eq("id", g.id);
+    const { error: gErr } = await supabaseAdmin.from("gladiators").update(gladPatch).eq("id", g.id);
     if (gErr) throw new Error(gErr.message);
 
-    await supabase.from("profiles").update({
+    await supabaseAdmin.from("profiles").update({
       denarii: profile.denarii + denariiGained,
       reputation: profile.reputation + repGained,
     }).eq("id", userId);
@@ -672,6 +691,7 @@ export const postPvpChallenge = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("Gladiator has fallen");
@@ -680,7 +700,7 @@ export const postPvpChallenge = createServerFn({ method: "POST" })
     if (g.health < 30) throw new Error("Gladiator too wounded");
 
     const rating = matchRating(g);
-    const { data: inserted, error } = await supabase.from("pvp_challenges").insert({
+    const { data: inserted, error } = await supabaseAdmin.from("pvp_challenges").insert({
       challenger_id: userId,
       challenger_gladiator_id: g.id,
       rating,
@@ -688,7 +708,7 @@ export const postPvpChallenge = createServerFn({ method: "POST" })
       status: "open",
     }).select("id").single();
     if (error) throw new Error(error.message);
-    await supabase.from("gladiators").update({ status: "challenging" }).eq("id", g.id);
+    await supabaseAdmin.from("gladiators").update({ status: "challenging" }).eq("id", g.id);
     return { ok: true, id: inserted.id };
   });
 
@@ -698,11 +718,12 @@ export const cancelPvpChallenge = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ challengeId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: c } = await supabase.from("pvp_challenges").select("*").eq("id", data.challengeId).eq("challenger_id", userId).maybeSingle();
     if (!c) throw new Error("Challenge not found");
     if (c.status !== "open") throw new Error("Challenge already resolved");
-    await supabase.from("pvp_challenges").delete().eq("id", c.id);
-    await supabase.from("gladiators").update({ status: "idle" }).eq("id", c.challenger_gladiator_id).eq("owner_id", userId);
+    await supabaseAdmin.from("pvp_challenges").delete().eq("id", c.id).eq("challenger_id", userId);
+    await supabaseAdmin.from("gladiators").update({ status: "idle" }).eq("id", c.challenger_gladiator_id).eq("owner_id", userId);
     return { ok: true };
   });
 
@@ -771,7 +792,7 @@ export const listOpenPvpChallenges = createServerFn({ method: "GET" })
             .in("id", gladiatorIds)
         : Promise.resolve({ data: [] as never[] }),
       ownerIds.length
-        ? supabase.from("profiles").select("id,ludus_name,reputation").in("id", ownerIds)
+        ? supabase.rpc("get_pvp_profiles", { p_ids: ownerIds })
         : Promise.resolve({ data: [] as never[] }),
     ]);
     const gMap = new Map((gladRes.data ?? []).map(g => [g.id, g]));
@@ -845,6 +866,19 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     if (!opp) throw new Error("Opposing gladiator no longer exists");
     if (opp.status === "dead") throw new Error("Opposing champion has fallen");
 
+    // Atomically claim the challenge before simulating the fight — two
+    // players accepting the same "open" challenge in the same window could
+    // otherwise both pass the status check above and both resolve it,
+    // duplicating rewards and double-updating the challenger's gladiator.
+    const { data: claimed } = await supabaseAdmin
+      .from("pvp_challenges")
+      .update({ status: "accepted" })
+      .eq("id", c.id)
+      .eq("status", "open")
+      .select()
+      .maybeSingle();
+    if (!claimed) throw new Error("Challenge already resolved");
+
     const toDeath = !!c.to_death;
     const rewardMult = toDeath ? 5 : 1;
 
@@ -896,7 +930,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       ? (toDeath ? `${g.name} stands victorious over ${opp.name}'s corpse. The purse is enormous.` : `Victory over ${opp.name}! Fame spreads through the provinces.`)
       : (toDeath ? `${opp.name}'s ludus claims your champion's life.` : `${opp.name}'s ludus claims the honor.`));
 
-    await supabase.from("gladiators").update({
+    await supabaseAdmin.from("gladiators").update({
       health: newHealth,
       injury_until: injuryUntil,
       status: myDied ? "dead" : "idle",
@@ -906,7 +940,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       losses: g.losses + (won ? 0 : 1),
     }).eq("id", g.id);
 
-    await supabase.from("profiles").update({
+    await supabaseAdmin.from("profiles").update({
       denarii: profile.denarii + denariiGained,
       reputation: Math.max(0, profile.reputation + repGained),
     }).eq("id", userId);
@@ -986,6 +1020,7 @@ export const honorGladiator = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
@@ -993,9 +1028,11 @@ export const honorGladiator = createServerFn({ method: "POST" })
     if (g.status !== "dead") throw new Error("Only fallen gladiators may be honored");
 
     const cost = Math.max(10, Math.ceil((g.total_invested ?? 0) * 0.05));
-    if (profile.denarii < cost) throw new Error(`A proper memorial costs ${cost} denarii`);
 
-    const { error: insErr } = await supabase.from("hall_of_fame").insert({
+    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
+    if (spent == null) throw new Error(`A proper memorial costs ${cost} denarii`);
+
+    const { error: insErr } = await supabaseAdmin.from("hall_of_fame").insert({
       owner_id: userId,
       name: g.name,
       class: g.class,
@@ -1009,8 +1046,7 @@ export const honorGladiator = createServerFn({ method: "POST" })
     });
     if (insErr) throw new Error(insErr.message);
 
-    await supabase.from("gladiators").delete().eq("id", g.id);
-    await supabase.from("profiles").update({ denarii: profile.denarii - cost }).eq("id", userId);
+    await supabaseAdmin.from("gladiators").delete().eq("id", g.id);
     return { ok: true, cost };
   });
 
@@ -1073,6 +1109,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const battle = TEAM_BATTLES.find(b => b.key === data.battleKey);
     if (!battle) throw new Error("Unknown battle");
 
@@ -1130,7 +1167,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       const newXp = g.experience + xpEach;
       const xpNext = g.level * 100;
       const leveledUp = newXp >= xpNext;
-      await supabase.from("gladiators").update({
+      await supabaseAdmin.from("gladiators").update({
         health: newHealth,
         injury_until: injuryUntil,
         experience: leveledUp ? newXp - xpNext : newXp,
@@ -1152,7 +1189,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       });
     }
 
-    await supabase.from("profiles").update({
+    await supabaseAdmin.from("profiles").update({
       denarii: profile.denarii + denariiGained,
       reputation: profile.reputation + repGained,
     }).eq("id", userId);
@@ -1168,11 +1205,9 @@ export const getLeaderboards = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [ludi, glads] = await Promise.all([
-      supabase.from("profiles")
-        .select("id,ludus_name,reputation,training_level,scouting_level,medicus_level,armory_level,best_rank")
-        .order("reputation", { ascending: false })
-        .limit(25),
+      supabase.rpc("get_reputation_leaderboard", { p_limit: 25 }),
       supabase.from("gladiators")
         .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank")
         .neq("status", "dead")
@@ -1188,14 +1223,14 @@ export const getLeaderboards = createServerFn({ method: "GET" })
       ...ludiRows.map((p, i) => {
         const rank = i + 1;
         if (p.best_rank == null || rank < p.best_rank) {
-          return supabase.from("profiles").update({ best_rank: rank } as never).eq("id", p.id);
+          return supabaseAdmin.from("profiles").update({ best_rank: rank } as never).eq("id", p.id);
         }
         return Promise.resolve();
       }),
       ...gladRows.map((g, i) => {
         const rank = i + 1;
         if (g.best_rank == null || rank < g.best_rank) {
-          return supabase.from("gladiators").update({ best_rank: rank } as never).eq("id", g.id);
+          return supabaseAdmin.from("gladiators").update({ best_rank: rank } as never).eq("id", g.id);
         }
         return Promise.resolve();
       }),
@@ -1203,7 +1238,7 @@ export const getLeaderboards = createServerFn({ method: "GET" })
 
     const ownerIds = [...new Set(gladRows.map(g => g.owner_id))];
     const { data: owners } = ownerIds.length
-      ? await supabase.from("profiles").select("id,ludus_name").in("id", ownerIds)
+      ? await supabase.rpc("get_pvp_profiles", { p_ids: ownerIds })
       : { data: [] as { id: string; ludus_name: string }[] };
     const ownerMap = new Map((owners ?? []).map(o => [o.id, o.ludus_name]));
     return {
@@ -1225,8 +1260,9 @@ export const updateLudusDescription = createServerFn({ method: "POST" })
   .inputValidator((d: { description: string }) =>
     z.object({ description: z.string().max(500) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase.from("profiles")
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("profiles")
       .update({ description: data.description } as never)
       .eq("id", userId);
     if (error) throw new Error(error.message);
@@ -1250,7 +1286,8 @@ export const updateLudusProfile = createServerFn({ method: "POST" })
       showcase_gladiator_ids: z.array(z.string().uuid()).max(12).optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const patch: Record<string, unknown> = {};
     if (data.ludus_name !== undefined) patch.ludus_name = data.ludus_name;
     if (data.description !== undefined) patch.description = data.description;
@@ -1258,7 +1295,7 @@ export const updateLudusProfile = createServerFn({ method: "POST" })
     if (data.showcase_limit !== undefined) patch.showcase_limit = data.showcase_limit;
     if (data.showcase_gladiator_ids !== undefined) patch.showcase_gladiator_ids = data.showcase_gladiator_ids;
     if (Object.keys(patch).length === 0) return { ok: true };
-    const { error } = await supabase.from("profiles")
+    const { error } = await supabaseAdmin.from("profiles")
       .update(patch as never).eq("id", userId);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1284,11 +1321,9 @@ export const getPublicLudus = createServerFn({ method: "GET" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data: profile, error } = await supabase.from("profiles")
-      .select("id,ludus_name,description,bio,showcase_limit,showcase_gladiator_ids,reputation,best_rank,training_level,scouting_level,medicus_level,armory_level,pantry_level,created_at")
-      .eq("id", data.id)
-      .maybeSingle();
+    const { data: profiles, error } = await supabase.rpc("get_pvp_profiles", { p_ids: [data.id] });
     if (error) throw new Error(error.message);
+    const profile = profiles?.[0] ?? null;
     if (!profile) throw new Error("Ludus not found");
 
     const p = profile as typeof profile & {
