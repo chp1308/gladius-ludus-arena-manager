@@ -1,12 +1,30 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import backwaterImg from "@/assets/arena/backwater-pits.jpg.asset.json";
 import localImg from "@/assets/arena/local-games.jpg.asset.json";
 import provincialImg from "@/assets/arena/provincial-munera.jpg.asset.json";
 import capuaImg from "@/assets/arena/grand-capua.jpg.asset.json";
 import colosseumImg from "@/assets/arena/colosseum.jpg.asset.json";
 import emperorImg from "@/assets/arena/emperor-spectacle.jpg.asset.json";
+
+// Debits denarii via the atomic spend_denarii RPC. Throws the real database
+// error when the call itself fails (missing function, permission issue,
+// etc.) instead of always reporting "insufficient funds" — a prior version
+// discarded the RPC error and made every failure mode look like the player
+// couldn't afford it.
+async function spendDenarii(
+  admin: SupabaseClient<Database>,
+  userId: string,
+  amount: number,
+  insufficientFundsMessage: string,
+) {
+  const { data, error } = await admin.rpc("spend_denarii", { p_user: userId, p_amount: amount });
+  if (error) throw new Error(error.message);
+  if (data == null) throw new Error(insufficientFundsMessage);
+}
 
 const ORIGINS = ["Thrace", "Gaul", "Nubia", "Britannia", "Germania", "Hispania", "Syria", "Numidia"];
 const CLASSES = ["Murmillo", "Retiarius", "Thraex", "Secutor", "Hoplomachus", "Dimachaerus"];
@@ -228,8 +246,7 @@ export const upgradeFacility = createServerFn({ method: "POST" })
     const cost = FACILITY_COST(curr);
     const next = curr + 1;
 
-    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
-    if (spent == null) throw new Error(`Need ${cost} denarii`);
+    await spendDenarii(supabaseAdmin, userId, cost, `Need ${cost} denarii`);
 
     const levelPatch =
       data.facility === "training" ? { training_level: next } :
@@ -270,8 +287,7 @@ export const upgradeSkill = createServerFn({ method: "POST" })
     if (curr >= MAX_SKILL) throw new Error("Skill already mastered");
     const cost = SKILL_COST(curr);
 
-    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
-    if (spent == null) throw new Error(`Need ${cost} denarii`);
+    await spendDenarii(supabaseAdmin, userId, cost, `Need ${cost} denarii`);
 
     if (existing) {
       const { error } = await supabaseAdmin.from("ludus_skills").update({ level: curr + 1 }).eq("id", existing.id);
@@ -307,8 +323,7 @@ export const recruitGladiator = createServerFn({ method: "POST" })
     if (g.is_beast && beasts >= cap.beasts) throw new Error(`Your pantry cannot feed another beast (${beasts}/${cap.beasts}). Upgrade the Pantry.`);
     if (!g.is_beast && humans >= cap.humans) throw new Error(`Your pantry is full (${humans}/${cap.humans} gladiators). Upgrade the Pantry.`);
 
-    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: COST });
-    if (spent == null) throw new Error(`Scouting fee: ${COST} denarii`);
+    await spendDenarii(supabaseAdmin, userId, COST, `Scouting fee: ${COST} denarii`);
 
     const { error: insertErr } = await supabaseAdmin.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
     if (insertErr) throw new Error(insertErr.message);
@@ -340,8 +355,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const cap = statCap(profile.training_level);
     if ((g[data.stat] as number) >= cap) throw new Error(`Stat capped at ${cap} — upgrade Training Yard`);
 
-    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: COST });
-    if (spent == null) throw new Error(`Training costs ${COST} denarii`);
+    await spendDenarii(supabaseAdmin, userId, COST, `Training costs ${COST} denarii`);
 
     // Better training = bigger gains
     const bigChance = 0.2 + profile.training_level * 0.1;
@@ -387,8 +401,7 @@ export const upgradeEquipment = createServerFn({ method: "POST" })
     if (profile.armory_level < reqArmory) throw new Error(`The armory must be level ${reqArmory} to forge tier ${nextTier} gear`);
     const cost = gearCost(data.slot, currentTier, profile.armory_level);
 
-    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
-    if (spent == null) throw new Error(`Need ${cost} denarii`);
+    await spendDenarii(supabaseAdmin, userId, cost, `Need ${cost} denarii`);
 
     const patch = { [tierField]: currentTier + 1, total_invested: (g.total_invested ?? 0) + cost };
     const { error } = await supabaseAdmin.from("gladiators").update(patch as never).eq("id", g.id);
@@ -416,8 +429,7 @@ export const healGladiator = createServerFn({ method: "POST" })
     const baseCost = Math.max(30, missing * 2);
     const cost = Math.max(15, Math.floor(baseCost * (1 - (profile.medicus_level - 1) * 0.12)));
 
-    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
-    if (spent == null) throw new Error(`Physician needs ${cost} denarii`);
+    await spendDenarii(supabaseAdmin, userId, cost, `Physician needs ${cost} denarii`);
 
     const { error } = await supabaseAdmin.from("gladiators").update({
       health: hpMax,
@@ -1029,8 +1041,7 @@ export const honorGladiator = createServerFn({ method: "POST" })
 
     const cost = Math.max(10, Math.ceil((g.total_invested ?? 0) * 0.05));
 
-    const { data: spent } = await supabaseAdmin.rpc("spend_denarii", { p_user: userId, p_amount: cost });
-    if (spent == null) throw new Error(`A proper memorial costs ${cost} denarii`);
+    await spendDenarii(supabaseAdmin, userId, cost, `A proper memorial costs ${cost} denarii`);
 
     const { error: insErr } = await supabaseAdmin.from("hall_of_fame").insert({
       owner_id: userId,
