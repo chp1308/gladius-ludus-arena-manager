@@ -692,320 +692,85 @@ function seedFrom(str: string) {
   };
 }
 
-// Procedurally generated portrait — SVG bust with varied face shape, hairstyle,
-// expression, and battle-worn detail. Seeded by id (not name+origin, which
-// collide often given the small name pools) so every gladiator reads as
-// visually distinct even when two share a name and origin.
+// Realistic portraits: pool of AI-generated headshots, picked deterministically
+// by gladiator id so each fighter has a stable face across sessions.
+import portrait1 from "@/assets/portraits/g1.jpg";
+import portrait2 from "@/assets/portraits/g2.jpg";
+import portrait3 from "@/assets/portraits/g3.jpg";
+import portrait4 from "@/assets/portraits/g4.jpg";
+import portrait5 from "@/assets/portraits/g5.jpg";
+import portrait6 from "@/assets/portraits/g6.jpg";
+import portrait7 from "@/assets/portraits/g7.jpg";
+import portrait8 from "@/assets/portraits/g8.jpg";
+import beastLion from "@/assets/portraits/beast_lion.jpg";
+import beastTiger from "@/assets/portraits/beast_tiger.jpg";
+import beastElephant from "@/assets/portraits/beast_elephant.jpg";
+import beastRhino from "@/assets/portraits/beast_rhino.jpg";
+
+const GLADIATOR_PORTRAITS = [portrait1, portrait2, portrait3, portrait4, portrait5, portrait6, portrait7, portrait8];
+const BEAST_PORTRAITS: Record<string, string> = {
+  beast_lion: beastLion,
+  beast_tiger: beastTiger,
+  beast_elephant: beastElephant,
+  beast_rhino: beastRhino,
+};
+
 function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
-  if (g.is_beast) {
-    return <BeastAvatar weaponType={g.weapon_type} size={size} />;
-  }
-
-  const rng = seedFrom(g.id);
-  const skins = [
-    { base: "#f0c9a5", shade: "#c99a76", light: "#ffe1c2" },
-    { base: "#e0b088", shade: "#a87a55", light: "#f5cfa8" },
-    { base: "#c48c67", shade: "#8a5a3a", light: "#e0aa82" },
-    { base: "#a0704f", shade: "#6a4222", light: "#c08a68" },
-    { base: "#7a4f31", shade: "#4a2810", light: "#9a6a48" },
-    { base: "#5a3620", shade: "#2f1608", light: "#7a4c34" },
-  ];
-  const hairsBase = ["#1a1208", "#2b1a0d", "#3a2416", "#5a3a1a", "#8a5a2a", "#c89a4a", "#e3d5b0", "#7a7a7a"];
-  const eyes  = ["#3a2a1a", "#5a3a20", "#3a5a3a", "#2a4a6a", "#4a3a2a"];
-  const sk = skins[Math.floor(rng() * skins.length)];
-  const skin = sk.base, skinShade = sk.shade, skinLight = sk.light;
-  const eye  = eyes[Math.floor(rng() * eyes.length)];
-
-  // Fights leave a mark: veterans (many wins) are more likely grizzled —
-  // greying hair — and more likely to carry a scar or snarl.
-  const veteran = Math.min(1, g.wins / 25);
-  const greyed = rng() < veteran * 0.5;
-  const hair = greyed ? (rng() < 0.5 ? "#c9c2b0" : "#a8a196") : hairsBase[Math.floor(rng() * hairsBase.length)];
-
-  const faceShape = (["oval", "square", "round"] as const)[Math.floor(rng() * 3)];
-  const browStyle = (["stern", "angry", "raised"] as const)[Math.floor(rng() * 3)];
-  const noseStyle = Math.floor(rng() * 3);
-  const mouthStyle = rng() < 0.15 + veteran * 0.25 ? "snarl" : (["grim", "flat", "smirk"] as const)[Math.floor(rng() * 3)];
-  const hairStyle = (["short", "bald", "tied", "curly"] as const)[Math.floor(rng() * 4)];
-  const beard = rng() < 0.55;
-  const helmet = rng() < 0.22;
-  const scar = rng() < 0.28 + veteran * 0.35;
-  const stubble = !beard && rng() < 0.5;
-  const gid = Math.floor(rng() * 1e9).toString(36);
-
   const s = size;
-  const headRx = faceShape === "square" ? 23 : faceShape === "round" ? 24.5 : 22;
-  const headRy = faceShape === "round" ? 24 : faceShape === "square" ? 25.5 : 27;
-  const jawPath = faceShape === "square" ? "M27 52 Q 50 74 73 52"
-    : faceShape === "round" ? "M29 48 Q 50 70 71 48"
-    : "M28 50 Q 50 78 72 50";
-
+  if (g.is_beast) {
+    const src = BEAST_PORTRAITS[g.weapon_type];
+    return (
+      <div
+        className="relative overflow-hidden rounded-full border border-accent/60 shadow-[inset_0_0_18px_rgba(0,0,0,0.6)]"
+        style={{ width: s, height: s, background: "#100804" }}
+      >
+        {src ? (
+          <img src={src} alt="beast portrait" loading="lazy" width={512} height={512}
+            className="h-full w-full object-cover" />
+        ) : (
+          <Cat className="absolute inset-0 m-auto text-accent" style={{ width: s * 0.55, height: s * 0.55 }} />
+        )}
+        <div className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_24px_rgba(0,0,0,0.55)]" />
+      </div>
+    );
+  }
+  const rng = seedFrom(g.id);
+  const idx = Math.floor(rng() * GLADIATOR_PORTRAITS.length);
   return (
     <div
       className="relative overflow-hidden rounded-full border border-primary/50 shadow-[inset_0_0_18px_rgba(0,0,0,0.55)]"
-      style={{ width: s, height: s, background: "radial-gradient(circle at 30% 20%, hsl(35 30% 26%), hsl(20 35% 8%) 75%)" }}
+      style={{ width: s, height: s, background: "#100804" }}
     >
-      <svg viewBox="0 0 100 100" width={s} height={s} shapeRendering="geometricPrecision">
-        <defs>
-          <radialGradient id={`sk-${gid}`} cx="45%" cy="35%" r="70%">
-            <stop offset="0%" stopColor={skinLight} />
-            <stop offset="55%" stopColor={skin} />
-            <stop offset="100%" stopColor={skinShade} />
-          </radialGradient>
-          <radialGradient id={`hr-${gid}`} cx="50%" cy="20%" r="80%">
-            <stop offset="0%" stopColor={hair} stopOpacity="1" />
-            <stop offset="100%" stopColor="#000" stopOpacity="0.6" />
-          </radialGradient>
-          <linearGradient id={`tn-${gid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4a3524" />
-            <stop offset="100%" stopColor="#1e140b" />
-          </linearGradient>
-          <radialGradient id={`ir-${gid}`} cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor={eye} stopOpacity="1" />
-            <stop offset="100%" stopColor="#000" stopOpacity="0.8" />
-          </radialGradient>
-        </defs>
-
-        {/* shoulders / tunic */}
-        <path d="M2 100 Q 50 62 98 100 Z" fill={`url(#tn-${gid})`} />
-        <path d="M18 94 Q 50 76 82 94 L 82 100 L 18 100 Z" fill="#8b1a1a" opacity="0.75" />
-        <path d="M18 94 Q 50 76 82 94" fill="none" stroke="#c9a24a" strokeWidth="0.8" opacity="0.7" />
-
-        {/* neck with shading */}
-        <path d="M40 58 L 40 76 Q 50 82 60 76 L 60 58 Z" fill={skin} />
-        <path d="M40 74 Q 50 80 60 74 L 60 78 Q 50 84 40 78 Z" fill={skinShade} opacity="0.7" />
-
-        {/* head */}
-        <ellipse cx="50" cy="45" rx={headRx} ry={headRy} fill={`url(#sk-${gid})`} />
-        {/* jawline shadow */}
-        <path d={jawPath} fill="none" stroke={skinShade} strokeWidth="1.2" opacity="0.55" />
-        {/* cheek highlights */}
-        <ellipse cx="38" cy="54" rx="4" ry="2.5" fill={skinLight} opacity="0.35" />
-        <ellipse cx="62" cy="54" rx="4" ry="2.5" fill={skinLight} opacity="0.35" />
-        {/* temple shadow */}
-        <path d="M28 40 Q 32 48 30 56" stroke={skinShade} strokeWidth="1" fill="none" opacity="0.4" />
-        <path d="M72 40 Q 68 48 70 56" stroke={skinShade} strokeWidth="1" fill="none" opacity="0.4" />
-
-        {/* ears — sit on top of the head edge, hair/helmet can cover them */}
-        <ellipse cx="27" cy="48" rx="2.6" ry="4.2" fill={skin} stroke={skinShade} strokeWidth="0.4" />
-        <ellipse cx="73" cy="48" rx="2.6" ry="4.2" fill={skin} stroke={skinShade} strokeWidth="0.4" />
-
-        {/* hair */}
-        {!helmet && <HairStyle style={hairStyle} hair={hair} gid={gid} skin={skin} />}
-        {helmet && (
-          <>
-            <path d="M24 44 Q 24 16 50 14 Q 76 16 76 44 L 74 46 Q 50 32 26 46 Z" fill="#9a8a52" stroke="#3a2a10" strokeWidth="1" />
-            <path d="M24 44 Q 24 16 50 14 Q 76 16 76 44" fill="none" stroke="#e6d69a" strokeWidth="0.6" opacity="0.7" />
-            {/* rivets */}
-            <circle cx="30" cy="38" r="1" fill="#3a2a10" />
-            <circle cx="70" cy="38" r="1" fill="#3a2a10" />
-            <circle cx="50" cy="18" r="1" fill="#3a2a10" />
-            {/* crest */}
-            <path d="M40 12 Q 50 -2 60 12 Q 66 6 62 20 Q 50 12 38 20 Q 34 6 40 12 Z" fill="#b22222" />
-            <path d="M42 14 Q 50 6 58 14" stroke="#e04a4a" strokeWidth="0.6" fill="none" />
-          </>
-        )}
-
-        {/* eye sockets */}
-        <ellipse cx="41" cy="47" rx="4.5" ry="2.6" fill={skinShade} opacity="0.5" />
-        <ellipse cx="59" cy="47" rx="4.5" ry="2.6" fill={skinShade} opacity="0.5" />
-        {/* eye whites */}
-        <ellipse cx="41" cy="47" rx="3" ry="1.9" fill="#f4ece0" />
-        <ellipse cx="59" cy="47" rx="3" ry="1.9" fill="#f4ece0" />
-        {/* iris */}
-        <circle cx="41" cy="47" r="1.6" fill={`url(#ir-${gid})`} />
-        <circle cx="59" cy="47" r="1.6" fill={`url(#ir-${gid})`} />
-        {/* pupil + highlight */}
-        <circle cx="41" cy="47" r="0.7" fill="#000" />
-        <circle cx="59" cy="47" r="0.7" fill="#000" />
-        <circle cx="41.7" cy="46.3" r="0.4" fill="#fff" />
-        <circle cx="59.7" cy="46.3" r="0.4" fill="#fff" />
-        {/* upper eyelid shadow */}
-        <path d="M38 45.5 Q 41 44 44 45.5" stroke="#000" strokeWidth="0.6" fill="none" opacity="0.5" />
-        <path d="M56 45.5 Q 59 44 62 45.5" stroke="#000" strokeWidth="0.6" fill="none" opacity="0.5" />
-
-        {/* brows */}
-        <Brows style={browStyle} color={hair} />
-
-        {/* nose with shading */}
-        <Nose style={noseStyle} skinShade={skinShade} skinLight={skinLight} />
-
-        {/* mouth */}
-        <Mouth style={mouthStyle} />
-
-        {/* stubble dots */}
-        {stubble && (
-          <g fill={hair} opacity="0.35">
-            {Array.from({ length: 36 }).map((_, i) => {
-              const x = 34 + (i % 9) * 3.6 + (Math.floor(i / 9) % 2 ? 1.5 : 0);
-              const y = 60 + Math.floor(i / 9) * 2.2;
-              return <circle key={i} cx={x} cy={y} r="0.35" />;
-            })}
-          </g>
-        )}
-
-        {/* beard */}
-        {beard && (
-          <>
-            <path d="M30 54 Q 32 74 50 76 Q 68 74 70 54 Q 60 68 50 68 Q 40 68 30 54 Z" fill={hair} opacity="0.92" />
-            <path d="M34 58 Q 40 72 50 72 Q 60 72 66 58" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.3" />
-          </>
-        )}
-
-        {/* scar */}
-        {scar && (
-          <>
-            <path d="M40 36 L 44 54" stroke="#6a2a1a" strokeWidth="0.9" />
-            <path d="M40.4 36.5 L 44.4 54.5" stroke="#c98a72" strokeWidth="0.4" opacity="0.8" />
-          </>
-        )}
-
-        {/* torchlight rim */}
-        <path d="M24 30 Q 20 45 26 62" stroke="#ffb35a" strokeWidth="1.4" fill="none" opacity="0.22" strokeLinecap="round" />
-        {/* soft vignette */}
-        <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="6" />
-      </svg>
+      <img src={GLADIATOR_PORTRAITS[idx]} alt="gladiator portrait" loading="lazy" width={512} height={512}
+        className="h-full w-full object-cover" />
+      <div className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_22px_rgba(0,0,0,0.5)]" />
     </div>
   );
 }
 
-function HairStyle({ style, hair, gid, skin }: { style: "short" | "bald" | "tied" | "curly"; hair: string; gid: string; skin: string }) {
-  if (style === "bald") {
-    // No extra shape — the head's own gradient already reads as a bare
-    // scalp. A flat-colored patch here just breaks that shading with a seam.
-    return <ellipse cx="44" cy="24" rx="9" ry="5" fill={skin} opacity="0.2" />;
-  }
-  if (style === "tied") {
-    return (
-      <>
-        <path d="M27 40 Q 26 18 50 15 Q 74 18 73 40 Q 68 30 60 28 Q 50 26 40 28 Q 32 30 27 40 Z" fill={`url(#hr-${gid})`} />
-        <ellipse cx="50" cy="13" rx="7" ry="6" fill={hair} />
-        <path d="M45 11 Q 50 7 55 11" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.3" />
-        <path d="M32 34 Q 40 26 50 24 Q 60 26 68 34" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.4" />
-      </>
-    );
-  }
-  if (style === "curly") {
-    // Two staggered rows of overlapping circles hugging the same hairline
-    // arc the other styles use, so it reads as a mass of curls rather than
-    // floating balls.
-    return (
-      <g fill={hair} opacity="0.92">
-        {Array.from({ length: 11 }).map((_, i) => {
-          const t = i / 10;
-          const x = 28 + t * 44;
-          const y = 34 - Math.sin(t * Math.PI) * 20;
-          return <circle key={`a${i}`} cx={x} cy={y} r="6.2" />;
-        })}
-        {Array.from({ length: 8 }).map((_, i) => {
-          const t = (i + 0.5) / 8;
-          const x = 30 + t * 40;
-          const y = 30 - Math.sin(t * Math.PI) * 15;
-          return <circle key={`b${i}`} cx={x} cy={y} r="5" />;
-        })}
-      </g>
-    );
-  }
+function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: number }) {
+  const s = size;
+  const src = BEAST_PORTRAITS[weaponType];
   return (
-    <>
-      <path d="M27 40 Q 26 18 50 15 Q 74 18 73 40 Q 68 30 60 28 Q 50 26 40 28 Q 32 30 27 40 Z" fill={`url(#hr-${gid})`} />
-      <path d="M32 34 Q 40 26 50 24 Q 60 26 68 34" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.4" />
-      <path d="M34 30 L 38 24 M44 26 L 46 20 M54 26 L 56 20 M62 30 L 66 24" stroke={hair} strokeWidth="0.6" opacity="0.7" />
-    </>
+    <div
+      className="relative overflow-hidden rounded-full border border-accent/60 shadow-[inset_0_0_18px_rgba(0,0,0,0.6)]"
+      style={{ width: s, height: s, background: "#100804" }}
+    >
+      {src ? (
+        <img src={src} alt="beast portrait" loading="lazy" width={512} height={512}
+          className="h-full w-full object-cover" />
+      ) : (
+        <Cat className="absolute inset-0 m-auto text-accent" style={{ width: s * 0.55, height: s * 0.55 }} />
+      )}
+      <div className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_24px_rgba(0,0,0,0.55)]" />
+    </div>
   );
 }
 
-function Brows({ style, color }: { style: "stern" | "angry" | "raised"; color: string }) {
-  if (style === "angry") {
-    return (
-      <>
-        <path d="M36 44 L 46 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M64 44 L 54 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
-      </>
-    );
-  }
-  if (style === "raised") {
-    return (
-      <>
-        <path d="M36 41 Q 41 37 46 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-        <path d="M54 41 Q 59 37 64 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-      </>
-    );
-  }
-  return (
-    <>
-      <path d="M36 42 Q 41 40 46 42" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-      <path d="M54 42 Q 59 40 64 42" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-    </>
-  );
-}
-
-function Nose({ style, skinShade, skinLight }: { style: number; skinShade: string; skinLight: string }) {
-  if (style === 1) {
-    return (
-      <>
-        <path d="M49 47 Q 44 52 45 58 Q 47 61 50 60.5 Q 53 61 55 58 Q 52 53 51 47 Z" fill={skinShade} opacity="0.4" />
-        <path d="M46 59 Q 50 62 54 59" stroke={skinShade} strokeWidth="0.7" fill="none" opacity="0.75" />
-        <ellipse cx="47.5" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
-        <ellipse cx="52.5" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
-        <path d="M50 47 L 49.5 58" stroke={skinLight} strokeWidth="0.6" opacity="0.55" />
-      </>
-    );
-  }
-  if (style === 2) {
-    return (
-      <>
-        <path d="M50 47 Q 45 55 46.5 59 Q 50 61.5 53.5 59 Q 55 55 50 47" fill={skinShade} opacity="0.4" />
-        <path d="M46.5 59.5 Q 50 62.5 53.5 59.5" stroke={skinShade} strokeWidth="0.7" fill="none" opacity="0.75" />
-        <ellipse cx="47.5" cy="60" rx="0.8" ry="0.5" fill={skinShade} opacity="0.75" />
-        <ellipse cx="52.5" cy="60" rx="0.8" ry="0.5" fill={skinShade} opacity="0.75" />
-        <path d="M50 47 L 50 58" stroke={skinLight} strokeWidth="0.6" opacity="0.55" />
-      </>
-    );
-  }
-  return (
-    <>
-      <path d="M50 47 Q 47 54 48 59 Q 50 60.5 52 59 Q 53 54 50 47" fill={skinShade} opacity="0.4" />
-      <path d="M47.5 59.5 Q 50 61.5 52.5 59.5" stroke={skinShade} strokeWidth="0.7" fill="none" opacity="0.75" />
-      <ellipse cx="48.3" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
-      <ellipse cx="51.7" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
-      <path d="M50 47 L 50 58" stroke={skinLight} strokeWidth="0.6" opacity="0.55" />
-    </>
-  );
-}
-
-function Mouth({ style }: { style: "grim" | "flat" | "smirk" | "snarl" }) {
-  if (style === "flat") {
-    return <path d="M43 64 L 57 64" stroke="#3a1410" strokeWidth="1.3" strokeLinecap="round" />;
-  }
-  if (style === "smirk") {
-    return (
-      <>
-        <path d="M43 64 Q 50 66 58 62.5" stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-        <path d="M44 65.5 Q 50 67 57 63.5" stroke="#7a2418" strokeWidth="0.6" fill="none" opacity="0.6" />
-      </>
-    );
-  }
-  if (style === "snarl") {
-    return (
-      <>
-        <path d="M42 63 Q 50 68 58 63" stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-        <path d="M45 63.5 L 45 66 L 46.5 63.7 Z M54.5 63.7 L 56 66 L 56 63.5 Z" fill="#f4ece0" />
-      </>
-    );
-  }
-  return (
-    <>
-      <path d="M43 64 Q 50 66 57 64" stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M44 65.5 Q 50 66.9 56 65.5" stroke="#7a2418" strokeWidth="0.6" fill="none" opacity="0.6" />
-    </>
-  );
-}
 
 type SlotKey = "helmet" | "armor" | "legs" | "weapon" | "offhand";
 type SlotIconProps = { className?: string };
 
-// Per weapon_type, main-hand and off-hand slots reflect what the class actually wields.
 type WeaponLoadout = {
   weapon: { label: string; Icon: React.ComponentType<SlotIconProps> };
   offhand: { label: string; Icon: React.ComponentType<SlotIconProps> } | null;
@@ -1047,9 +812,6 @@ function NetIcon({ className }: SlotIconProps) {
     </svg>
   );
 }
-
-
-
 function SaddleIcon({ className }: SlotIconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1061,7 +823,6 @@ function SaddleIcon({ className }: SlotIconProps) {
     </svg>
   );
 }
-// Beast head armor — chamfron plate with brow spike.
 function BeastHeadIcon({ className }: SlotIconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1074,173 +835,24 @@ function BeastHeadIcon({ className }: SlotIconProps) {
     </svg>
   );
 }
-// Beast body armor — barding with straps.
 function BeastBardingIcon({ className }: SlotIconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" fill="currentColor" opacity="0.15" />
       <path d="M4 6 L 20 6 L 21 12 Q 21 18 17 20 L 7 20 Q 3 18 3 12 Z" />
       <path d="M8 6 L 8 20 M16 6 L 16 20" />
-      <path d="M4 10 L 20 10" />
     </svg>
   );
 }
-// Beast leg armor — greave rings around a hoofed leg.
 function BeastLegIcon({ className }: SlotIconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 3 L 15 3 L 14 20 L 10 20 Z" fill="currentColor" opacity="0.15" />
-      <path d="M9 3 L 15 3 L 14 20 L 10 20 Z" />
-      <path d="M9 8 L 15 8 M9 13 L 15 13" />
-      <path d="M8 20 L 16 20 L 15 22 L 9 22 Z" fill="currentColor" opacity="0.35" />
+      <circle cx="8" cy="12" r="4" fill="currentColor" opacity="0.15" />
+      <circle cx="8" cy="12" r="4" />
+      <circle cx="16" cy="12" r="4" fill="currentColor" opacity="0.15" />
+      <circle cx="16" cy="12" r="4" />
+      <path d="M6 12 L 10 12 M14 12 L 18 12" />
     </svg>
-  );
-}
-
-// Detailed species-specific beast portrait: lion mane, tiger stripes, elephant tusks, rhino horn.
-function BeastAvatar({ weaponType, size = 96 }: { weaponType: string; size?: number }) {
-  const s = size;
-  const bg = "radial-gradient(circle at 30% 20%, hsl(35 40% 26%), hsl(20 45% 6%) 75%)";
-  const wrap = "relative overflow-hidden rounded-full border border-accent/60 shadow-[inset_0_0_18px_rgba(0,0,0,0.6)]";
-  const overlay = (
-    <svg viewBox="0 0 100 100" width={s} height={s} className="pointer-events-none absolute inset-0">
-      <ellipse cx="36" cy="30" rx="18" ry="12" fill="#fff" opacity="0.08" />
-      <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="8" />
-    </svg>
-  );
-
-  if (weaponType === "beast_lion") {
-    return (
-      <div className={wrap} style={{ width: s, height: s, background: bg }}>
-        <svg viewBox="0 0 100 100" width={s} height={s}>
-          {/* mane */}
-          <g fill="#7a4a1a">
-            {Array.from({ length: 18 }).map((_, i) => {
-              const a = (i / 18) * Math.PI * 2;
-              return <ellipse key={i} cx={50 + Math.cos(a) * 30} cy={52 + Math.sin(a) * 30} rx="10" ry="7" transform={`rotate(${(a * 180) / Math.PI} ${50 + Math.cos(a) * 30} ${52 + Math.sin(a) * 30})`} />;
-            })}
-          </g>
-          <circle cx="50" cy="52" r="26" fill="#c88a3a" />
-          {/* muzzle */}
-          <ellipse cx="50" cy="64" rx="14" ry="10" fill="#e6b878" />
-          <ellipse cx="50" cy="60" rx="3" ry="2.2" fill="#2a1408" />
-          <path d="M50 62 L 50 70" stroke="#2a1408" strokeWidth="1.2" />
-          <path d="M50 70 Q 44 74 40 72 M50 70 Q 56 74 60 72" stroke="#2a1408" strokeWidth="1.2" fill="none" />
-          {/* eyes */}
-          <ellipse cx="41" cy="50" rx="3" ry="2.2" fill="#fff" />
-          <ellipse cx="59" cy="50" rx="3" ry="2.2" fill="#fff" />
-          <circle cx="41" cy="50" r="1.5" fill="#3a2a10" />
-          <circle cx="59" cy="50" r="1.5" fill="#3a2a10" />
-          {/* ears */}
-          <path d="M28 34 Q 30 24 38 30 Z" fill="#7a4a1a" />
-          <path d="M72 34 Q 70 24 62 30 Z" fill="#7a4a1a" />
-          {/* whiskers */}
-          <path d="M36 66 L 24 64 M36 68 L 24 70 M64 66 L 76 64 M64 68 L 76 70" stroke="#f0d8a0" strokeWidth="0.6" />
-        </svg>
-        {overlay}
-      </div>
-    );
-  }
-  if (weaponType === "beast_tiger") {
-    return (
-      <div className={wrap} style={{ width: s, height: s, background: bg }}>
-        <svg viewBox="0 0 100 100" width={s} height={s}>
-          <circle cx="50" cy="52" r="30" fill="#e08a2a" />
-          {/* stripes */}
-          <g stroke="#1a0a04" strokeWidth="2.6" strokeLinecap="round" fill="none">
-            <path d="M28 40 Q 34 44 30 52" />
-            <path d="M72 40 Q 66 44 70 52" />
-            <path d="M40 30 L 44 40" />
-            <path d="M60 30 L 56 40" />
-            <path d="M32 60 Q 38 66 34 74" />
-            <path d="M68 60 Q 62 66 66 74" />
-            <path d="M46 76 L 44 82" />
-            <path d="M54 76 L 56 82" />
-          </g>
-          {/* muzzle */}
-          <ellipse cx="50" cy="64" rx="14" ry="10" fill="#f6dcae" />
-          <ellipse cx="50" cy="60" rx="3" ry="2.2" fill="#2a1408" />
-          <path d="M50 62 L 50 70" stroke="#2a1408" strokeWidth="1.2" />
-          <path d="M50 70 Q 44 74 40 72 M50 70 Q 56 74 60 72" stroke="#2a1408" strokeWidth="1.2" fill="none" />
-          {/* fangs */}
-          <path d="M46 72 L 47 76 L 48 72 Z M52 72 L 53 76 L 54 72 Z" fill="#fff" />
-          {/* eyes */}
-          <ellipse cx="41" cy="50" rx="3.2" ry="2.2" fill="#f4d857" />
-          <ellipse cx="59" cy="50" rx="3.2" ry="2.2" fill="#f4d857" />
-          <path d="M41 50 L 41 52 M59 50 L 59 52" stroke="#1a0a04" strokeWidth="1.6" strokeLinecap="round" />
-          {/* ears */}
-          <path d="M28 32 Q 30 22 38 28 L 34 34 Z" fill="#e08a2a" stroke="#1a0a04" strokeWidth="1" />
-          <path d="M72 32 Q 70 22 62 28 L 66 34 Z" fill="#e08a2a" stroke="#1a0a04" strokeWidth="1" />
-        </svg>
-        {overlay}
-      </div>
-    );
-  }
-  if (weaponType === "beast_elephant") {
-    return (
-      <div className={wrap} style={{ width: s, height: s, background: bg }}>
-        <svg viewBox="0 0 100 100" width={s} height={s}>
-          {/* ears */}
-          <ellipse cx="22" cy="52" rx="14" ry="20" fill="#8a8a92" />
-          <ellipse cx="78" cy="52" rx="14" ry="20" fill="#8a8a92" />
-          <ellipse cx="22" cy="52" rx="10" ry="16" fill="#a5a5b0" />
-          <ellipse cx="78" cy="52" rx="10" ry="16" fill="#a5a5b0" />
-          {/* head */}
-          <ellipse cx="50" cy="46" rx="24" ry="26" fill="#9a9aa2" />
-          {/* forehead ridge */}
-          <path d="M34 36 Q 50 30 66 36" stroke="#6a6a72" strokeWidth="1.4" fill="none" />
-          {/* eyes */}
-          <ellipse cx="40" cy="46" rx="2.4" ry="1.8" fill="#fff" />
-          <ellipse cx="60" cy="46" rx="2.4" ry="1.8" fill="#fff" />
-          <circle cx="40" cy="46" r="1.2" fill="#1a1108" />
-          <circle cx="60" cy="46" r="1.2" fill="#1a1108" />
-          {/* trunk */}
-          <path d="M44 58 Q 40 74 46 86 Q 52 90 56 84 Q 52 78 54 70 Q 56 62 56 58 Z" fill="#9a9aa2" stroke="#6a6a72" strokeWidth="0.8" />
-          <path d="M46 66 L 54 66 M46 72 L 54 72 M48 78 L 54 78" stroke="#6a6a72" strokeWidth="0.6" />
-          {/* tusks */}
-          <path d="M40 68 Q 34 78 32 90 Q 36 88 40 78 Z" fill="#f0e6c8" stroke="#c8b880" strokeWidth="0.6" />
-          <path d="M60 68 Q 66 78 68 90 Q 64 88 60 78 Z" fill="#f0e6c8" stroke="#c8b880" strokeWidth="0.6" />
-        </svg>
-        {overlay}
-      </div>
-    );
-  }
-  if (weaponType === "beast_rhino") {
-    return (
-      <div className={wrap} style={{ width: s, height: s, background: bg }}>
-        <svg viewBox="0 0 100 100" width={s} height={s}>
-          {/* head */}
-          <ellipse cx="50" cy="50" rx="30" ry="24" fill="#7a7a80" />
-          {/* armor plates */}
-          <path d="M20 50 Q 26 40 34 44" stroke="#4a4a52" strokeWidth="1.2" fill="none" />
-          <path d="M80 50 Q 74 40 66 44" stroke="#4a4a52" strokeWidth="1.2" fill="none" />
-          <path d="M28 62 Q 40 68 50 66 Q 60 68 72 62" stroke="#4a4a52" strokeWidth="1.2" fill="none" />
-          {/* horn (big) */}
-          <path d="M46 44 Q 50 18 54 44 Q 52 46 50 46 Q 48 46 46 44 Z" fill="#e6d8b0" stroke="#8a7a4a" strokeWidth="0.8" />
-          {/* small horn */}
-          <path d="M48 50 Q 50 42 52 50 Z" fill="#e6d8b0" stroke="#8a7a4a" strokeWidth="0.6" />
-          {/* nostrils */}
-          <ellipse cx="44" cy="66" rx="1.8" ry="1.2" fill="#1a1108" />
-          <ellipse cx="56" cy="66" rx="1.8" ry="1.2" fill="#1a1108" />
-          <path d="M40 70 Q 50 74 60 70" stroke="#3a3038" strokeWidth="1" fill="none" />
-          {/* eyes */}
-          <ellipse cx="34" cy="46" rx="2" ry="1.6" fill="#fff" />
-          <ellipse cx="66" cy="46" rx="2" ry="1.6" fill="#fff" />
-          <circle cx="34" cy="46" r="1" fill="#1a1108" />
-          <circle cx="66" cy="46" r="1" fill="#1a1108" />
-          {/* ears */}
-          <ellipse cx="26" cy="30" rx="4" ry="6" fill="#6a6a70" transform="rotate(-20 26 30)" />
-          <ellipse cx="74" cy="30" rx="4" ry="6" fill="#6a6a70" transform="rotate(20 74 30)" />
-        </svg>
-        {overlay}
-      </div>
-    );
-  }
-  // fallback
-  return (
-    <div className={wrap} style={{ width: s, height: s, background: bg }}>
-      <Cat className="absolute inset-0 m-auto text-accent" style={{ width: s * 0.55, height: s * 0.55 }} />
-    </div>
   );
 }
 
