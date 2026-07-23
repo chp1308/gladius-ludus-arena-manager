@@ -692,13 +692,16 @@ function seedFrom(str: string) {
   };
 }
 
-// Procedurally generated portrait — SVG bust with varied skin, hair, beard, eyes.
+// Procedurally generated portrait — SVG bust with varied face shape, hairstyle,
+// expression, and battle-worn detail. Seeded by id (not name+origin, which
+// collide often given the small name pools) so every gladiator reads as
+// visually distinct even when two share a name and origin.
 function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
   if (g.is_beast) {
     return <BeastAvatar weaponType={g.weapon_type} size={size} />;
   }
 
-  const rng = seedFrom(g.name + "|" + g.origin);
+  const rng = seedFrom(g.id);
   const skins = [
     { base: "#f0c9a5", shade: "#c99a76", light: "#ffe1c2" },
     { base: "#e0b088", shade: "#a87a55", light: "#f5cfa8" },
@@ -707,21 +710,36 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
     { base: "#7a4f31", shade: "#4a2810", light: "#9a6a48" },
     { base: "#5a3620", shade: "#2f1608", light: "#7a4c34" },
   ];
-  const hairs = ["#1a1208", "#2b1a0d", "#3a2416", "#5a3a1a", "#8a5a2a", "#c89a4a", "#e3d5b0", "#7a7a7a"];
+  const hairsBase = ["#1a1208", "#2b1a0d", "#3a2416", "#5a3a1a", "#8a5a2a", "#c89a4a", "#e3d5b0", "#7a7a7a"];
   const eyes  = ["#3a2a1a", "#5a3a20", "#3a5a3a", "#2a4a6a", "#4a3a2a"];
   const sk = skins[Math.floor(rng() * skins.length)];
   const skin = sk.base, skinShade = sk.shade, skinLight = sk.light;
-  const hair = hairs[Math.floor(rng() * hairs.length)];
   const eye  = eyes[Math.floor(rng() * eyes.length)];
+
+  // Fights leave a mark: veterans (many wins) are more likely grizzled —
+  // greying hair — and more likely to carry a scar or snarl.
+  const veteran = Math.min(1, g.wins / 25);
+  const greyed = rng() < veteran * 0.5;
+  const hair = greyed ? (rng() < 0.5 ? "#c9c2b0" : "#a8a196") : hairsBase[Math.floor(rng() * hairsBase.length)];
+
+  const faceShape = (["oval", "square", "round"] as const)[Math.floor(rng() * 3)];
+  const browStyle = (["stern", "angry", "raised"] as const)[Math.floor(rng() * 3)];
+  const noseStyle = Math.floor(rng() * 3);
+  const mouthStyle = rng() < 0.15 + veteran * 0.25 ? "snarl" : (["grim", "flat", "smirk"] as const)[Math.floor(rng() * 3)];
+  const hairStyle = (["short", "bald", "tied", "curly"] as const)[Math.floor(rng() * 4)];
   const beard = rng() < 0.55;
-  const helmet = rng() < 0.25;
-  const scar = rng() < 0.3;
+  const helmet = rng() < 0.22;
+  const scar = rng() < 0.28 + veteran * 0.35;
   const stubble = !beard && rng() < 0.5;
-  const mouthCurve = rng() < 0.75 ? 2 : -1; // mostly stern
-  const noseW = 3.5 + rng() * 2.5;
   const gid = Math.floor(rng() * 1e9).toString(36);
 
   const s = size;
+  const headRx = faceShape === "square" ? 23 : faceShape === "round" ? 24.5 : 22;
+  const headRy = faceShape === "round" ? 24 : faceShape === "square" ? 25.5 : 27;
+  const jawPath = faceShape === "square" ? "M27 52 Q 50 74 73 52"
+    : faceShape === "round" ? "M29 48 Q 50 70 71 48"
+    : "M28 50 Q 50 78 72 50";
+
   return (
     <div
       className="relative overflow-hidden rounded-full border border-primary/50 shadow-[inset_0_0_18px_rgba(0,0,0,0.55)]"
@@ -758,9 +776,9 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
         <path d="M40 74 Q 50 80 60 74 L 60 78 Q 50 84 40 78 Z" fill={skinShade} opacity="0.7" />
 
         {/* head */}
-        <ellipse cx="50" cy="45" rx="22" ry="27" fill={`url(#sk-${gid})`} />
+        <ellipse cx="50" cy="45" rx={headRx} ry={headRy} fill={`url(#sk-${gid})`} />
         {/* jawline shadow */}
-        <path d="M28 50 Q 50 78 72 50" fill="none" stroke={skinShade} strokeWidth="1.2" opacity="0.55" />
+        <path d={jawPath} fill="none" stroke={skinShade} strokeWidth="1.2" opacity="0.55" />
         {/* cheek highlights */}
         <ellipse cx="38" cy="54" rx="4" ry="2.5" fill={skinLight} opacity="0.35" />
         <ellipse cx="62" cy="54" rx="4" ry="2.5" fill={skinLight} opacity="0.35" />
@@ -768,15 +786,12 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
         <path d="M28 40 Q 32 48 30 56" stroke={skinShade} strokeWidth="1" fill="none" opacity="0.4" />
         <path d="M72 40 Q 68 48 70 56" stroke={skinShade} strokeWidth="1" fill="none" opacity="0.4" />
 
+        {/* ears — sit on top of the head edge, hair/helmet can cover them */}
+        <ellipse cx="27" cy="48" rx="2.6" ry="4.2" fill={skin} stroke={skinShade} strokeWidth="0.4" />
+        <ellipse cx="73" cy="48" rx="2.6" ry="4.2" fill={skin} stroke={skinShade} strokeWidth="0.4" />
+
         {/* hair */}
-        {!helmet && (
-          <>
-            <path d={`M27 40 Q 26 18 50 15 Q 74 18 73 40 Q 68 30 60 28 Q 50 26 40 28 Q 32 30 27 40 Z`} fill={`url(#hr-${gid})`} />
-            {/* strand details */}
-            <path d="M32 34 Q 40 26 50 24 Q 60 26 68 34" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.4" />
-            <path d="M34 30 L 38 24 M44 26 L 46 20 M54 26 L 56 20 M62 30 L 66 24" stroke={hair} strokeWidth="0.6" opacity="0.7" />
-          </>
-        )}
+        {!helmet && <HairStyle style={hairStyle} hair={hair} gid={gid} skin={skin} />}
         {helmet && (
           <>
             <path d="M24 44 Q 24 16 50 14 Q 76 16 76 44 L 74 46 Q 50 32 26 46 Z" fill="#9a8a52" stroke="#3a2a10" strokeWidth="1" />
@@ -810,20 +825,13 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
         <path d="M56 45.5 Q 59 44 62 45.5" stroke="#000" strokeWidth="0.6" fill="none" opacity="0.5" />
 
         {/* brows */}
-        <path d="M36 42 Q 41 40 46 42" stroke={hair} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-        <path d="M54 42 Q 59 40 64 42" stroke={hair} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+        <Brows style={browStyle} color={hair} />
 
         {/* nose with shading */}
-        <path d={`M50 48 Q ${50 - noseW / 2} 55 48 59 Q 50 60 52 59 Q ${50 + noseW / 2} 55 50 48`} fill={skinShade} opacity="0.35" />
-        <path d="M47.5 59 Q 50 61 52.5 59" stroke={skinShade} strokeWidth="0.6" fill="none" opacity="0.7" />
-        <ellipse cx="48.5" cy="59.5" rx="0.6" ry="0.4" fill={skinShade} opacity="0.7" />
-        <ellipse cx="51.5" cy="59.5" rx="0.6" ry="0.4" fill={skinShade} opacity="0.7" />
-        {/* nose bridge highlight */}
-        <path d="M50 48 L 50 57" stroke={skinLight} strokeWidth="0.5" opacity="0.5" />
+        <Nose style={noseStyle} skinShade={skinShade} skinLight={skinLight} />
 
         {/* mouth */}
-        <path d={`M43 64 Q 50 ${64 + mouthCurve} 57 64`} stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-        <path d={`M44 65.5 Q 50 ${66.5 + mouthCurve * 0.4} 56 65.5`} stroke="#7a2418" strokeWidth="0.6" fill="none" opacity="0.6" />
+        <Mouth style={mouthStyle} />
 
         {/* stubble dots */}
         {stubble && (
@@ -852,10 +860,145 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
           </>
         )}
 
+        {/* torchlight rim */}
+        <path d="M24 30 Q 20 45 26 62" stroke="#ffb35a" strokeWidth="1.4" fill="none" opacity="0.22" strokeLinecap="round" />
         {/* soft vignette */}
         <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="6" />
       </svg>
     </div>
+  );
+}
+
+function HairStyle({ style, hair, gid, skin }: { style: "short" | "bald" | "tied" | "curly"; hair: string; gid: string; skin: string }) {
+  if (style === "bald") {
+    // No extra shape — the head's own gradient already reads as a bare
+    // scalp. A flat-colored patch here just breaks that shading with a seam.
+    return <ellipse cx="44" cy="24" rx="9" ry="5" fill={skin} opacity="0.2" />;
+  }
+  if (style === "tied") {
+    return (
+      <>
+        <path d="M27 40 Q 26 18 50 15 Q 74 18 73 40 Q 68 30 60 28 Q 50 26 40 28 Q 32 30 27 40 Z" fill={`url(#hr-${gid})`} />
+        <ellipse cx="50" cy="13" rx="7" ry="6" fill={hair} />
+        <path d="M45 11 Q 50 7 55 11" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.3" />
+        <path d="M32 34 Q 40 26 50 24 Q 60 26 68 34" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.4" />
+      </>
+    );
+  }
+  if (style === "curly") {
+    // Two staggered rows of overlapping circles hugging the same hairline
+    // arc the other styles use, so it reads as a mass of curls rather than
+    // floating balls.
+    return (
+      <g fill={hair} opacity="0.92">
+        {Array.from({ length: 11 }).map((_, i) => {
+          const t = i / 10;
+          const x = 28 + t * 44;
+          const y = 34 - Math.sin(t * Math.PI) * 20;
+          return <circle key={`a${i}`} cx={x} cy={y} r="6.2" />;
+        })}
+        {Array.from({ length: 8 }).map((_, i) => {
+          const t = (i + 0.5) / 8;
+          const x = 30 + t * 40;
+          const y = 30 - Math.sin(t * Math.PI) * 15;
+          return <circle key={`b${i}`} cx={x} cy={y} r="5" />;
+        })}
+      </g>
+    );
+  }
+  return (
+    <>
+      <path d="M27 40 Q 26 18 50 15 Q 74 18 73 40 Q 68 30 60 28 Q 50 26 40 28 Q 32 30 27 40 Z" fill={`url(#hr-${gid})`} />
+      <path d="M32 34 Q 40 26 50 24 Q 60 26 68 34" stroke="#000" strokeWidth="0.4" fill="none" opacity="0.4" />
+      <path d="M34 30 L 38 24 M44 26 L 46 20 M54 26 L 56 20 M62 30 L 66 24" stroke={hair} strokeWidth="0.6" opacity="0.7" />
+    </>
+  );
+}
+
+function Brows({ style, color }: { style: "stern" | "angry" | "raised"; color: string }) {
+  if (style === "angry") {
+    return (
+      <>
+        <path d="M36 44 L 46 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M64 44 L 54 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+      </>
+    );
+  }
+  if (style === "raised") {
+    return (
+      <>
+        <path d="M36 41 Q 41 37 46 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+        <path d="M54 41 Q 59 37 64 41" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+      </>
+    );
+  }
+  return (
+    <>
+      <path d="M36 42 Q 41 40 46 42" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+      <path d="M54 42 Q 59 40 64 42" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+    </>
+  );
+}
+
+function Nose({ style, skinShade, skinLight }: { style: number; skinShade: string; skinLight: string }) {
+  if (style === 1) {
+    return (
+      <>
+        <path d="M49 47 Q 44 52 45 58 Q 47 61 50 60.5 Q 53 61 55 58 Q 52 53 51 47 Z" fill={skinShade} opacity="0.4" />
+        <path d="M46 59 Q 50 62 54 59" stroke={skinShade} strokeWidth="0.7" fill="none" opacity="0.75" />
+        <ellipse cx="47.5" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
+        <ellipse cx="52.5" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
+        <path d="M50 47 L 49.5 58" stroke={skinLight} strokeWidth="0.6" opacity="0.55" />
+      </>
+    );
+  }
+  if (style === 2) {
+    return (
+      <>
+        <path d="M50 47 Q 45 55 46.5 59 Q 50 61.5 53.5 59 Q 55 55 50 47" fill={skinShade} opacity="0.4" />
+        <path d="M46.5 59.5 Q 50 62.5 53.5 59.5" stroke={skinShade} strokeWidth="0.7" fill="none" opacity="0.75" />
+        <ellipse cx="47.5" cy="60" rx="0.8" ry="0.5" fill={skinShade} opacity="0.75" />
+        <ellipse cx="52.5" cy="60" rx="0.8" ry="0.5" fill={skinShade} opacity="0.75" />
+        <path d="M50 47 L 50 58" stroke={skinLight} strokeWidth="0.6" opacity="0.55" />
+      </>
+    );
+  }
+  return (
+    <>
+      <path d="M50 47 Q 47 54 48 59 Q 50 60.5 52 59 Q 53 54 50 47" fill={skinShade} opacity="0.4" />
+      <path d="M47.5 59.5 Q 50 61.5 52.5 59.5" stroke={skinShade} strokeWidth="0.7" fill="none" opacity="0.75" />
+      <ellipse cx="48.3" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
+      <ellipse cx="51.7" cy="59.5" rx="0.7" ry="0.5" fill={skinShade} opacity="0.75" />
+      <path d="M50 47 L 50 58" stroke={skinLight} strokeWidth="0.6" opacity="0.55" />
+    </>
+  );
+}
+
+function Mouth({ style }: { style: "grim" | "flat" | "smirk" | "snarl" }) {
+  if (style === "flat") {
+    return <path d="M43 64 L 57 64" stroke="#3a1410" strokeWidth="1.3" strokeLinecap="round" />;
+  }
+  if (style === "smirk") {
+    return (
+      <>
+        <path d="M43 64 Q 50 66 58 62.5" stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+        <path d="M44 65.5 Q 50 67 57 63.5" stroke="#7a2418" strokeWidth="0.6" fill="none" opacity="0.6" />
+      </>
+    );
+  }
+  if (style === "snarl") {
+    return (
+      <>
+        <path d="M42 63 Q 50 68 58 63" stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+        <path d="M45 63.5 L 45 66 L 46.5 63.7 Z M54.5 63.7 L 56 66 L 56 63.5 Z" fill="#f4ece0" />
+      </>
+    );
+  }
+  return (
+    <>
+      <path d="M43 64 Q 50 66 57 64" stroke="#3a1410" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      <path d="M44 65.5 Q 50 66.9 56 65.5" stroke="#7a2418" strokeWidth="0.6" fill="none" opacity="0.6" />
+    </>
   );
 }
 
