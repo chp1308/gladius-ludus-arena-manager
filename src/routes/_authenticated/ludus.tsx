@@ -692,22 +692,41 @@ function seedFrom(str: string) {
   };
 }
 
-// Realistic portraits: pool of AI-generated headshots, picked deterministically
-// by gladiator id so each fighter has a stable face across sessions.
-import portrait1 from "@/assets/portraits/g1.jpg";
-import portrait2 from "@/assets/portraits/g2.jpg";
-import portrait3 from "@/assets/portraits/g3.jpg";
-import portrait4 from "@/assets/portraits/g4.jpg";
-import portrait5 from "@/assets/portraits/g5.jpg";
-import portrait6 from "@/assets/portraits/g6.jpg";
-import portrait7 from "@/assets/portraits/g7.jpg";
-import portrait8 from "@/assets/portraits/g8.jpg";
+// Realistic portraits: pool of AI-generated headshots grouped by weapon type
+// so each class shows fighters wielding the correct armament. Picked
+// deterministically by gladiator id so each fighter keeps a stable face.
+import gladius1 from "@/assets/portraits/gladius_1.jpg";
+import gladius2 from "@/assets/portraits/gladius_2.jpg";
+import gladius3 from "@/assets/portraits/gladius_3.jpg";
+import gladius4 from "@/assets/portraits/gladius_4.jpg";
+import gladius5 from "@/assets/portraits/gladius_5.jpg";
+import spear1 from "@/assets/portraits/spear_1.jpg";
+import spear2 from "@/assets/portraits/spear_2.jpg";
+import spear3 from "@/assets/portraits/spear_3.jpg";
+import spear4 from "@/assets/portraits/spear_4.jpg";
+import spear5 from "@/assets/portraits/spear_5.jpg";
+import net1 from "@/assets/portraits/net_1.jpg";
+import net2 from "@/assets/portraits/net_2.jpg";
+import net3 from "@/assets/portraits/net_3.jpg";
+import net4 from "@/assets/portraits/net_4.jpg";
+import net5 from "@/assets/portraits/net_5.jpg";
+import dual1 from "@/assets/portraits/dual_1.jpg";
+import dual2 from "@/assets/portraits/dual_2.jpg";
+import dual3 from "@/assets/portraits/dual_3.jpg";
+import dual4 from "@/assets/portraits/dual_4.jpg";
+import dual5 from "@/assets/portraits/dual_5.jpg";
 import beastLion from "@/assets/portraits/beast_lion.jpg";
 import beastTiger from "@/assets/portraits/beast_tiger.jpg";
 import beastElephant from "@/assets/portraits/beast_elephant.jpg";
 import beastRhino from "@/assets/portraits/beast_rhino.jpg";
 
-const GLADIATOR_PORTRAITS = [portrait1, portrait2, portrait3, portrait4, portrait5, portrait6, portrait7, portrait8];
+const PORTRAITS_BY_WEAPON: Record<string, string[]> = {
+  gladius: [gladius1, gladius2, gladius3, gladius4, gladius5],
+  spear: [spear1, spear2, spear3, spear4, spear5],
+  net: [net1, net2, net3, net4, net5],
+  dual: [dual1, dual2, dual3, dual4, dual5],
+};
+const ALL_HUMAN_PORTRAITS = Object.values(PORTRAITS_BY_WEAPON).flat();
 const BEAST_PORTRAITS: Record<string, string> = {
   beast_lion: beastLion,
   beast_tiger: beastTiger,
@@ -734,14 +753,15 @@ function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
       </div>
     );
   }
+  const pool = PORTRAITS_BY_WEAPON[g.weapon_type] ?? ALL_HUMAN_PORTRAITS;
   const rng = seedFrom(g.id);
-  const idx = Math.floor(rng() * GLADIATOR_PORTRAITS.length);
+  const idx = Math.floor(rng() * pool.length);
   return (
     <div
       className="relative overflow-hidden rounded-full border border-primary/50 shadow-[inset_0_0_18px_rgba(0,0,0,0.55)]"
       style={{ width: s, height: s, background: "#100804" }}
     >
-      <img src={GLADIATOR_PORTRAITS[idx]} alt="gladiator portrait" loading="lazy" width={512} height={512}
+      <img src={pool[idx]} alt="gladiator portrait" loading="lazy" width={512} height={512}
         className="h-full w-full object-cover" />
       <div className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_22px_rgba(0,0,0,0.5)]" />
     </div>
