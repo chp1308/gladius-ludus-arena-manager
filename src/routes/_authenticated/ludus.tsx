@@ -721,7 +721,7 @@ import beastElephant from "@/assets/portraits/beast_elephant.jpg";
 import beastRhino from "@/assets/portraits/beast_rhino.jpg";
 
 const PORTRAITS_BY_WEAPON: Record<string, string[]> = {
-  gladius: [gladius1, gladius2, gladius3, gladius4, gladius5],
+  gladius: [pGladius1, pGladius2, pGladius3, pGladius4, pGladius5],
   spear: [pSpear1, pSpear2, pSpear3, pSpear4, pSpear5],
   net: [pNet1, pNet2, pNet3, pNet4, pNet5],
   dual: [pDual1, pDual2, pDual3, pDual4, pDual5],
