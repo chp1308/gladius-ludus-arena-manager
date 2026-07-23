@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "C:\\Users\\ChristianPetersen\\OneDrive - Copenhagen Data\\Documents\\GitHub\\gladius-ludus-arena-manager\\.claude\\dev-with-node.cmd",
+      "runtimeArgs": [],
+      "port": 8080
+    }
+  ]
+}
