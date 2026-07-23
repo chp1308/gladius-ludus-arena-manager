@@ -351,33 +351,33 @@ export type Database = {
       get_pvp_profiles: {
         Args: { p_ids: string[] }
         Returns: {
+          armory_level: number
+          best_rank: number
+          bio: string
+          created_at: string
+          description: string
           id: string
           ludus_name: string
-          description: string
-          bio: string
-          reputation: number
-          best_rank: number | null
-          training_level: number
-          scouting_level: number
           medicus_level: number
-          armory_level: number
           pantry_level: number
-          showcase_limit: number
+          reputation: number
+          scouting_level: number
           showcase_gladiator_ids: string[]
-          created_at: string
+          showcase_limit: number
+          training_level: number
         }[]
       }
       get_reputation_leaderboard: {
         Args: { p_limit?: number }
         Returns: {
+          armory_level: number
+          best_rank: number
           id: string
           ludus_name: string
-          reputation: number
-          best_rank: number | null
-          training_level: number
-          scouting_level: number
           medicus_level: number
-          armory_level: number
+          reputation: number
+          scouting_level: number
+          training_level: number
         }[]
       }
       spend_denarii: {
