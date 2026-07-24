@@ -734,7 +734,12 @@ const BEAST_PORTRAITS: Record<string, string> = {
   beast_rhino: beastRhino,
 };
 
-function FaceAvatar({ g, size = 96 }: { g: Gladiator; size?: number }) {
+// Minimal shape FaceAvatar actually needs — lets callers render a portrait
+// for gladiators they only have partial data for (e.g. a PvP opponent from
+// a challenge listing), not just full Gladiator rows.
+export type PortraitSubject = { id: string; is_beast: boolean; weapon_type: string };
+
+export function FaceAvatar({ g, size = 96 }: { g: PortraitSubject; size?: number }) {
   const s = size;
   if (g.is_beast) {
     const src = BEAST_PORTRAITS[g.weapon_type];
