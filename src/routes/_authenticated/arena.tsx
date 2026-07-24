@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import {
   getLudusState, fightMatch, fightTeamBattle,
   postPvpChallenge, cancelPvpChallenge, listOpenPvpChallenges, acceptPvpChallenge,
@@ -10,6 +11,9 @@ import {
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator,
 } from "@/lib/game.functions";
+import type { FightRound } from "@/lib/game.functions";
+import { FaceAvatar } from "./ludus";
+import type { PortraitSubject } from "./ludus";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -152,15 +156,30 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
   const qc = useQueryClient();
   const fight = useServerFn(fightMatch);
   const [difficulty, setDifficulty] = useState<string>("backwater");
-  const [result, setResult] = useState<{ won: boolean; log: string[] } | null>(null);
+  const [battle, setBattle] = useState<Awaited<ReturnType<typeof fight>> | null>(null);
+  const [animating, setAnimating] = useState(false);
 
   const mut = useMutation({
     mutationFn: () => fight({ data: { gladiatorId: g.id, difficulty } }),
-    onSuccess: (r) => { setResult({ won: r.won, log: r.log }); qc.invalidateQueries({ queryKey: ["ludus"] }); },
+    onSuccess: (r) => { setBattle(r); setAnimating(true); qc.invalidateQueries({ queryKey: ["ludus"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (result) return <ResultView result={result} onClose={() => setResult(null)} />;
+  if (battle && animating) {
+    return (
+      <BattleAnimation
+        myLabel={g.name}
+        myPortrait={<FaceAvatar g={g} size={96} />}
+        oppLabel={battle.opponentName}
+        oppPortrait={<GenericFoeAvatar size={96} />}
+        maxHp={battle.maxHp}
+        rounds={battle.rounds}
+        log={battle.log}
+        onComplete={() => setAnimating(false)}
+      />
+    );
+  }
+  if (battle) return <ResultView result={battle} onClose={() => setBattle(null)} />;
 
   const selectedTier = ARENA_TIERS.find(t => t.key === difficulty)!;
 
@@ -355,7 +374,9 @@ function RivalChallengesCard({ state }: { state: State }) {
     g.health >= 30 && (!g.injury_until || new Date(g.injury_until) < new Date())
   );
   const [myId, setMyId] = useState<string | null>(eligible[0]?.id ?? null);
-  const [result, setResult] = useState<{ won: boolean; log: string[]; fallen: Fallen | null } | null>(null);
+  const [battle, setBattle] = useState<Awaited<ReturnType<typeof acceptFn>> | null>(null);
+  const [animating, setAnimating] = useState(false);
+  const [opponent, setOpponent] = useState<{ name: string; portrait: PortraitSubject } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["pvp-open", myId],
@@ -365,7 +386,8 @@ function RivalChallengesCard({ state }: { state: State }) {
   const accept = useMutation({
     mutationFn: (challengeId: string) => acceptFn({ data: { challengeId, myGladiatorId: myId! } }),
     onSuccess: (r) => {
-      setResult({ won: r.won, log: r.log, fallen: r.fallen ?? null });
+      setBattle(r);
+      setAnimating(true);
       qc.invalidateQueries({ queryKey: ["ludus"] });
       qc.invalidateQueries({ queryKey: ["pvp-open"] });
       qc.invalidateQueries({ queryKey: ["pvp-offers"] });
@@ -373,7 +395,23 @@ function RivalChallengesCard({ state }: { state: State }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (result) return <PvpResultView result={result} onClose={() => setResult(null)} />;
+  const myGladiator = state.gladiators.find(x => x.id === myId) ?? null;
+
+  if (battle && animating) {
+    return (
+      <BattleAnimation
+        myLabel={myGladiator?.name ?? "Your champion"}
+        myPortrait={myGladiator ? <FaceAvatar g={myGladiator} size={96} /> : <GenericFoeAvatar size={96} />}
+        oppLabel={opponent?.name ?? "Rival champion"}
+        oppPortrait={opponent ? <FaceAvatar g={opponent.portrait} size={96} /> : <GenericFoeAvatar size={96} />}
+        maxHp={battle.maxHp}
+        rounds={battle.rounds}
+        log={battle.log}
+        onComplete={() => setAnimating(false)}
+      />
+    );
+  }
+  if (battle) return <PvpResultView result={{ won: battle.won, log: battle.log, fallen: battle.fallen ?? null }} onClose={() => setBattle(null)} />;
 
   return (
     <Card className="bg-card/50">
@@ -388,6 +426,7 @@ function RivalChallengesCard({ state }: { state: State }) {
             {eligible.map(gl => (
               <button
                 key={gl.id}
+                disabled={accept.isPending}
                 onClick={() => setMyId(gl.id)}
                 className={`rounded-lg border px-3 py-1.5 text-sm transition ${myId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"}`}
               >
@@ -427,7 +466,13 @@ function RivalChallengesCard({ state }: { state: State }) {
                   size="sm"
                   variant={c.to_death ? "destructive" : "default"}
                   disabled={disabled}
-                  onClick={() => accept.mutate(c.id)}
+                  onClick={() => {
+                    setOpponent({
+                      name: g?.name ?? "Unknown",
+                      portrait: g ? { id: g.id, is_beast: g.is_beast, weapon_type: g.weapon_type } : { id: c.id, is_beast: false, weapon_type: "gladius" },
+                    });
+                    accept.mutate(c.id);
+                  }}
                 >
                   {c.to_death ? "Fight to death" : "Accept"}
                 </Button>
@@ -508,9 +553,11 @@ function PvpResultView({ result, onClose }: { result: { won: boolean; log: strin
 function TeamFights({ state }: { state: State }) {
   const [battleKey, setBattleKey] = useState<string>(TEAM_BATTLES[0].key);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [result, setResult] = useState<{ won: boolean; log: string[] } | null>(null);
   const qc = useQueryClient();
   const fightFn = useServerFn(fightTeamBattle);
+  const [outcome, setOutcome] = useState<Awaited<ReturnType<typeof fightFn>> | null>(null);
+  const [animating, setAnimating] = useState(false);
+  const [fightingTeam, setFightingTeam] = useState<Gladiator[]>([]);
 
   const battle = TEAM_BATTLES.find(b => b.key === battleKey)!;
   const fame = state.profile?.reputation ?? 0;
@@ -530,14 +577,30 @@ function TeamFights({ state }: { state: State }) {
   const mut = useMutation({
     mutationFn: () => fightFn({ data: { battleKey, gladiatorIds: selectedIds } }),
     onSuccess: (r) => {
-      setResult({ won: r.won, log: r.log });
+      setFightingTeam(chosen);
+      setOutcome(r);
+      setAnimating(true);
       setSelectedIds([]);
       qc.invalidateQueries({ queryKey: ["ludus"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (result) return <ResultView result={result} onClose={() => setResult(null)} />;
+  if (outcome && animating) {
+    return (
+      <BattleAnimation
+        myLabel="Your cohort"
+        myPortrait={<PortraitCluster gladiators={fightingTeam} />}
+        oppLabel={battle.label}
+        oppPortrait={<GenericFoeAvatar size={96} />}
+        maxHp={outcome.maxHp}
+        rounds={outcome.rounds}
+        log={outcome.log}
+        onComplete={() => setAnimating(false)}
+      />
+    );
+  }
+  if (outcome) return <ResultView result={outcome} onClose={() => setOutcome(null)} />;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -586,7 +649,7 @@ function TeamFights({ state }: { state: State }) {
             return (
               <div key={gl.id}>
                 <button
-                  disabled={!!disabled}
+                  disabled={!!disabled || mut.isPending}
                   onClick={() => toggle(gl.id)}
                   className={`w-full rounded-lg border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                     selected ? "border-primary bg-primary/10" : dim ? "border-border opacity-60" : "border-border hover:border-primary/60"
@@ -617,6 +680,138 @@ function TeamFights({ state }: { state: State }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+// -----------------------------------------------------------
+// Animated battle replay — plays before the reward/result dialog.
+// The fight is fully resolved server-side (fair, ungameable); this just
+// gives the already-computed rounds a round-by-round visual presentation.
+// -----------------------------------------------------------
+
+// Placeholder for opponents that aren't real gladiator rows (pit-fight NPCs,
+// team-battle enemy cohorts) — no portrait asset exists for them.
+function GenericFoeAvatar({ size = 96 }: { size?: number }) {
+  const s = size;
+  return (
+    <div
+      className="relative flex items-center justify-center overflow-hidden rounded-full border border-destructive/50 shadow-[inset_0_0_18px_rgba(0,0,0,0.55)]"
+      style={{ width: s, height: s, background: "radial-gradient(circle at 30% 20%, hsl(0 30% 20%), hsl(0 40% 6%) 75%)" }}
+    >
+      <Swords className="text-destructive" style={{ width: s * 0.45, height: s * 0.45 }} />
+    </div>
+  );
+}
+
+// Stacked cluster of small portraits for team-battle "my side".
+function PortraitCluster({ gladiators }: { gladiators: PortraitSubject[] }) {
+  return (
+    <div className="flex -space-x-3">
+      {gladiators.map((g, i) => (
+        <div key={g.id} className="rounded-full ring-2 ring-background" style={{ zIndex: gladiators.length - i }}>
+          <FaceAvatar g={g} size={44} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Locates the animated rounds' log lines within the full narrative log, so
+// the pre-fight setup lines and post-fight outcome lines can be shown
+// instantly while only the round-by-round exchanges animate.
+function splitBattleLog(log: string[], rounds: FightRound[]): { introLines: string[]; outroLines: string[] } {
+  if (rounds.length === 0) return { introLines: log, outroLines: [] };
+  const firstIdx = log.indexOf(rounds[0].text);
+  const lastIdx = log.lastIndexOf(rounds[rounds.length - 1].text);
+  return {
+    introLines: firstIdx >= 0 ? log.slice(0, firstIdx) : log,
+    outroLines: lastIdx >= 0 ? log.slice(lastIdx + 1) : [],
+  };
+}
+
+function FighterPanel({ label, portrait, hp, maxHp, hit }: { label: string; portrait: ReactNode; hp: number; maxHp: number; hit: boolean }) {
+  const pct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className={`rounded-full transition-transform duration-150 ${hit ? "scale-90 ring-4 ring-destructive/80" : ""}`}>
+        {portrait}
+      </div>
+      <div className="max-w-[140px] truncate font-display text-sm">{label}</div>
+      <div className="h-2 w-full max-w-[140px] overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full transition-all duration-500 ease-out ${pct > 50 ? "bg-emerald-500" : pct > 20 ? "bg-amber-500" : "bg-destructive"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="text-xs text-muted-foreground">{Math.max(0, Math.round(hp))} / {maxHp} HP</div>
+    </div>
+  );
+}
+
+function BattleAnimation({
+  myLabel, myPortrait, oppLabel, oppPortrait, maxHp, rounds, log, onComplete,
+}: {
+  myLabel: string;
+  myPortrait: ReactNode;
+  oppLabel: string;
+  oppPortrait: ReactNode;
+  maxHp: number;
+  rounds: FightRound[];
+  log: string[];
+  onComplete: () => void;
+}) {
+  const { introLines, outroLines } = splitBattleLog(log, rounds);
+  const [step, setStep] = useState(0);
+  const [skipped, setSkipped] = useState(false);
+  const [hitSide, setHitSide] = useState<"me" | "opponent" | null>(null);
+
+  useEffect(() => {
+    if (skipped) { onComplete(); return; }
+    if (step > rounds.length) {
+      const t = setTimeout(onComplete, 900);
+      return () => clearTimeout(t);
+    }
+    if (step === 0) {
+      const t = setTimeout(() => setStep(1), 650);
+      return () => clearTimeout(t);
+    }
+    const round = rounds[step - 1];
+    const hitTimer = setTimeout(() => setHitSide(round.attacker === "me" ? "opponent" : "me"), 150);
+    const clearTimer = setTimeout(() => setHitSide(null), 500);
+    const nextTimer = setTimeout(() => setStep(s => s + 1), 700);
+    return () => { clearTimeout(hitTimer); clearTimeout(clearTimer); clearTimeout(nextTimer); };
+  }, [step, skipped, rounds, onComplete]);
+
+  const currentRound = step > 0 && step <= rounds.length ? rounds[step - 1] : null;
+  const myHp = currentRound ? currentRound.myHp : maxHp;
+  const oppHp = currentRound ? currentRound.oppHp : maxHp;
+  const visibleLines = [
+    ...introLines,
+    ...rounds.slice(0, step).map(r => r.text),
+    ...(step > rounds.length ? outroLines : []),
+  ];
+
+  return (
+    <Dialog open>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-center font-display text-xl">The sand awaits...</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <FighterPanel label={myLabel} portrait={myPortrait} hp={myHp} maxHp={maxHp} hit={hitSide === "me"} />
+          <Swords className="h-6 w-6 text-muted-foreground" />
+          <FighterPanel label={oppLabel} portrait={oppPortrait} hp={oppHp} maxHp={maxHp} hit={hitSide === "opponent"} />
+        </div>
+        <ol className="mt-2 max-h-40 space-y-1 overflow-y-auto font-serif text-sm">
+          {visibleLines.map((line, i) => (
+            <li key={i} className="border-l-2 border-border pl-3">{line}</li>
+          ))}
+        </ol>
+        <Button variant="ghost" className="w-full" onClick={() => setSkipped(true)}>
+          Skip
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }
 

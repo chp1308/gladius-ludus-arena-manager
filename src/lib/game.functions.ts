@@ -10,6 +10,18 @@ import capuaImg from "@/assets/arena/grand-capua.jpg.asset.json";
 import colosseumImg from "@/assets/arena/colosseum.jpg.asset.json";
 import emperorImg from "@/assets/arena/emperor-spectacle.jpg.asset.json";
 
+// Structured per-round combat data for animated battle replays on the
+// client. `text` mirrors the exact line pushed into the fight's `log` for
+// that round, so the client can locate round boundaries within the full log
+// (for intro/outro lines) without duplicating narrative-construction logic.
+export type FightRound = {
+  attacker: "me" | "opponent";
+  damage: number;
+  myHp: number;
+  oppHp: number;
+  text: string;
+};
+
 // Debits denarii via the atomic spend_denarii RPC. Throws the real database
 // error when the call itself fails (missing function, permission issue,
 // etc.) instead of always reporting "insufficient funds" — a prior version
@@ -592,15 +604,20 @@ export const fightMatch = createServerFn({ method: "POST" })
 
     let myHp = 100, oppHp = 100;
     const rounds = rand(3, 5);
+    const fightRounds: FightRound[] = [];
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
       if (Math.random() < myChance) {
         const dmg = rollDamage(g.weapon_tier, opponent, 0, g.level);
         oppHp -= dmg;
-        log.push(`Round ${i}: ${g.name} lands a blow for ${dmg}.`);
+        const text = `Round ${i}: ${g.name} lands a blow for ${dmg}.`;
+        log.push(text);
+        fightRounds.push({ attacker: "me", damage: dmg, myHp: Math.max(0, myHp), oppHp: Math.max(0, oppHp), text });
       } else {
         const dmg = rollDamage(oppGearTier, g, defenseLevel, tier.reqLevel);
         myHp -= dmg;
-        log.push(`Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`);
+        const text = `Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`;
+        log.push(text);
+        fightRounds.push({ attacker: "opponent", damage: dmg, myHp: Math.max(0, myHp), oppHp: Math.max(0, oppHp), text });
       }
     }
 
@@ -667,7 +684,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       log,
     });
 
-    return { won, log, denariiGained, xpGained, repGained };
+    return { won, log, denariiGained, xpGained, repGained, rounds: fightRounds, maxHp: 100, opponentName };
   });
 
 // ============= Lines 524-706 replaced =============
@@ -914,9 +931,21 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     if (myDefenseLevel > 0) log.push(`${g.name} adopts defensive stance — rank ${myDefenseLevel}.`);
     if (oppDefenseLevel > 0) log.push(`${opp.name} adopts defensive stance — rank ${oppDefenseLevel}.`);
     let myHp = 100, oHp = 100;
+    const fightRounds: FightRound[] = [];
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
-      if (Math.random() < myChance) { const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level); oHp -= d; log.push(`Round ${i}: ${g.name} strikes for ${d}.`); }
-      else { const d = rollDamage(opp.weapon_tier, g, myDefenseLevel, opp.level); myHp -= d; log.push(`Round ${i}: ${opp.name} strikes for ${d}.`); }
+      if (Math.random() < myChance) {
+        const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level);
+        oHp -= d;
+        const text = `Round ${i}: ${g.name} strikes for ${d}.`;
+        log.push(text);
+        fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(0, myHp), oppHp: Math.max(0, oHp), text });
+      } else {
+        const d = rollDamage(opp.weapon_tier, g, myDefenseLevel, opp.level);
+        myHp -= d;
+        const text = `Round ${i}: ${opp.name} strikes for ${d}.`;
+        log.push(text);
+        fightRounds.push({ attacker: "opponent", damage: d, myHp: Math.max(0, myHp), oppHp: Math.max(0, oHp), text });
+      }
     }
 
     const won = oHp <= myHp;
@@ -1019,6 +1048,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
         total_invested: g.total_invested ?? 0,
         honorCost: Math.max(10, Math.ceil((g.total_invested ?? 0) * 0.05)),
       } : null,
+      rounds: fightRounds,
+      maxHp: 100,
     };
   });
 
@@ -1149,11 +1180,24 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     const teamChance = winChance(teamPower, enemyPower);
     log.push(`Cohort win chance per exchange: ${Math.round(teamChance * 100)}%.`);
 
-    let teamHp = team.length * 100;
-    let enemyHp = team.length * 100;
+    const teamMaxHp = team.length * 100;
+    let teamHp = teamMaxHp;
+    let enemyHp = teamMaxHp;
+    const fightRounds: FightRound[] = [];
     for (let i = 1; i <= 6 && teamHp > 0 && enemyHp > 0; i++) {
-      if (Math.random() < teamChance) { const d = rand(25, 45); enemyHp -= d; log.push(`Round ${i}: your cohort presses for ${d}.`); }
-      else { const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction)); teamHp -= d; log.push(`Round ${i}: the enemy strikes for ${d}.`); }
+      if (Math.random() < teamChance) {
+        const d = rand(25, 45);
+        enemyHp -= d;
+        const text = `Round ${i}: your cohort presses for ${d}.`;
+        log.push(text);
+        fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(0, teamHp), oppHp: Math.max(0, enemyHp), text });
+      } else {
+        const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction));
+        teamHp -= d;
+        const text = `Round ${i}: the enemy strikes for ${d}.`;
+        log.push(text);
+        fightRounds.push({ attacker: "opponent", damage: d, myHp: Math.max(0, teamHp), oppHp: Math.max(0, enemyHp), text });
+      }
     }
     const won = enemyHp <= teamHp;
 
@@ -1167,7 +1211,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
 
     // Distribute damage across team members
     for (const g of team) {
-      const shareDamage = Math.floor((team.length * 100 - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
+      const shareDamage = Math.floor((teamMaxHp - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
       const dmg = Math.max(5, shareDamage);
       const newHealth = Math.max(0, g.health - dmg);
       let injuryUntil: string | null = null;
@@ -1205,7 +1249,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       reputation: profile.reputation + repGained,
     }).eq("id", userId);
 
-    return { won, log, denariiGained, repGained };
+    return { won, log, denariiGained, repGained, rounds: fightRounds, maxHp: teamMaxHp };
   });
 
 
