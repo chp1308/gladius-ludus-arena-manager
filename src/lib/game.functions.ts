@@ -76,8 +76,8 @@ export function requiredArmoryLevel(tier: number): number {
 
 // Stat cap grows with training facility (+10 per training-yard level)
 export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lvl1=25, lvl5=65
-// Max health scales with stamina: +5 HP per point
-export const maxHealth = (stamina: number) => 100 + stamina * 5;
+// Max health scales with strength: +5 HP per point
+export const maxHealth = (strength: number) => 100 + strength * 5;
 // Training cost falls with training facility level
 export const trainCost = (trainingLevel: number) => Math.max(20, 50 - (trainingLevel - 1) * 6);
 // Gear upgrade cost by slot, tier, and armory level
@@ -166,7 +166,7 @@ export function gladiatorPower(
   // Level: small flat bonus + modest multiplicative per level.
   const lvl = g.level * 6;
   const levelMult = 1 + (g.level - 1) * 0.02;
-  const healthMod = g.health / maxHealth(g.stamina);
+  const healthMod = g.health / maxHealth(g.strength);
   const raw = (base + gear + lvl) * healthMod * levelMult;
   const skillMod = 1 + skillLevel * 0.08; // +8% per skill level for the matching style
   return Math.floor(raw * skillMod);
@@ -349,6 +349,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({
     gladiatorId: z.string().uuid(),
     stat: z.enum(["strength", "agility", "stamina", "technique"]),
+    times: z.number().int().min(1).max(20).optional().default(1),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -365,23 +366,37 @@ export const trainGladiator = createServerFn({ method: "POST" })
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
 
     const cap = statCap(profile.training_level);
-    if ((g[data.stat] as number) >= cap) throw new Error(`Stat capped at ${cap} — upgrade Training Yard`);
+    const startVal = g[data.stat] as number;
+    if (startVal >= cap) throw new Error(`Stat capped at ${cap} — upgrade Training Yard`);
 
-    await spendDenarii(supabaseAdmin, userId, COST, `Training costs ${COST} denarii`);
-
-    // Better training = bigger gains
+    // Simulate up to `times` sessions, stopping early if the stat caps out —
+    // only sessions that actually ran get charged. Better training = bigger
+    // gains per session.
     const bigChance = 0.2 + profile.training_level * 0.1;
-    const gain = Math.random() < bigChance ? 2 : 1;
-    const newVal = Math.min(cap, (g[data.stat] as number) + gain);
-    const basePatch: Record<string, number | string | null> = { total_invested: (g.total_invested ?? 0) + COST };
+    let val = startVal;
+    let sessions = 0;
+    for (let i = 0; i < data.times; i++) {
+      if (val >= cap) break;
+      const gain = Math.random() < bigChance ? 2 : 1;
+      val = Math.min(cap, val + gain);
+      sessions++;
+    }
+    const totalGain = val - startVal;
+    const totalCost = COST * sessions;
+
+    await spendDenarii(supabaseAdmin, userId, totalCost, `Training costs ${totalCost} denarii`);
+
+    const basePatch: Record<string, number | string | null> = { total_invested: (g.total_invested ?? 0) + totalCost };
     const patch =
-      data.stat === "strength" ? { ...basePatch, strength: newVal } :
-      data.stat === "agility" ? { ...basePatch, agility: newVal } :
-      data.stat === "stamina" ? { ...basePatch, stamina: newVal, health: Math.min(maxHealth(newVal), g.health + (newVal - g.stamina) * 5) } :
-      { ...basePatch, technique: newVal };
+      // Strength drives max health — bump current health by the same amount
+      // gained so training doesn't retroactively wound a fighter.
+      data.stat === "strength" ? { ...basePatch, strength: val, health: Math.min(maxHealth(val), g.health + totalGain * 5) } :
+      data.stat === "agility" ? { ...basePatch, agility: val } :
+      data.stat === "stamina" ? { ...basePatch, stamina: val } :
+      { ...basePatch, technique: val };
     const { error } = await supabaseAdmin.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
-    return { ok: true, gain, stat: data.stat };
+    return { ok: true, gain: totalGain, sessions, stat: data.stat };
   });
 
 
@@ -435,7 +450,7 @@ export const healGladiator = createServerFn({ method: "POST" })
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("The physician cannot revive the dead");
 
-    const hpMax = maxHealth(g.stamina);
+    const hpMax = maxHealth(g.strength);
     const missing = hpMax - g.health;
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
     const baseCost = Math.max(30, missing * 2);
@@ -477,6 +492,7 @@ export type ArenaTier = {
   reqWins: number;       // gladiator wins
   powerMin: number;      // opponent power lower bound
   powerMax: number;      // opponent power upper bound
+  hp: number;            // opponent HP pool for this tier
   reward: number;        // base denarii
   xp: number;            // base XP
   rep: number;           // fame on win
@@ -489,7 +505,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "Muddy village pits — a purse of copper and jeering peasants.",
     imageUrl: backwaterImg.url,
     reqFame: 0, reqLevel: 1, reqWins: 0,
-    powerMin: 50, powerMax: 150, reward: 70, xp: 35, rep: 1,
+    powerMin: 50, powerMax: 150, hp: 100, reward: 70, xp: 35, rep: 1,
     opponents: ["Drunken Brawler", "Runaway Slave", "Village Bully", "Starving Thief"],
   },
   {
@@ -497,7 +513,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "Small town munera — a wooden stand and a modest crowd.",
     imageUrl: localImg.url,
     reqFame: 5, reqLevel: 2, reqWins: 1,
-    powerMin: 300, powerMax: 700, reward: 160, xp: 75, rep: 3,
+    powerMin: 300, powerMax: 700, hp: 160, reward: 160, xp: 75, rep: 3,
     opponents: ["Provincial Auctoratus", "Retired Legionary", "Pit Veteran", "Ostian Bruiser"],
   },
   {
@@ -505,7 +521,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "A magistrate's games — proper editors, painted programs, real steel.",
     imageUrl: provincialImg.url,
     reqFame: 25, reqLevel: 3, reqWins: 3,
-    powerMin: 900, powerMax: 1300, reward: 320, xp: 130, rep: 6,
+    powerMin: 900, powerMax: 1300, hp: 230, reward: 320, xp: 130, rep: 6,
     opponents: ["Praetorian Washout", "Iberian Veteran", "Champion of Ostia", "Nubian Slayer"],
   },
   {
@@ -513,7 +529,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "Capua's arena, where fortunes are made and legions bet their pay.",
     imageUrl: capuaImg.url,
     reqFame: 75, reqLevel: 5, reqWins: 8,
-    powerMin: 1300, powerMax: 1700, reward: 650, xp: 240, rep: 14,
+    powerMin: 1300, powerMax: 1700, hp: 280, reward: 650, xp: 240, rep: 14,
     opponents: ["Champion of Capua", "The Bloody Bull", "Marcus Ferrus", "The Thracian Wolf"],
   },
   {
@@ -521,7 +537,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "The Flavian Amphitheatre. Fifty thousand voices thirsting for blood.",
     imageUrl: colosseumImg.url,
     reqFame: 200, reqLevel: 8, reqWins: 20,
-    powerMin: 1700, powerMax: 2200, reward: 1300, xp: 420, rep: 30,
+    powerMin: 1700, powerMax: 2200, hp: 330, reward: 1300, xp: 420, rep: 30,
     opponents: ["Priscus the Undefeated", "Verus of the Palatine", "Flamma Redivivus", "The Iron Senator"],
   },
   {
@@ -529,7 +545,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "The Emperor himself watches. Death here becomes legend.",
     imageUrl: emperorImg.url,
     reqFame: 500, reqLevel: 12, reqWins: 40,
-    powerMin: 2400, powerMax: 3200, reward: 2800, xp: 800, rep: 70,
+    powerMin: 2400, powerMax: 3200, hp: 440, reward: 2800, xp: 800, rep: 70,
     opponents: ["Spartacus Reborn", "Hermes of Thrace", "The Emperor's Champion", "Tetraites the Immortal"],
   },
 ];
@@ -602,7 +618,9 @@ export const fightMatch = createServerFn({ method: "POST" })
     const myChance = winChance(myPower, opponentPower);
     log.push(`Win chance: ${Math.round(myChance * 100)}%. Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
 
-    let myHp = 100, oppHp = 100;
+    const myMaxHp = maxHealth(g.strength);
+    const oppMaxHp = tier.hp;
+    let myHp = myMaxHp, oppHp = oppMaxHp;
     const rounds = rand(3, 5);
     const fightRounds: FightRound[] = [];
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
@@ -627,13 +645,13 @@ export const fightMatch = createServerFn({ method: "POST" })
     const xpGained = won ? tier.xp : Math.floor(tier.xp * 0.4);
     const repGained = won ? tier.rep : 0;
 
-    const damageTaken = Math.max(5, 100 - Math.max(0, myHp));
+    const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
     const newHealth = Math.max(0, g.health - damageTaken);
     let injuryUntil: string | null = null;
     // Medicus reduces injury duration
     if (newHealth <= 0) {
       log.push(`${g.name} falls, gravely wounded. Weeks in the valetudinarium await.`);
-    } else if (damageTaken > 60) {
+    } else if (damageTaken > myMaxHp * 0.6) {
       const baseDays = rand(2, 4);
       const days = Math.max(1, baseDays - Math.floor((profile.medicus_level - 1) / 2));
       injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
@@ -684,7 +702,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       log,
     });
 
-    return { won, log, denariiGained, xpGained, repGained, rounds: fightRounds, maxHp: 100, opponentName };
+    return { won, log, denariiGained, xpGained, repGained, rounds: fightRounds, myMaxHp, oppMaxHp, opponentName };
   });
 
 // ============= Lines 524-706 replaced =============
@@ -930,7 +948,9 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg. Win chance: ${Math.round(myChance * 100)}%.`);
     if (myDefenseLevel > 0) log.push(`${g.name} adopts defensive stance — rank ${myDefenseLevel}.`);
     if (oppDefenseLevel > 0) log.push(`${opp.name} adopts defensive stance — rank ${oppDefenseLevel}.`);
-    let myHp = 100, oHp = 100;
+    const myMaxHp = maxHealth(g.strength);
+    const oppMaxHp = maxHealth(opp.strength);
+    let myHp = myMaxHp, oHp = oppMaxHp;
     const fightRounds: FightRound[] = [];
     for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
       if (Math.random() < myChance) {
@@ -954,7 +974,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const xpGained = won ? 140 * rewardMult : 50;
     const repGained = won ? 8 * rewardMult : -2;
 
-    const damageTaken = Math.max(5, 100 - Math.max(0, myHp));
+    const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
     let newHealth = Math.max(0, g.health - damageTaken);
     let injuryUntil: string | null = null;
     let myDied = false;
@@ -962,7 +982,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       myDied = true;
       newHealth = 0;
       log.push(`${g.name} falls in the sand. The crowd chants "Iugula!" — the blade is driven home.`);
-    } else if (damageTaken > 60 && newHealth > 0) {
+    } else if (damageTaken > myMaxHp * 0.6 && newHealth > 0) {
       const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
       injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       log.push(`${g.name} is injured for ${days}d.`);
@@ -987,14 +1007,14 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     }).eq("id", userId);
 
     // Update opposing (challenger) gladiator via admin
-    const oppDamage = Math.max(5, 100 - Math.max(0, oHp));
+    const oppDamage = Math.max(5, oppMaxHp - Math.max(0, oHp));
     let oppNewHealth = Math.max(0, opp.health - oppDamage);
     let oppInjury: string | null = null;
     let oppDied = false;
     if (toDeath && won) {
       oppDied = true;
       oppNewHealth = 0;
-    } else if (oppDamage > 60 && oppNewHealth > 0) {
+    } else if (oppDamage > oppMaxHp * 0.6 && oppNewHealth > 0) {
       oppInjury = new Date(Date.now() + rand(2, 4) * 86400_000).toISOString();
     }
     const oppXp = won ? 40 : 100;
@@ -1049,7 +1069,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
         honorCost: Math.max(10, Math.ceil((g.total_invested ?? 0) * 0.05)),
       } : null,
       rounds: fightRounds,
-      maxHp: 100,
+      myMaxHp,
+      oppMaxHp,
     };
   });
 
@@ -1180,9 +1201,10 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     const teamChance = winChance(teamPower, enemyPower);
     log.push(`Cohort win chance per exchange: ${Math.round(teamChance * 100)}%.`);
 
-    const teamMaxHp = team.length * 100;
+    const teamMaxHp = team.reduce((sum, gl) => sum + maxHealth(gl.strength), 0);
+    const enemyMaxHp = Math.round(teamMaxHp * battle.powerScale);
     let teamHp = teamMaxHp;
-    let enemyHp = teamMaxHp;
+    let enemyHp = enemyMaxHp;
     const fightRounds: FightRound[] = [];
     for (let i = 1; i <= 6 && teamHp > 0 && enemyHp > 0; i++) {
       if (Math.random() < teamChance) {
@@ -1215,7 +1237,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       const dmg = Math.max(5, shareDamage);
       const newHealth = Math.max(0, g.health - dmg);
       let injuryUntil: string | null = null;
-      if (dmg > 55 && newHealth > 0) {
+      if (dmg > maxHealth(g.strength) * 0.55 && newHealth > 0) {
         const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
         injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       }
@@ -1249,7 +1271,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       reputation: profile.reputation + repGained,
     }).eq("id", userId);
 
-    return { won, log, denariiGained, repGained, rounds: fightRounds, maxHp: teamMaxHp };
+    return { won, log, denariiGained, repGained, rounds: fightRounds, myMaxHp: teamMaxHp, oppMaxHp: enemyMaxHp };
   });
 
 

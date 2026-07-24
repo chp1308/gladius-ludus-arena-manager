@@ -29,7 +29,7 @@ function HealButton({ g }: { g: Gladiator }) {
   const qc = useQueryClient();
   const heal = useServerFn(healGladiator);
   const injured = !!(g.injury_until && new Date(g.injury_until) > new Date());
-  const needsHeal = g.health < maxHealth(g.stamina) || injured;
+  const needsHeal = g.health < maxHealth(g.strength) || injured;
   const mut = useMutation({
     mutationFn: () => heal({ data: { gladiatorId: g.id } }),
     onSuccess: (r) => { toast.success(`${g.name} healed for ${r.cost}d`); qc.invalidateQueries({ queryKey: ["ludus"] }); qc.invalidateQueries({ queryKey: ["rivals"] }); },
@@ -172,7 +172,8 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
         myPortrait={<FaceAvatar g={g} size={96} />}
         oppLabel={battle.opponentName}
         oppPortrait={<GenericFoeAvatar size={96} />}
-        maxHp={battle.maxHp}
+        myMaxHp={battle.myMaxHp}
+        oppMaxHp={battle.oppMaxHp}
         rounds={battle.rounds}
         log={battle.log}
         onComplete={() => setAnimating(false)}
@@ -404,7 +405,8 @@ function RivalChallengesCard({ state }: { state: State }) {
         myPortrait={myGladiator ? <FaceAvatar g={myGladiator} size={96} /> : <GenericFoeAvatar size={96} />}
         oppLabel={opponent?.name ?? "Rival champion"}
         oppPortrait={opponent ? <FaceAvatar g={opponent.portrait} size={96} /> : <GenericFoeAvatar size={96} />}
-        maxHp={battle.maxHp}
+        myMaxHp={battle.myMaxHp}
+        oppMaxHp={battle.oppMaxHp}
         rounds={battle.rounds}
         log={battle.log}
         onComplete={() => setAnimating(false)}
@@ -593,7 +595,8 @@ function TeamFights({ state }: { state: State }) {
         myPortrait={<PortraitCluster gladiators={fightingTeam} />}
         oppLabel={battle.label}
         oppPortrait={<GenericFoeAvatar size={96} />}
-        maxHp={outcome.maxHp}
+        myMaxHp={outcome.myMaxHp}
+        oppMaxHp={outcome.oppMaxHp}
         rounds={outcome.rounds}
         log={outcome.log}
         onComplete={() => setAnimating(false)}
@@ -749,13 +752,14 @@ function FighterPanel({ label, portrait, hp, maxHp, hit }: { label: string; port
 }
 
 function BattleAnimation({
-  myLabel, myPortrait, oppLabel, oppPortrait, maxHp, rounds, log, onComplete,
+  myLabel, myPortrait, oppLabel, oppPortrait, myMaxHp, oppMaxHp, rounds, log, onComplete,
 }: {
   myLabel: string;
   myPortrait: ReactNode;
   oppLabel: string;
   oppPortrait: ReactNode;
-  maxHp: number;
+  myMaxHp: number;
+  oppMaxHp: number;
   rounds: FightRound[];
   log: string[];
   onComplete: () => void;
@@ -783,8 +787,8 @@ function BattleAnimation({
   }, [step, skipped, rounds, onComplete]);
 
   const currentRound = step > 0 && step <= rounds.length ? rounds[step - 1] : null;
-  const myHp = currentRound ? currentRound.myHp : maxHp;
-  const oppHp = currentRound ? currentRound.oppHp : maxHp;
+  const myHp = currentRound ? currentRound.myHp : myMaxHp;
+  const oppHp = currentRound ? currentRound.oppHp : oppMaxHp;
   const visibleLines = [
     ...introLines,
     ...rounds.slice(0, step).map(r => r.text),
@@ -798,9 +802,9 @@ function BattleAnimation({
           <DialogTitle className="text-center font-display text-xl">The sand awaits...</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <FighterPanel label={myLabel} portrait={myPortrait} hp={myHp} maxHp={maxHp} hit={hitSide === "me"} />
+          <FighterPanel label={myLabel} portrait={myPortrait} hp={myHp} maxHp={myMaxHp} hit={hitSide === "me"} />
           <Swords className="h-6 w-6 text-muted-foreground" />
-          <FighterPanel label={oppLabel} portrait={oppPortrait} hp={oppHp} maxHp={maxHp} hit={hitSide === "opponent"} />
+          <FighterPanel label={oppLabel} portrait={oppPortrait} hp={oppHp} maxHp={oppMaxHp} hit={hitSide === "opponent"} />
         </div>
         <ol className="mt-2 max-h-40 space-y-1 overflow-y-auto font-serif text-sm">
           {visibleLines.map((line, i) => (

@@ -673,9 +673,9 @@ function GladiatorTile({ g, onClick }: { g: Gladiator; onClick: () => void }) {
       <div className="mt-3">
         <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1"><Heart className="h-3 w-3" /> HP</span>
-          <span>{g.health}/{maxHealth(g.stamina)}{injured ? " · Injured" : ""}</span>
+          <span>{g.health}/{maxHealth(g.strength)}{injured ? " · Injured" : ""}</span>
         </div>
-        <Progress value={(g.health / maxHealth(g.stamina)) * 100} className="h-1.5" />
+        <Progress value={(g.health / maxHealth(g.strength)) * 100} className="h-1.5" />
       </div>
     </button>
   );
@@ -904,14 +904,15 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const armoryLevel = state.profile?.armory_level ?? 1;
   const denarii = state.profile?.denarii ?? 0;
   const cap = statCap(trainingLevel);
-  const hpMax = maxHealth(g.stamina);
+  const hpMax = maxHealth(g.strength);
   const tCost = trainCost(trainingLevel);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
+  const [trainTimes, setTrainTimes] = useState(1);
   const trainMut = useMutation({
     mutationFn: (stat: "strength" | "agility" | "stamina" | "technique") =>
-      train({ data: { gladiatorId: g.id, stat } }),
-    onSuccess: (r) => { toast.success(`+${r.gain} ${r.stat}`); invalidate(); },
+      train({ data: { gladiatorId: g.id, stat, times: trainTimes } }),
+    onSuccess: (r) => { toast.success(`+${r.gain} ${r.stat} (${r.sessions} session${r.sessions === 1 ? "" : "s"})`); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
   const upgradeMut = useMutation({
@@ -1125,22 +1126,41 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
             <Progress value={(g.experience / (g.level * 100)) * 100} className="h-1.5" />
           </div>
 
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Sessions per click</span>
+            <div className="flex gap-1">
+              {[1, 5, 10].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setTrainTimes(n)}
+                  className={`rounded border px-2 py-0.5 text-xs transition ${trainTimes === n ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/60"}`}
+                >
+                  ×{n}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-4 gap-2">
             {stats.map(([label, val, key]) => {
               const capped = val >= cap;
-              const canAfford = denarii >= tCost;
+              // Every session gains at least 1 point, so at most (cap - val)
+              // sessions can ever run regardless of how many were requested —
+              // that bounds the worst-case charge the server could make.
+              const maxSessions = Math.min(trainTimes, Math.max(0, cap - val));
+              const maxCost = tCost * maxSessions;
+              const canAfford = denarii >= maxCost;
               return (
                 <button
                   key={key}
                   onClick={() => trainMut.mutate(key)}
                   disabled={trainMut.isPending || !!injured || capped || !canAfford}
                   className="rounded border border-border bg-secondary/40 p-2 text-center transition hover:border-primary hover:bg-secondary disabled:opacity-50"
-                  title={capped ? `Capped at ${cap} — upgrade Training Yard` : !canAfford ? `Need ${tCost} denarii` : `Train · ${tCost} denarii`}
+                  title={capped ? `Capped at ${cap} — upgrade Training Yard` : !canAfford ? `Need up to ${maxCost} denarii` : `Train up to ${maxSessions}× · up to ${maxCost} denarii`}
                 >
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
                   <div className="font-display text-lg">{val}<span className="text-[10px] text-muted-foreground">/{cap}</span></div>
                   <div className={`mt-0.5 flex items-center justify-center gap-0.5 text-[10px] ${canAfford ? "text-accent" : "text-destructive"}`}>
-                    <Coins className="h-3 w-3" /> {tCost}
+                    <Coins className="h-3 w-3" /> up to {maxCost}
                   </div>
                 </button>
               );
