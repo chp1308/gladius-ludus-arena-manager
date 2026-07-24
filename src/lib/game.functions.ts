@@ -621,7 +621,10 @@ export const fightMatch = createServerFn({ method: "POST" })
     const myMaxHp = maxHealth(g.strength);
     const oppMaxHp = tier.hp;
     let myHp = myMaxHp, oppHp = oppMaxHp;
-    const rounds = rand(3, 5);
+    // Round cap must comfortably outlast the HP pools involved (now up to
+    // ~440 for tanky/high-tier matchups) or fights get cut short by this
+    // ceiling before anyone's health actually runs out.
+    const rounds = rand(15, 25);
     const fightRounds: FightRound[] = [];
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
       if (Math.random() < myChance) {
@@ -952,7 +955,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const oppMaxHp = maxHealth(opp.strength);
     let myHp = myMaxHp, oHp = oppMaxHp;
     const fightRounds: FightRound[] = [];
-    for (let i = 1; i <= 5 && myHp > 0 && oHp > 0; i++) {
+    // Same reasoning as fightMatch — cap must outlast the real HP pools.
+    for (let i = 1; i <= 20 && myHp > 0 && oHp > 0; i++) {
       if (Math.random() < myChance) {
         const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level);
         oHp -= d;
@@ -1206,7 +1210,9 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     let teamHp = teamMaxHp;
     let enemyHp = enemyMaxHp;
     const fightRounds: FightRound[] = [];
-    for (let i = 1; i <= 6 && teamHp > 0 && enemyHp > 0; i++) {
+    // Pooled team HP can run well past 1000 for large, high-strength
+    // cohorts — same reasoning as the solo fights, cap must outlast it.
+    for (let i = 1; i <= 20 && teamHp > 0 && enemyHp > 0; i++) {
       if (Math.random() < teamChance) {
         const d = rand(25, 45);
         enemyHp -= d;
