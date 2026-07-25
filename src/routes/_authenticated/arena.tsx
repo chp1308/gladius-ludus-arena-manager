@@ -10,6 +10,7 @@ import {
   ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator,
+  getPitFightAvailability, PIT_MAX_CHARGES,
 } from "@/lib/game.functions";
 import type { FightRound } from "@/lib/game.functions";
 import { FaceAvatar } from "./ludus";
@@ -24,6 +25,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart, Flame } from "lucide-react";
 
+
+function formatCountdown(iso: string): string {
+  const mins = Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 60000));
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 function HealButton({ g }: { g: Gladiator }) {
   const qc = useQueryClient();
@@ -110,6 +117,14 @@ function PitFights({ state }: { state: State }) {
   const [selectedId, setSelectedId] = useState<string | null>(eligible[0]?.id ?? null);
   const g = state.gladiators.find(x => x.id === selectedId) ?? null;
 
+  const fetchAvailability = useServerFn(getPitFightAvailability);
+  const { data: availabilityData } = useQuery({
+    queryKey: ["pit-fight-availability"],
+    queryFn: () => fetchAvailability({}),
+    refetchInterval: 60_000,
+  });
+  const availability = availabilityData?.availability ?? {};
+
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
       <div>
@@ -119,6 +134,7 @@ function PitFights({ state }: { state: State }) {
           {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
+            const charges = availability[gl.id];
             return (
               <div key={gl.id}>
                 <button
@@ -132,7 +148,14 @@ function PitFights({ state }: { state: State }) {
                     <span className="flex items-center gap-1">{gl.is_beast && <Cat className="h-3 w-3 text-accent" />}{gl.name}</span>
                     <Badge variant="outline">Lv {gl.level}</Badge>
                   </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">{gl.wins}W/{gl.losses}L · HP {gl.health}</div>
+                  <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{gl.wins}W/{gl.losses}L · HP {gl.health}</span>
+                    {charges && (
+                      <span className={charges.chargesAvailable > 0 ? "text-accent" : "text-destructive"}>
+                        {charges.chargesAvailable}/{PIT_MAX_CHARGES} pits
+                      </span>
+                    )}
+                  </div>
                 </button>
                 <HealButton g={gl} />
               </div>
@@ -142,7 +165,7 @@ function PitFights({ state }: { state: State }) {
       </div>
 
       {g ? (
-        <TierPicker key={g.id} g={g} state={state} />
+        <TierPicker key={g.id} g={g} state={state} availability={availability[g.id]} />
       ) : (
         <div className="inscribed ornate-border rounded-lg p-12 text-center font-serif italic text-muted-foreground">
           Select a rested gladiator to send to the pits.
@@ -152,7 +175,9 @@ function PitFights({ state }: { state: State }) {
   );
 }
 
-function TierPicker({ g, state }: { g: Gladiator; state: State }) {
+type PitAvailability = { chargesAvailable: number; nextAvailableAt: string | null; cooldownHours: number };
+
+function TierPicker({ g, state, availability }: { g: Gladiator; state: State; availability?: PitAvailability }) {
   const qc = useQueryClient();
   const fight = useServerFn(fightMatch);
   const [difficulty, setDifficulty] = useState<string>("backwater");
@@ -161,9 +186,15 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
 
   const mut = useMutation({
     mutationFn: () => fight({ data: { gladiatorId: g.id, difficulty } }),
-    onSuccess: (r) => { setBattle(r); setAnimating(true); qc.invalidateQueries({ queryKey: ["ludus"] }); },
+    onSuccess: (r) => {
+      setBattle(r);
+      setAnimating(true);
+      qc.invalidateQueries({ queryKey: ["ludus"] });
+      qc.invalidateQueries({ queryKey: ["pit-fight-availability"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
+  const onCooldown = !!availability && availability.chargesAvailable <= 0;
 
   if (battle && animating) {
     return (
@@ -188,6 +219,12 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
     <div className="space-y-4">
       <p className="font-serif italic text-muted-foreground">
         {g.name} — Lv {g.level} · {g.wins}W · Ludus fame {state.profile?.reputation ?? 0}
+        {availability && (
+          <span className={onCooldown ? "text-destructive" : "text-accent"}>
+            {" "}· {availability.chargesAvailable}/{PIT_MAX_CHARGES} pit charges
+            {onCooldown && availability.nextAvailableAt && ` (next in ${formatCountdown(availability.nextAvailableAt)})`}
+          </span>
+        )}
       </p>
       <div className="relative overflow-hidden rounded-lg border border-border">
         <img
@@ -206,10 +243,14 @@ function TierPicker({ g, state }: { g: Gladiator; state: State }) {
             <Button
               className="mt-3"
               size="lg"
-              disabled={mut.isPending}
+              disabled={mut.isPending || onCooldown}
               onClick={() => mut.mutate()}
             >
-              {mut.isPending ? "The crowd holds its breath..." : "Fight!"}
+              {mut.isPending
+                ? "The crowd holds its breath..."
+                : onCooldown && availability?.nextAvailableAt
+                  ? `Resting — ${formatCountdown(availability.nextAvailableAt)}`
+                  : "Fight!"}
             </Button>
           </div>
         </div>

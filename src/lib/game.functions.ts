@@ -564,6 +564,27 @@ export function tierUnlockReason(
 
 const TIER_KEYS = ARENA_TIERS.map(t => t.key) as [string, ...string[]];
 
+// Pit-fight pacing: 3 charges per gladiator, each on its own cooldown. Stamina
+// shortens the cooldown, scaled relative to the CURRENT stat cap (not a fixed
+// number) so it stays correct if the cap ever changes — halved at max stamina.
+export const PIT_MAX_CHARGES = 3;
+export const PIT_BASE_COOLDOWN_HOURS = 24;
+export function pitFightCooldownHours(stamina: number, trainingLevel: number): number {
+  const cap = statCap(trainingLevel);
+  const reduction = cap > 0 ? 0.5 * Math.min(1, stamina / cap) : 0;
+  return PIT_BASE_COOLDOWN_HOURS * (1 - reduction);
+}
+// recentDesc: this gladiator's pit-fight timestamps, most recent first.
+function pitFightAvailability(recentDesc: string[], cooldownHours: number) {
+  const cutoff = Date.now() - cooldownHours * 3600_000;
+  const active = recentDesc.filter(ts => new Date(ts).getTime() > cutoff).slice(0, PIT_MAX_CHARGES);
+  const chargesAvailable = PIT_MAX_CHARGES - active.length;
+  const nextAvailableAt = chargesAvailable > 0
+    ? null
+    : new Date(new Date(active[active.length - 1]).getTime() + cooldownHours * 3600_000).toISOString();
+  return { chargesAvailable, nextAvailableAt };
+}
+
 // ---------- FIGHT ----------
 export const fightMatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -585,6 +606,24 @@ export const fightMatch = createServerFn({ method: "POST" })
     if (!tier) throw new Error("Unknown arena");
     const lock = tierUnlockReason(tier, profile.reputation, g.level, g.wins);
     if (lock) throw new Error(lock);
+
+    const cooldownHours = pitFightCooldownHours(g.stamina, profile.training_level);
+    const { data: recentPitFights } = await supabase
+      .from("matches")
+      .select("created_at")
+      .eq("gladiator_id", g.id)
+      .in("difficulty", TIER_KEYS)
+      .order("created_at", { ascending: false })
+      .limit(PIT_MAX_CHARGES);
+    const { chargesAvailable, nextAvailableAt } = pitFightAvailability(
+      (recentPitFights ?? []).map(m => m.created_at),
+      cooldownHours,
+    );
+    if (chargesAvailable <= 0 && nextAvailableAt) {
+      const mins = Math.max(1, Math.ceil((new Date(nextAvailableAt).getTime() - Date.now()) / 60000));
+      const hrs = Math.floor(mins / 60), rem = mins % 60;
+      throw new Error(`${g.name} is resting — next pit fight in ${hrs}h ${rem}m`);
+    }
 
     const { data: skillRow } = await supabase
       .from("ludus_skills").select("level")
@@ -712,6 +751,41 @@ export const fightMatch = createServerFn({ method: "POST" })
     });
 
     return { won, log, denariiGained, xpGained, repGained, rounds: fightRounds, myMaxHp, oppMaxHp, opponentName };
+  });
+
+// Per-gladiator pit-fight charge status, so the UI can show cooldowns
+// proactively instead of only after a blocked fight attempt.
+export const getPitFightAvailability = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("training_level").eq("id", userId).maybeSingle();
+    const trainingLevel = profile?.training_level ?? 1;
+    const { data: gladiators } = await supabase.from("gladiators").select("id,stamina").eq("owner_id", userId);
+
+    const windowStart = new Date(Date.now() - PIT_BASE_COOLDOWN_HOURS * 3600_000).toISOString();
+    const { data: recentFights } = await supabase
+      .from("matches")
+      .select("gladiator_id,created_at")
+      .eq("owner_id", userId)
+      .in("difficulty", TIER_KEYS)
+      .gte("created_at", windowStart)
+      .order("created_at", { ascending: false });
+
+    const byGladiator = new Map<string, string[]>();
+    for (const m of recentFights ?? []) {
+      const list = byGladiator.get(m.gladiator_id) ?? [];
+      list.push(m.created_at);
+      byGladiator.set(m.gladiator_id, list);
+    }
+
+    const availability: Record<string, { chargesAvailable: number; nextAvailableAt: string | null; cooldownHours: number }> = {};
+    for (const g of gladiators ?? []) {
+      const cooldownHours = pitFightCooldownHours(g.stamina, trainingLevel);
+      const { chargesAvailable, nextAvailableAt } = pitFightAvailability(byGladiator.get(g.id) ?? [], cooldownHours);
+      availability[g.id] = { chargesAvailable, nextAvailableAt, cooldownHours };
+    }
+    return { availability };
   });
 
 // ============= Lines 524-706 replaced =============
@@ -1466,5 +1540,101 @@ export const getPublicLudus = createServerFn({ method: "GET" })
       showcase,
       roster_count: rosterCount ?? 0,
     };
+  });
+
+// ============================================================
+// ACHIEVEMENTS — badges with 5 tiers each. Purely derived from existing
+// tables (profiles/gladiators/hall_of_fame/matches); no dedicated table, so
+// "recruited" and "level reached" are best-effort from what's still on
+// record (a dismissed-without-honor gladiator's history isn't preserved).
+// ============================================================
+export type AchievementCategory = {
+  key: string;
+  label: string;
+  description: string;
+  tiers: [number, number, number, number, number]; // first 4 linear, 5th a longer grind
+};
+
+export const ACHIEVEMENTS: AchievementCategory[] = [
+  {
+    key: "level", label: "Champion of the Sands",
+    description: "Train a single gladiator to reach these levels.",
+    tiers: [5, 10, 15, 20, 30],
+  },
+  {
+    key: "wins", label: "Blood and Sand",
+    description: "Win this many bouts combined, across the pits, rival ludi, and cohort battles.",
+    tiers: [10, 20, 50, 100, 250],
+  },
+  {
+    key: "pvpWins", label: "Rival of Ludi",
+    description: "Defeat rival champions in the arena this many times.",
+    tiers: [5, 10, 15, 20, 50],
+  },
+  {
+    key: "deathWins", label: "We who are about to die, salute you",
+    description: "Win this many sine missione — fights to the death.",
+    tiers: [1, 2, 5, 10, 25],
+  },
+  {
+    key: "facilities", label: "Master of the Ludus",
+    description: "Raise the combined level of all five facilities to this total (25 is every facility maxed).",
+    tiers: [5, 10, 15, 20, 25],
+  },
+  {
+    key: "reputation", label: "Renown of Rome",
+    description: "Grow your ludus's fame to this level.",
+    tiers: [50, 100, 250, 1000, 2500],
+  },
+  {
+    key: "denarii", label: "Coffers of the Ludus",
+    description: "Hold this many denarii at once.",
+    tiers: [1000, 2000, 3000, 4000, 10000],
+  },
+  {
+    key: "recruits", label: "Lanista's Eye",
+    description: "Recruit this many gladiators over your ludus's history.",
+    tiers: [5, 10, 15, 20, 40],
+  },
+  {
+    key: "beasts", label: "Beast Master",
+    description: "Keep this many beasts in your pantry at once.",
+    tiers: [1, 2, 3, 4, 8],
+  },
+];
+
+export const getAchievementProgress = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [profileRes, gladRes, hofRes, winsRes, pvpWinsRes, deathWinsRes] = await Promise.all([
+      supabase.from("profiles")
+        .select("denarii,reputation,training_level,scouting_level,medicus_level,armory_level,pantry_level")
+        .eq("id", userId).maybeSingle(),
+      supabase.from("gladiators").select("level,is_beast").eq("owner_id", userId),
+      supabase.from("hall_of_fame").select("level").eq("owner_id", userId),
+      supabase.from("matches").select("id", { count: "exact", head: true }).eq("owner_id", userId).eq("result", "win"),
+      supabase.from("matches").select("id", { count: "exact", head: true }).eq("owner_id", userId).eq("result", "win").in("difficulty", ["pvp", "pvp_death"]),
+      supabase.from("matches").select("id", { count: "exact", head: true }).eq("owner_id", userId).eq("result", "win").eq("difficulty", "pvp_death"),
+    ]);
+    const profile = profileRes.data;
+    const glads = gladRes.data ?? [];
+    const hof = hofRes.data ?? [];
+    const facilities = profile
+      ? profile.training_level + profile.scouting_level + profile.medicus_level + profile.armory_level + profile.pantry_level
+      : 0;
+
+    const progress: Record<string, number> = {
+      level: Math.max(0, ...glads.map(g => g.level), ...hof.map(h => h.level)),
+      wins: winsRes.count ?? 0,
+      pvpWins: pvpWinsRes.count ?? 0,
+      deathWins: deathWinsRes.count ?? 0,
+      facilities,
+      reputation: profile?.reputation ?? 0,
+      denarii: profile?.denarii ?? 0,
+      recruits: glads.length + hof.length,
+      beasts: glads.filter(g => g.is_beast).length,
+    };
+    return { progress };
   });
 

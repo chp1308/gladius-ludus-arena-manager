@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal } from "lucide-react";
 import cityBg from "@/assets/ludus/city-bg.jpg";
 import bLudus from "@/assets/ludus/b-ludus.png";
 import bMarket from "@/assets/ludus/b-market.png";
@@ -209,6 +209,7 @@ function LudusPage() {
             <Link to="/profile"><Button variant="outline" size="sm"><ScrollText className="mr-1 h-4 w-4" /> Public Profile</Button></Link>
             <Link to="/info"><Button variant="outline" size="sm"><BookOpen className="mr-1 h-4 w-4" /> Codex</Button></Link>
             <Link to="/leaderboard"><Button variant="outline" size="sm"><Trophy className="mr-1 h-4 w-4" /> Champions</Button></Link>
+            <Link to="/achievements"><Button variant="outline" size="sm"><Medal className="mr-1 h-4 w-4" /> Achievements</Button></Link>
             <Link to="/arena">
               <Button size="lg" className="h-11 px-5 text-base shadow-lg shadow-primary/20">
                 <Swords className="mr-2 h-5 w-5" /> Arena
