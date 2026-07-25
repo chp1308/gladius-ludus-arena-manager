@@ -632,13 +632,15 @@ export const fightMatch = createServerFn({ method: "POST" })
         oppHp -= dmg;
         const text = `Round ${i}: ${g.name} lands a blow for ${dmg}.`;
         log.push(text);
-        fightRounds.push({ attacker: "me", damage: dmg, myHp: Math.max(0, myHp), oppHp: Math.max(0, oppHp), text });
+        // Pit fights are never lethal — floor the displayed HP at 1, not 0,
+        // so the animation never looks like a kill.
+        fightRounds.push({ attacker: "me", damage: dmg, myHp: Math.max(1, myHp), oppHp: Math.max(1, oppHp), text });
       } else {
         const dmg = rollDamage(oppGearTier, g, defenseLevel, tier.reqLevel);
         myHp -= dmg;
         const text = `Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`;
         log.push(text);
-        fightRounds.push({ attacker: "opponent", damage: dmg, myHp: Math.max(0, myHp), oppHp: Math.max(0, oppHp), text });
+        fightRounds.push({ attacker: "opponent", damage: dmg, myHp: Math.max(1, myHp), oppHp: Math.max(1, oppHp), text });
       }
     }
 
@@ -649,11 +651,15 @@ export const fightMatch = createServerFn({ method: "POST" })
     const repGained = won ? tier.rep : 0;
 
     const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
-    const newHealth = Math.max(0, g.health - damageTaken);
+    // Pit fights never kill — the loser is left at 1 HP, badly hurt but alive.
+    const newHealth = Math.max(1, g.health - damageTaken);
     let injuryUntil: string | null = null;
     // Medicus reduces injury duration
-    if (newHealth <= 0) {
-      log.push(`${g.name} falls, gravely wounded. Weeks in the valetudinarium await.`);
+    if (newHealth <= 1) {
+      const baseDays = rand(3, 5);
+      const days = Math.max(1, baseDays - Math.floor((profile.medicus_level - 1) / 2));
+      injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
+      log.push(`${g.name} collapses, gravely wounded, and is dragged from the sand — ${days}d to recover.`);
     } else if (damageTaken > myMaxHp * 0.6) {
       const baseDays = rand(2, 4);
       const days = Math.max(1, baseDays - Math.floor((profile.medicus_level - 1) / 2));
@@ -962,13 +968,16 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
         oHp -= d;
         const text = `Round ${i}: ${g.name} strikes for ${d}.`;
         log.push(text);
-        fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(0, myHp), oppHp: Math.max(0, oHp), text });
+        // Only a sine missione (toDeath) fight can actually kill — otherwise
+        // floor the displayed HP at 1 so the animation never shows a kill
+        // that isn't going to happen.
+        fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(toDeath ? 0 : 1, myHp), oppHp: Math.max(toDeath ? 0 : 1, oHp), text });
       } else {
         const d = rollDamage(opp.weapon_tier, g, myDefenseLevel, opp.level);
         myHp -= d;
         const text = `Round ${i}: ${opp.name} strikes for ${d}.`;
         log.push(text);
-        fightRounds.push({ attacker: "opponent", damage: d, myHp: Math.max(0, myHp), oppHp: Math.max(0, oHp), text });
+        fightRounds.push({ attacker: "opponent", damage: d, myHp: Math.max(toDeath ? 0 : 1, myHp), oppHp: Math.max(toDeath ? 0 : 1, oHp), text });
       }
     }
 
@@ -979,14 +988,15 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const repGained = won ? 8 * rewardMult : -2;
 
     const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
-    let newHealth = Math.max(0, g.health - damageTaken);
+    // Only sine missione can kill — otherwise the loser is left at 1 HP.
+    let newHealth = Math.max(toDeath ? 0 : 1, g.health - damageTaken);
     let injuryUntil: string | null = null;
     let myDied = false;
     if (toDeath && !won) {
       myDied = true;
       newHealth = 0;
       log.push(`${g.name} falls in the sand. The crowd chants "Iugula!" — the blade is driven home.`);
-    } else if (damageTaken > myMaxHp * 0.6 && newHealth > 0) {
+    } else if ((newHealth <= 1 || damageTaken > myMaxHp * 0.6) && newHealth > 0) {
       const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
       injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       log.push(`${g.name} is injured for ${days}d.`);
@@ -1012,13 +1022,13 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
 
     // Update opposing (challenger) gladiator via admin
     const oppDamage = Math.max(5, oppMaxHp - Math.max(0, oHp));
-    let oppNewHealth = Math.max(0, opp.health - oppDamage);
+    let oppNewHealth = Math.max(toDeath ? 0 : 1, opp.health - oppDamage);
     let oppInjury: string | null = null;
     let oppDied = false;
     if (toDeath && won) {
       oppDied = true;
       oppNewHealth = 0;
-    } else if (oppDamage > oppMaxHp * 0.6 && oppNewHealth > 0) {
+    } else if ((oppNewHealth <= 1 || oppDamage > oppMaxHp * 0.6) && oppNewHealth > 0) {
       oppInjury = new Date(Date.now() + rand(2, 4) * 86400_000).toISOString();
     }
     const oppXp = won ? 40 : 100;
@@ -1218,13 +1228,14 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
         enemyHp -= d;
         const text = `Round ${i}: your cohort presses for ${d}.`;
         log.push(text);
-        fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(0, teamHp), oppHp: Math.max(0, enemyHp), text });
+        // Team battles are never lethal — floor displayed HP at 1, not 0.
+        fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(1, teamHp), oppHp: Math.max(1, enemyHp), text });
       } else {
         const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction));
         teamHp -= d;
         const text = `Round ${i}: the enemy strikes for ${d}.`;
         log.push(text);
-        fightRounds.push({ attacker: "opponent", damage: d, myHp: Math.max(0, teamHp), oppHp: Math.max(0, enemyHp), text });
+        fightRounds.push({ attacker: "opponent", damage: d, myHp: Math.max(1, teamHp), oppHp: Math.max(1, enemyHp), text });
       }
     }
     const won = enemyHp <= teamHp;
@@ -1241,9 +1252,10 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     for (const g of team) {
       const shareDamage = Math.floor((teamMaxHp - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
       const dmg = Math.max(5, shareDamage);
-      const newHealth = Math.max(0, g.health - dmg);
+      // Team battles are never lethal — floor at 1 HP, not 0.
+      const newHealth = Math.max(1, g.health - dmg);
       let injuryUntil: string | null = null;
-      if (dmg > maxHealth(g.strength) * 0.55 && newHealth > 0) {
+      if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
         const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
         injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       }
