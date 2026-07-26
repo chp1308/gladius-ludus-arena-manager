@@ -9,6 +9,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy --config .output/server/wrangler.json",
+    "dev:staging": "vite dev --mode staging",
+    "deploy:staging": "vite build --mode staging && wrangler deploy --config .output/server/wrangler.json --name gladius-ludus-staging",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
