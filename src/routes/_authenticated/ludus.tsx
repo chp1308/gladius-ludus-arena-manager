@@ -7,7 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
-  ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, pantryCapacity, gladiatorPower,
+  ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, pantryCapacity, gladiatorPower,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -907,6 +907,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const cap = statCap(trainingLevel);
   const hpMax = maxHealth(g.strength);
   const tCost = trainCost(trainingLevel);
+  const medicusLevel = state.profile?.medicus_level ?? 1;
+  const needsHealing = g.health < hpMax || !!injured;
+  const healPrice = healCost(hpMax - g.health, medicusLevel);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
   const [trainTimes, setTrainTimes] = useState(1);
@@ -1177,8 +1180,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                 <Swords className="mr-1 h-4 w-4" /> To the Arena
               </Button>
             </Link>
-            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || (g.health >= hpMax && !injured)}>
-              <Heart className="mr-1 h-4 w-4" /> Heal
+            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || !needsHealing}>
+              <Heart className="mr-1 h-4 w-4" /> {needsHealing ? `Heal · ${healPrice} denarii` : "Heal"}
             </Button>
             <Button
               size="sm"

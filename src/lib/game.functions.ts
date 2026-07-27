@@ -88,6 +88,11 @@ export const gearCost = (slot: "weapon" | "armor" | "helmet" | "legs" | "offhand
   const base = 150 * (currentTier + 1) * (SLOT_COST_MULT[slot] ?? 1);
   return Math.max(40, Math.floor(base * (1 - (armoryLevel - 1) * 0.1)));
 };
+// Healing cost falls with the Valetudinarium (medicus) facility level
+export const healCost = (missingHealth: number, medicusLevel: number) => {
+  const baseCost = Math.max(30, missingHealth * 2);
+  return Math.max(15, Math.floor(baseCost * (1 - (medicusLevel - 1) * 0.12)));
+};
 
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -453,8 +458,7 @@ export const healGladiator = createServerFn({ method: "POST" })
     const hpMax = maxHealth(g.strength);
     const missing = hpMax - g.health;
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
-    const baseCost = Math.max(30, missing * 2);
-    const cost = Math.max(15, Math.floor(baseCost * (1 - (profile.medicus_level - 1) * 0.12)));
+    const cost = healCost(missing, profile.medicus_level);
 
     await spendDenarii(supabaseAdmin, userId, cost, `Physician needs ${cost} denarii`);
 
