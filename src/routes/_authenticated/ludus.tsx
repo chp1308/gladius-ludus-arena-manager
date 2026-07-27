@@ -7,7 +7,7 @@ import {
   getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
-  ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, pantryCapacity, gladiatorPower,
+  ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, healRegenPerHour, pantryCapacity, gladiatorPower,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -910,6 +910,10 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const medicusLevel = state.profile?.medicus_level ?? 1;
   const needsHealing = g.health < hpMax || !!injured;
   const healPrice = healCost(hpMax - g.health, medicusLevel);
+  const missingHealth = hpMax - g.health;
+  const regenHoursLeft = missingHealth > 0
+    ? Math.ceil(missingHealth / healRegenPerHour(g.agility, medicusLevel, trainingLevel))
+    : 0;
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
   const [trainTimes, setTrainTimes] = useState(1);
@@ -1115,6 +1119,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               <span>{g.health}/{hpMax}</span>
             </div>
             <Progress value={(g.health / hpMax) * 100} className="h-2" />
+            {regenHoursLeft > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">Heals to full naturally in ~{regenHoursLeft}h</p>
+            )}
             {injured && (
               <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
                 <Skull className="h-3 w-3" /> Injured — {injuryDaysLeft}d until recovery

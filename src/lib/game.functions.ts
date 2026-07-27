@@ -94,6 +94,55 @@ export const healCost = (missingHealth: number, medicusLevel: number) => {
   return Math.max(15, Math.floor(baseCost * (1 - (medicusLevel - 1) * 0.12)));
 };
 
+// ---------- PASSIVE HEALING ----------
+// Time-based healing (both passive HP regen and injury-day cooldowns) share
+// this reduction: Valetudinarium levels give a flat table (big jump at max
+// level, matching the achievement-badge tier shape), and Agility adds up to
+// +30% more, scaled relative to the *current* stat cap rather than a flat
+// per-point bonus — a flat rate would blow past 100% reduction if the stat
+// cap is ever raised later (same reasoning as the pit-fight cooldown).
+const MEDICUS_HEAL_SPEED_PCT: Record<number, number> = { 1: 0.05, 2: 0.10, 3: 0.15, 4: 0.20, 5: 0.50 };
+const AGILITY_HEAL_BONUS_MAX = 0.30;
+export function healSpeedReduction(agility: number, medicusLevel: number, trainingLevel: number): number {
+  const medicusPct = MEDICUS_HEAL_SPEED_PCT[medicusLevel] ?? 0;
+  const cap = statCap(trainingLevel);
+  const agilityPct = cap > 0 ? AGILITY_HEAL_BONUS_MAX * Math.min(1, agility / cap) : 0;
+  return Math.min(0.9, medicusPct + agilityPct);
+}
+
+// Base rate: a fully-wounded gladiator (100 missing HP) heals in 8 hours
+// with no bonuses.
+const BASE_HEAL_HOURS_PER_100HP = 8;
+export function healRegenPerHour(agility: number, medicusLevel: number, trainingLevel: number): number {
+  const hoursFor100 = BASE_HEAL_HOURS_PER_100HP * (1 - healSpeedReduction(agility, medicusLevel, trainingLevel));
+  return 100 / hoursFor100;
+}
+
+// Derives current health from the stored value plus regen accrued since
+// health_updated_at — computed lazily on read, never ticked by a cron. The
+// next action that actually changes health persists the settled result.
+export function effectiveHealth(
+  g: { health: number; strength: number; agility: number; health_updated_at: string },
+  medicusLevel: number,
+  trainingLevel: number,
+): number {
+  const hpMax = maxHealth(g.strength);
+  if (g.health >= hpMax) return hpMax;
+  const elapsedHours = (Date.now() - new Date(g.health_updated_at).getTime()) / 3_600_000;
+  // health_updated_at can be missing before the migration adding it has run
+  // against a given database — treat that as "no regen accrued" rather than
+  // propagating NaN into the gladiator's health.
+  if (!Number.isFinite(elapsedHours) || elapsedHours <= 0) return g.health;
+  const rate = healRegenPerHour(g.agility, medicusLevel, trainingLevel);
+  return Math.min(hpMax, Math.round(g.health + elapsedHours * rate));
+}
+
+// Injury-day cooldowns reduce by the same time-scaling as passive regen.
+export function injuryDays(baseDays: number, agility: number, medicusLevel: number, trainingLevel: number): number {
+  const reduction = healSpeedReduction(agility, medicusLevel, trainingLevel);
+  return Math.max(1, Math.round(baseDays * (1 - reduction)));
+}
+
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
@@ -236,9 +285,14 @@ export const getLudusState = createServerFn({ method: "GET" })
       supabase.from("hall_of_fame").select("*").eq("owner_id", userId).order("created_at", { ascending: false }),
     ]);
     if (profile.error) throw new Error(profile.error.message);
+    const medicusLevel = profile.data?.medicus_level ?? 1;
+    const trainingLevel = profile.data?.training_level ?? 1;
     return {
       profile: profile.data,
-      gladiators: gladiators.data ?? [],
+      // Settle passive regen for display without persisting it — the next
+      // action that actually changes a gladiator's health (fight, heal,
+      // train) writes the real, up-to-date value.
+      gladiators: (gladiators.data ?? []).map(g => ({ ...g, health: effectiveHealth(g, medicusLevel, trainingLevel) })),
       matches: matches.data ?? [],
       skills: skills.data ?? [],
       hallOfFame: hall.data ?? [],
@@ -364,7 +418,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const COST = Math.max(20, 50 - (profile.training_level - 1) * 6);
 
     const { data: g } = await supabase.from("gladiators")
-      .select("id,status,injury_until,strength,agility,stamina,technique,health,total_invested")
+      .select("id,status,injury_until,strength,agility,stamina,technique,health,health_updated_at,total_invested")
       .eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("Gladiator has fallen");
@@ -393,9 +447,10 @@ export const trainGladiator = createServerFn({ method: "POST" })
 
     const basePatch: Record<string, number | string | null> = { total_invested: (g.total_invested ?? 0) + totalCost };
     const patch =
-      // Strength drives max health — bump current health by the same amount
-      // gained so training doesn't retroactively wound a fighter.
-      data.stat === "strength" ? { ...basePatch, strength: val, health: Math.min(maxHealth(val), g.health + totalGain * 5) } :
+      // Strength drives max health — bump current (regen-settled) health by
+      // the same amount gained so training doesn't retroactively wound a
+      // fighter, and persist the settled value under a fresh timestamp.
+      data.stat === "strength" ? { ...basePatch, strength: val, health_updated_at: new Date().toISOString(), health: Math.min(maxHealth(val), effectiveHealth(g, profile.medicus_level, profile.training_level) + totalGain * 5) } :
       data.stat === "agility" ? { ...basePatch, agility: val } :
       data.stat === "stamina" ? { ...basePatch, stamina: val } :
       { ...basePatch, technique: val };
@@ -456,7 +511,8 @@ export const healGladiator = createServerFn({ method: "POST" })
     if (g.status === "dead") throw new Error("The physician cannot revive the dead");
 
     const hpMax = maxHealth(g.strength);
-    const missing = hpMax - g.health;
+    const currentHealth = effectiveHealth(g, profile.medicus_level, profile.training_level);
+    const missing = hpMax - currentHealth;
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
     const cost = healCost(missing, profile.medicus_level);
 
@@ -464,6 +520,7 @@ export const healGladiator = createServerFn({ method: "POST" })
 
     const { error } = await supabaseAdmin.from("gladiators").update({
       health: hpMax,
+      health_updated_at: new Date().toISOString(),
       injury_until: null,
       total_invested: (g.total_invested ?? 0) + cost,
     }).eq("id", g.id);
@@ -604,7 +661,8 @@ export const fightMatch = createServerFn({ method: "POST" })
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
-    if (g.health < 30) throw new Error("Gladiator too wounded to fight");
+    const currentHealth = effectiveHealth(g, profile.medicus_level, profile.training_level);
+    if (currentHealth < 30) throw new Error("Gladiator too wounded to fight");
 
     const tier = ARENA_TIERS.find(t => t.key === data.difficulty);
     if (!tier) throw new Error("Unknown arena");
@@ -695,17 +753,15 @@ export const fightMatch = createServerFn({ method: "POST" })
 
     const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
     // Pit fights never kill — the loser is left at 1 HP, badly hurt but alive.
-    const newHealth = Math.max(1, g.health - damageTaken);
+    const newHealth = Math.max(1, currentHealth - damageTaken);
     let injuryUntil: string | null = null;
-    // Medicus reduces injury duration
+    // Medicus + Agility reduce injury duration (same scaling as passive regen)
     if (newHealth <= 1) {
-      const baseDays = rand(3, 5);
-      const days = Math.max(1, baseDays - Math.floor((profile.medicus_level - 1) / 2));
+      const days = injuryDays(rand(3, 5), g.agility, profile.medicus_level, profile.training_level);
       injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       log.push(`${g.name} collapses, gravely wounded, and is dragged from the sand — ${days}d to recover.`);
     } else if (damageTaken > myMaxHp * 0.6) {
-      const baseDays = rand(2, 4);
-      const days = Math.max(1, baseDays - Math.floor((profile.medicus_level - 1) / 2));
+      const days = injuryDays(rand(2, 4), g.agility, profile.medicus_level, profile.training_level);
       injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       log.push(`${g.name} is injured — cannot fight for ${days}d.`);
     }
@@ -726,6 +782,7 @@ export const fightMatch = createServerFn({ method: "POST" })
 
     const gladPatch = {
       health: newHealth,
+      health_updated_at: new Date().toISOString(),
       injury_until: injuryUntil,
       experience: finalXp,
       level: newLevel,
@@ -826,12 +883,14 @@ export const postPvpChallenge = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabase.from("profiles").select("medicus_level,training_level").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
     const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
     if (!g) throw new Error("Gladiator not found");
     if (g.status === "dead") throw new Error("Gladiator has fallen");
     if (g.status === "challenging") throw new Error("Already posted for a challenge");
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
-    if (g.health < 30) throw new Error("Gladiator too wounded");
+    if (effectiveHealth(g, profile.medicus_level, profile.training_level) < 30) throw new Error("Gladiator too wounded");
 
     const rating = matchRating(g);
     const { data: inserted, error } = await supabaseAdmin.from("pvp_challenges").insert({
@@ -984,7 +1043,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     if (g.status === "dead") throw new Error("Gladiator has fallen");
     if (g.status === "challenging") throw new Error("Gladiator is currently posted in your own offer");
     if (g.injury_until && new Date(g.injury_until) > new Date()) throw new Error("Gladiator is injured");
-    if (g.health < 30) throw new Error("Gladiator too wounded");
+    const myCurrentHealth = effectiveHealth(g, profile.medicus_level, profile.training_level);
+    if (myCurrentHealth < 30) throw new Error("Gladiator too wounded");
 
     const { data: c } = await supabase.from("pvp_challenges").select("*").eq("id", data.challengeId).maybeSingle();
     if (!c) throw new Error("Challenge not found");
@@ -999,6 +1059,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const { data: opp } = await supabaseAdmin.from("gladiators").select("*").eq("id", c.challenger_gladiator_id).maybeSingle();
     if (!opp) throw new Error("Opposing gladiator no longer exists");
     if (opp.status === "dead") throw new Error("Opposing champion has fallen");
+    const { data: oppFacilities } = await supabaseAdmin.from("profiles").select("medicus_level,training_level").eq("id", opp.owner_id).maybeSingle();
 
     // Atomically claim the challenge before simulating the fight — two
     // players accepting the same "open" challenge in the same window could
@@ -1067,7 +1128,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
 
     const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
     // Only sine missione can kill — otherwise the loser is left at 1 HP.
-    let newHealth = Math.max(toDeath ? 0 : 1, g.health - damageTaken);
+    let newHealth = Math.max(toDeath ? 0 : 1, myCurrentHealth - damageTaken);
     let injuryUntil: string | null = null;
     let myDied = false;
     if (toDeath && !won) {
@@ -1075,7 +1136,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       newHealth = 0;
       log.push(`${g.name} falls in the sand. The crowd chants "Iugula!" — the blade is driven home.`);
     } else if ((newHealth <= 1 || damageTaken > myMaxHp * 0.6) && newHealth > 0) {
-      const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
+      const days = injuryDays(rand(2, 4), g.agility, profile.medicus_level, profile.training_level);
       injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       log.push(`${g.name} is injured for ${days}d.`);
     }
@@ -1085,6 +1146,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
 
     await supabaseAdmin.from("gladiators").update({
       health: newHealth,
+      health_updated_at: new Date().toISOString(),
       injury_until: injuryUntil,
       status: myDied ? "dead" : "idle",
       experience: g.experience + xpGained,
@@ -1099,19 +1161,24 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     }).eq("id", userId);
 
     // Update opposing (challenger) gladiator via admin
+    const oppMedicusLevel = oppFacilities?.medicus_level ?? 1;
+    const oppTrainingLevel = oppFacilities?.training_level ?? 1;
+    const oppCurrentHealth = effectiveHealth(opp, oppMedicusLevel, oppTrainingLevel);
     const oppDamage = Math.max(5, oppMaxHp - Math.max(0, oHp));
-    let oppNewHealth = Math.max(toDeath ? 0 : 1, opp.health - oppDamage);
+    let oppNewHealth = Math.max(toDeath ? 0 : 1, oppCurrentHealth - oppDamage);
     let oppInjury: string | null = null;
     let oppDied = false;
     if (toDeath && won) {
       oppDied = true;
       oppNewHealth = 0;
     } else if ((oppNewHealth <= 1 || oppDamage > oppMaxHp * 0.6) && oppNewHealth > 0) {
-      oppInjury = new Date(Date.now() + rand(2, 4) * 86400_000).toISOString();
+      const oppDays = injuryDays(rand(2, 4), opp.agility, oppMedicusLevel, oppTrainingLevel);
+      oppInjury = new Date(Date.now() + oppDays * 86400_000).toISOString();
     }
     const oppXp = won ? 40 : 100;
     await supabaseAdmin.from("gladiators").update({
       health: oppNewHealth,
+      health_updated_at: new Date().toISOString(),
       injury_until: oppInjury,
       status: oppDied ? "dead" : "idle",
       experience: opp.experience + oppXp,
@@ -1273,7 +1340,12 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
 
     const { data: gs } = await supabase.from("gladiators").select("*").in("id", data.gladiatorIds).eq("owner_id", userId);
     const team = gs ?? [];
-    const err = teamBattleRequirementError(battle, team, profile.reputation);
+    const currentHealthById = new Map(team.map(g => [g.id, effectiveHealth(g, profile.medicus_level, profile.training_level)]));
+    const err = teamBattleRequirementError(
+      battle,
+      team.map(g => ({ ...g, health: currentHealthById.get(g.id)! })),
+      profile.reputation,
+    );
     if (err) throw new Error(err);
 
     const { data: skills } = await supabase.from("ludus_skills").select("weapon_type,level").eq("owner_id", userId);
@@ -1331,10 +1403,10 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       const shareDamage = Math.floor((teamMaxHp - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
       const dmg = Math.max(5, shareDamage);
       // Team battles are never lethal — floor at 1 HP, not 0.
-      const newHealth = Math.max(1, g.health - dmg);
+      const newHealth = Math.max(1, currentHealthById.get(g.id)! - dmg);
       let injuryUntil: string | null = null;
       if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
-        const days = Math.max(1, rand(2, 4) - Math.floor((profile.medicus_level - 1) / 2));
+        const days = injuryDays(rand(2, 4), g.agility, profile.medicus_level, profile.training_level);
         injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
       }
       const newXp = g.experience + xpEach;
@@ -1342,6 +1414,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       const leveledUp = newXp >= xpNext;
       await supabaseAdmin.from("gladiators").update({
         health: newHealth,
+        health_updated_at: new Date().toISOString(),
         injury_until: injuryUntil,
         experience: leveledUp ? newXp - xpNext : newXp,
         level: leveledUp ? g.level + 1 : g.level,

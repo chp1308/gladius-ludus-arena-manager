@@ -23,6 +23,7 @@ export type Database = {
           created_at: string
           experience: number
           health: number
+          health_updated_at: string
           helmet_tier: number
           id: string
           injury_until: string | null
@@ -51,6 +52,7 @@ export type Database = {
           created_at?: string
           experience?: number
           health?: number
+          health_updated_at?: string
           helmet_tier?: number
           id?: string
           injury_until?: string | null
@@ -79,6 +81,7 @@ export type Database = {
           created_at?: string
           experience?: number
           health?: number
+          health_updated_at?: string
           helmet_tier?: number
           id?: string
           injury_until?: string | null
@@ -235,6 +238,7 @@ export type Database = {
           denarii: number
           description: string
           id: string
+          is_bot: boolean
           ludus_name: string
           medicus_level: number
           pantry_level: number
@@ -253,6 +257,7 @@ export type Database = {
           denarii?: number
           description?: string
           id: string
+          is_bot?: boolean
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number
@@ -271,6 +276,7 @@ export type Database = {
           denarii?: number
           description?: string
           id?: string
+          is_bot?: boolean
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number

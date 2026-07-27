@@ -73,7 +73,7 @@ function AuthPage() {
             {mode === "signin" ? "Enter the Ludus" : "Found your Ludus"}
           </h1>
           <p className="mt-1 text-center font-serif italic text-muted-foreground">
-            {mode === "signin" ? "The sand awaits your return." : "500 denarii to start your school."}
+            {mode === "signin" ? "The sand awaits your return." : "1000 denarii to start your school."}
           </p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
