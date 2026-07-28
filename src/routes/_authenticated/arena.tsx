@@ -9,7 +9,7 @@ import {
   matchRating,
   ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
-  healGladiator, maxHealth, honorGladiator,
+  healGladiator, maxHealth, honorGladiator, healCost,
   getPitFightAvailability, PIT_MAX_CHARGES,
 } from "@/lib/game.functions";
 import type { FightRound } from "@/lib/game.functions";
@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useConfirm } from "@/lib/confirm";
 import { toast } from "sonner";
 import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart, Flame } from "lucide-react";
 
@@ -32,11 +33,13 @@ function formatCountdown(iso: string): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function HealButton({ g }: { g: Gladiator }) {
+function HealButton({ g, medicusLevel }: { g: Gladiator; medicusLevel: number }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const heal = useServerFn(healGladiator);
   const injured = !!(g.injury_until && new Date(g.injury_until) > new Date());
   const needsHeal = g.health < maxHealth(g.strength) || injured;
+  const cost = healCost(maxHealth(g.strength) - g.health, medicusLevel);
   const mut = useMutation({
     mutationFn: () => heal({ data: { gladiatorId: g.id } }),
     onSuccess: (r) => { toast.success(`${g.name} healed for ${r.cost}d`); qc.invalidateQueries({ queryKey: ["ludus"] }); qc.invalidateQueries({ queryKey: ["rivals"] }); },
@@ -49,7 +52,14 @@ function HealButton({ g }: { g: Gladiator }) {
       variant="outline"
       className="mt-1 h-7 w-full text-xs"
       disabled={mut.isPending}
-      onClick={(e) => { e.stopPropagation(); mut.mutate(); }}
+      onClick={async (e) => {
+        e.stopPropagation();
+        const ok = await confirm({
+          title: injured ? "Treat injury?" : "Heal gladiator?",
+          description: `You are about to spend ${cost} denarii to ${injured ? "treat" : "heal"} ${g.name}. Do you wish to proceed?`,
+        });
+        if (ok) mut.mutate();
+      }}
     >
       <Heart className="mr-1 h-3 w-3 text-accent" />
       {mut.isPending ? "Tending..." : injured ? "Treat injury" : "Heal"}
@@ -157,7 +167,7 @@ function PitFights({ state }: { state: State }) {
                     )}
                   </div>
                 </button>
-                <HealButton g={gl} />
+                <HealButton g={gl} medicusLevel={state.profile?.medicus_level ?? 1} />
               </div>
             );
           })}
@@ -179,6 +189,7 @@ type PitAvailability = { chargesAvailable: number; nextAvailableAt: string | nul
 
 function TierPicker({ g, state, availability }: { g: Gladiator; state: State; availability?: PitAvailability }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const fight = useServerFn(fightMatch);
   const [difficulty, setDifficulty] = useState<string>("backwater");
   const [battle, setBattle] = useState<Awaited<ReturnType<typeof fight>> | null>(null);
@@ -244,7 +255,13 @@ function TierPicker({ g, state, availability }: { g: Gladiator; state: State; av
               className="mt-3"
               size="lg"
               disabled={mut.isPending || onCooldown}
-              onClick={() => mut.mutate()}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Enter the arena?",
+                  description: `You are about to send ${g.name} into ${selectedTier.label} against an opponent of power ${selectedTier.powerMin}–${selectedTier.powerMax}. Do you wish to proceed?`,
+                });
+                if (ok) mut.mutate();
+              }}
             >
               {mut.isPending
                 ? "The crowd holds its breath..."
@@ -302,6 +319,7 @@ function PvpFights({ state }: { state: State }) {
 
 function PostChallengeCard({ state }: { state: State }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const postFn = useServerFn(postPvpChallenge);
   const cancelFn = useServerFn(cancelPvpChallenge);
   const listFn = useServerFn(listOpenPvpChallenges);
@@ -379,7 +397,17 @@ function PostChallengeCard({ state }: { state: State }) {
         <Button
           className="w-full"
           disabled={!g || post.isPending}
-          onClick={() => post.mutate()}
+          onClick={async () => {
+            if (!g) return;
+            const ok = await confirm({
+              title: "Post a challenge?",
+              description: toDeath
+                ? `You are about to post ${g.name} for a sine missione (to the death) challenge — 5× stakes, but the loser dies. Do you wish to proceed?`
+                : `You are about to post ${g.name} for an open PvP challenge. Do you wish to proceed?`,
+              destructive: toDeath,
+            });
+            if (ok) post.mutate();
+          }}
         >
           {post.isPending ? "Heralds ride out..." : "Post Challenge"}
         </Button>
@@ -409,6 +437,7 @@ function PostChallengeCard({ state }: { state: State }) {
 
 function RivalChallengesCard({ state }: { state: State }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const listFn = useServerFn(listOpenPvpChallenges);
   const acceptFn = useServerFn(acceptPvpChallenge);
   const eligible = state.gladiators.filter(g =>
@@ -509,7 +538,15 @@ function RivalChallengesCard({ state }: { state: State }) {
                   size="sm"
                   variant={c.to_death ? "destructive" : "default"}
                   disabled={disabled}
-                  onClick={() => {
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: c.to_death ? "Fight to the death?" : "Accept challenge?",
+                      description: c.to_death
+                        ? `You are about to accept a sine missione (to the death) challenge from ${c.ludus_name} — 5× stakes, but the loser dies. Do you wish to proceed?`
+                        : `You are about to accept ${c.ludus_name}'s PvP challenge. Do you wish to proceed?`,
+                      destructive: c.to_death,
+                    });
+                    if (!ok) return;
                     setOpponent({
                       name: g?.name ?? "Unknown",
                       portrait: g ? { id: g.id, is_beast: g.is_beast, weapon_type: g.weapon_type } : { id: c.id, is_beast: false, weapon_type: "gladius" },
@@ -531,6 +568,7 @@ function RivalChallengesCard({ state }: { state: State }) {
 
 function PvpResultView({ result, onClose }: { result: { won: boolean; log: string[]; fallen: Fallen | null }; onClose: () => void }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const honor = useServerFn(honorGladiator);
   const [honored, setHonored] = useState(false);
   const mut = useMutation({
@@ -571,7 +609,13 @@ function PvpResultView({ result, onClose }: { result: { won: boolean; log: strin
               className="w-full"
               variant="secondary"
               disabled={mut.isPending}
-              onClick={() => mut.mutate(fallen.id)}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Honor the fallen?",
+                  description: `You are about to spend ${fallen.honorCost} denarii to enshrine ${fallen.name} in your Hall of Fame. Do you wish to proceed?`,
+                });
+                if (ok) mut.mutate(fallen.id);
+              }}
             >
               <Award className="mr-2 h-4 w-4" />
               Honor the gladiator — {fallen.honorCost}d
@@ -597,6 +641,7 @@ function TeamFights({ state }: { state: State }) {
   const [battleKey, setBattleKey] = useState<string>(TEAM_BATTLES[0].key);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const fightFn = useServerFn(fightTeamBattle);
   const [outcome, setOutcome] = useState<Awaited<ReturnType<typeof fightFn>> | null>(null);
   const [animating, setAnimating] = useState(false);
@@ -708,7 +753,7 @@ function TeamFights({ state }: { state: State }) {
                   </div>
                   <div className="text-xs text-muted-foreground">{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</div>
                 </button>
-                <HealButton g={gl} />
+                <HealButton g={gl} medicusLevel={state.profile?.medicus_level ?? 1} />
               </div>
             );
           })}
@@ -718,7 +763,13 @@ function TeamFights({ state }: { state: State }) {
           className="mt-4 w-full"
           size="lg"
           disabled={mut.isPending || selectedIds.length !== battle.size || !!reqErr}
-          onClick={() => mut.mutate()}
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Begin battle?",
+              description: `You are about to send your cohort of ${battle.size} into ${battle.label}. Do you wish to proceed?`,
+            });
+            if (ok) mut.mutate();
+          }}
         >
           {mut.isPending ? "Enter the sand..." : "Begin Battle"}
         </Button>

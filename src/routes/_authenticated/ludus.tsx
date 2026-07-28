@@ -8,6 +8,8 @@ import {
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, healRegenPerHour, pantryCapacity, gladiatorPower,
+  trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier,
+  runSocialEvent, socialDelegationSize, socialToneWeights, SOCIAL_COOLDOWN_MINUTES,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,8 +17,9 @@ import { MAX_GEAR_TIER, requiredArmoryLevel } from "@/lib/game.functions";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useConfirm } from "@/lib/confirm";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark } from "lucide-react";
 import cityBg from "@/assets/ludus/city-bg.jpg";
 import bLudus from "@/assets/ludus/b-ludus.png";
 import bMarket from "@/assets/ludus/b-market.png";
@@ -28,6 +31,7 @@ import bStudy from "@/assets/ludus/b-study.png";
 import bTemple from "@/assets/ludus/b-temple.png";
 import bChronicle from "@/assets/ludus/b-chronicle.png";
 import bPantry from "@/assets/ludus/b-pantry.png";
+import bSocial from "@/assets/ludus/b-social.svg";
 
 // gear tier art — 4 visual grades map to tiers 1-2 / 3-4 / 5-6 / 7-8
 import helmet1 from "@/assets/gear/helmet-1.png";
@@ -148,6 +152,7 @@ const FACILITIES = [
   { key: "medicus", label: "Valetudinarium", desc: "Cheaper healing, shorter injuries", icon: Cross },
   { key: "armory", label: "Armory", desc: "Cheaper weapon & armor upgrades", icon: Hammer },
   { key: "pantry", label: "Pantry", desc: "Stores grain, meat, and amphorae — houses more gladiators and beasts", icon: Wheat },
+  { key: "social", label: "Cursus Honorum", desc: "Send gladiators to court Rome's high society for coin and renown", icon: Landmark },
 ] as const;
 
 const SKILL_TREE = [
@@ -166,9 +171,47 @@ const SKILL_TREE = [
 function facilityCost(curr: number) { return 500 * (curr + 1); }
 function skillCost(curr: number) { return 200 * (curr + 1); }
 
+// Plain-language summary of what a facility's current level actually does,
+// shown under its description so the numbers aren't buried in the Codex.
+function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social", level: number): string {
+  switch (facility) {
+    case "training": {
+      const cap = statCap(level);
+      const cost = trainCost(level);
+      const big = Math.round(trainBigChance(level) * 100);
+      return `Active now: stat cap ${cap} · ${cost} denarii per session · ${big}% chance of +2 instead of +1`;
+    }
+    case "scouting": {
+      const cost = recruitCostFor(level);
+      const beast = Math.round(beastChance(level) * 100);
+      return `Active now: recruits cost ${cost} denarii · ~${beast}% chance of a beast`;
+    }
+    case "medicus": {
+      const priceCut = Math.round((level - 1) * 12);
+      const speedCut = Math.round(medicusSpeedPct(level) * 100);
+      return `Active now: healing ${priceCut}% cheaper · ${speedCut}% faster recovery and shorter injuries`;
+    }
+    case "armory": {
+      const cut = Math.round((level - 1) * 10);
+      const tier = maxCraftableTier(level);
+      return `Active now: gear upgrades ${cut}% cheaper · can craft up to tier ${ROMAN[tier - 1] ?? tier}`;
+    }
+    case "pantry": {
+      const cap = pantryCapacity(level);
+      return `Active now: houses up to ${cap.humans} gladiators and ${cap.beasts} beasts`;
+    }
+    case "social": {
+      const size = socialDelegationSize(level);
+      const odds = socialToneWeights(level);
+      return `Active now: send up to ${size} gladiator${size === 1 ? "" : "s"} · ${Math.round(odds.positive * 100)}% favorable odds`;
+    }
+  }
+}
+
 function LudusPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const fetchState = useServerFn(getLudusState);
   const { data } = useSuspenseQuery({ queryKey: ["ludus"], queryFn: () => fetchState() });
 
@@ -181,6 +224,13 @@ function LudusPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const onRecruit = async () => {
+    const ok = await confirm({
+      title: "Scout a recruit?",
+      description: `You are about to spend ${recruitCost} denarii to scout a new recruit. Do you wish to proceed?`,
+    });
+    if (ok) recruitMut.mutate();
+  };
 
   const signOut = async () => {
     await qc.cancelQueries();
@@ -191,7 +241,7 @@ function LudusPage() {
 
   const denarii = data.profile?.denarii ?? 0;
   const scoutingLevel = data.profile?.scouting_level ?? 1;
-  const recruitCost = Math.max(60, 100 - (scoutingLevel - 1) * 10);
+  const recruitCost = recruitCostFor(scoutingLevel);
 
   return (
     <div className="min-h-screen">
@@ -222,7 +272,7 @@ function LudusPage() {
 
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <VillageView state={data} recruitCost={recruitCost} recruitPending={recruitMut.isPending} onRecruit={() => recruitMut.mutate()} />
+        <VillageView state={data} recruitCost={recruitCost} recruitPending={recruitMut.isPending} onRecruit={onRecruit} />
       </main>
     </div>
   );
@@ -231,7 +281,7 @@ function LudusPage() {
 // -----------------------------------------------------------
 // VILLAGE — map of interactive buildings replacing the tab menu
 // -----------------------------------------------------------
-type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "pantry" | "study" | "temple" | "chronicle";
+type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "pantry" | "study" | "temple" | "chronicle" | "social";
 
 type Building = {
   key: BuildingKey;
@@ -253,6 +303,7 @@ const BUILDINGS: Building[] = [
   { key: "study",    name: "Study of Arms",    flavor: "Master a fighting style.",               Icon: BookOpen,   image: bStudy },
   { key: "temple",   name: "Temple of Memory", flavor: "Honor the fallen in your Hall of Fame.", Icon: Award,      image: bTemple },
   { key: "chronicle",name: "Chronicle Stele",  flavor: "Every match, carved in stone.",          Icon: ScrollText, image: bChronicle },
+  { key: "social",   name: "Cursus Honorum",   flavor: "Climb Rome's social ladder.",            Icon: Landmark,   image: bSocial },
 ];
 
 function VillageView({
@@ -393,7 +444,7 @@ function BuildingPanel({
                 Send your scouts to the provinces. Better scouting brings stronger recruits — and, if fortune favors you, a captured lion or tiger.
               </p>
               <div className="text-sm text-muted-foreground">
-                Scouting Network — <span className="text-accent">Lv {scoutingLevel}</span> · beast chance ~{Math.round(Math.min(0.02 + scoutingLevel * 0.03, 0.2) * 100)}%
+                Scouting Network — <span className="text-accent">Lv {scoutingLevel}</span> · beast chance ~{Math.round(beastChance(scoutingLevel) * 100)}%
               </div>
               <Button size="lg" onClick={onRecruit} disabled={recruitPending || denarii < recruitCost}>
                 Scout recruit · {recruitCost} denarii
@@ -402,7 +453,7 @@ function BuildingPanel({
           </Card>
         )}
 
-        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory" || buildingKey === "pantry") && (() => {
+        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory" || buildingKey === "pantry" || buildingKey === "social") && (() => {
           const f = FACILITIES.find(x => x.key === buildingKey)!;
           const level = (state.profile as unknown as Record<string, number>)?.[`${f.key}_level`] ?? 1;
           return (
@@ -416,6 +467,8 @@ function BuildingPanel({
             />
           );
         })()}
+
+        {buildingKey === "social" && <SocialEventPanel state={state} />}
 
         {buildingKey === "pantry" && (
           <Card className="inscribed ornate-border">
@@ -550,18 +603,148 @@ function PantryTable({ pantryLevel }: { pantryLevel: number }) {
   );
 }
 
+function socialCountdown(mins: number): string {
+  if (mins <= 0) return "now";
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+const TONE_STYLES: Record<string, string> = {
+  positive: "border-accent/50 bg-accent/5 text-accent",
+  negative: "border-destructive/50 bg-destructive/5 text-destructive",
+  neutral: "border-border bg-muted/30 text-muted-foreground",
+};
+
+function SocialEventPanel({ state }: { state: State }) {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const run = useServerFn(runSocialEvent);
+  const socialLevel = state.profile?.social_level ?? 1;
+  const maxSize = socialDelegationSize(socialLevel);
+  const odds = socialToneWeights(socialLevel);
+  const eligible = state.gladiators.filter(g => g.status !== "dead");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const lastEvent = state.socialEvents[0];
+  const nextAvailableAt = lastEvent ? new Date(lastEvent.created_at).getTime() + SOCIAL_COOLDOWN_MINUTES * 60_000 : 0;
+  const onCooldown = !!lastEvent && Date.now() < nextAvailableAt;
+  const cooldownMins = onCooldown ? Math.max(1, Math.ceil((nextAvailableAt - Date.now()) / 60_000)) : 0;
+
+  const toggle = (id: string) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length >= maxSize) return prev;
+      return [...prev, id];
+    });
+  };
+
+  const mut = useMutation({
+    mutationFn: () => run({ data: { gladiatorIds: selectedIds } }),
+    onSuccess: (r) => {
+      if (r.tone === "positive") toast.success(r.log);
+      else if (r.tone === "negative") toast.error(r.log);
+      else toast(r.log);
+      setSelectedIds([]);
+      qc.invalidateQueries({ queryKey: ["ludus"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const onSend = async () => {
+    const ok = await confirm({
+      title: "Court Roman society?",
+      description: `Send ${selectedIds.length} gladiator${selectedIds.length === 1 ? "" : "s"} to seek favor in Rome? Fortune may reward or punish them — outcomes are ${Math.round(odds.positive * 100)}% likely to be favorable at this level.`,
+    });
+    if (ok) mut.mutate();
+  };
+
+  return (
+    <>
+      <Card className="inscribed ornate-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 font-display text-base">
+            <Landmark className="h-4 w-4 text-primary" /> Send a Delegation
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="font-serif text-sm italic text-muted-foreground">
+            Choose up to {maxSize} gladiator{maxSize === 1 ? "" : "s"} to attend Rome's feasts, weddings, and games.
+            Positive outcomes pay out per gladiator sent; ill fortune never scales with the size of your delegation.
+          </p>
+          {eligible.length === 0 ? (
+            <p className="font-serif italic text-muted-foreground">No gladiators available to send.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {eligible.map((g) => {
+                const selected = selectedIds.includes(g.id);
+                const dim = !selected && selectedIds.length >= maxSize;
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => toggle(g.id)}
+                    disabled={mut.isPending}
+                    className={`rounded-lg border px-3 py-1.5 text-sm transition disabled:cursor-not-allowed ${
+                      selected ? "border-primary bg-primary/10" : dim ? "border-border opacity-50" : "border-border hover:border-primary/60"
+                    }`}
+                  >
+                    <span className="font-display">{g.name}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">Lv {g.level}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <Button
+            className="w-full"
+            size="lg"
+            disabled={selectedIds.length === 0 || onCooldown || mut.isPending}
+            onClick={onSend}
+          >
+            {mut.isPending
+              ? "The delegation departs..."
+              : onCooldown
+                ? `Resting — ${socialCountdown(cooldownMins)}`
+                : `Send ${selectedIds.length || ""} to Rome`.trim()}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {state.socialEvents.length > 0 && (
+        <Card className="inscribed ornate-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="font-display text-base">Recent Outings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {state.socialEvents.map((e) => (
+                <li key={e.id} className={`rounded-lg border p-2.5 text-xs ${TONE_STYLES[e.tone] ?? TONE_STYLES.neutral}`}>
+                  <div className="text-foreground">{e.log}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wider opacity-70">
+                    {e.gladiator_names.join(", ")} · {new Date(e.created_at).toLocaleString()}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+    </>
+  );
+}
+
 
 
 
 function FacilityCard({
   facility, label, desc, Icon, level, denarii,
 }: {
-  facility: "training" | "scouting" | "medicus" | "armory" | "pantry";
+  facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social";
   label: string; desc: string;
   Icon: React.ComponentType<{ className?: string }>;
   level: number; denarii: number;
 }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const upgrade = useServerFn(upgradeFacility);
   const mut = useMutation({
     mutationFn: () => upgrade({ data: { facility } }),
@@ -570,6 +753,13 @@ function FacilityCard({
   });
   const atMax = level >= 5;
   const cost = facilityCost(level);
+  const onUpgrade = async () => {
+    const ok = await confirm({
+      title: "Upgrade facility?",
+      description: `You are about to spend ${cost} denarii to upgrade ${label} to level ${level + 1}. Do you wish to proceed?`,
+    });
+    if (ok) mut.mutate();
+  };
   return (
     <Card className="inscribed ornate-border">
       <CardHeader className="pb-2">
@@ -582,11 +772,12 @@ function FacilityCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="font-serif text-sm italic text-muted-foreground">{desc}</p>
+        <p className="text-xs text-accent">{facilityBonusText(facility, level)}</p>
         <Button
           className="w-full"
           size="sm"
           disabled={atMax || mut.isPending || denarii < cost}
-          onClick={() => mut.mutate()}
+          onClick={onUpgrade}
         >
           {atMax ? "Maxed" : `Upgrade · ${cost} denarii`}
         </Button>
@@ -602,6 +793,7 @@ function SkillCard({
   label: string; level: number; denarii: number;
 }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const upgrade = useServerFn(upgradeSkill);
   const mut = useMutation({
     mutationFn: () => upgrade({ data: { weaponType } }),
@@ -613,6 +805,13 @@ function SkillCard({
   const isBeast = weaponType.startsWith("beast");
   const isDefense = weaponType === "defense";
   const bonusText = isDefense ? `+${level * 5}% armor` : `+${level * 8}% power`;
+  const onUpgrade = async () => {
+    const ok = await confirm({
+      title: "Upgrade skill?",
+      description: `You are about to spend ${cost} denarii to upgrade ${label} to rank ${level + 1}. Do you wish to proceed?`,
+    });
+    if (ok) mut.mutate();
+  };
   return (
     <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 p-3">
       <div>
@@ -624,7 +823,7 @@ function SkillCard({
       </div>
       <Button size="sm" variant="outline"
         disabled={atMax || mut.isPending || denarii < cost}
-        onClick={() => mut.mutate()}>
+        onClick={onUpgrade}>
         {atMax ? "Mastered" : `${cost}d`}
       </Button>
     </div>
@@ -893,13 +1092,14 @@ const SLOTS: { key: SlotKey; label: string; Icon: React.ComponentType<SlotIconPr
 
 function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onClose: () => void }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const train = useServerFn(trainGladiator);
   const upgrade = useServerFn(upgradeEquipment);
   const heal = useServerFn(healGladiator);
   const dismiss = useServerFn(dismissGladiator);
 
   const injured = g.injury_until && new Date(g.injury_until) > new Date();
-  const injuryDaysLeft = injured ? Math.ceil((new Date(g.injury_until!).getTime() - Date.now()) / 86400_000) : 0;
+  const injuryHoursLeft = injured ? Math.ceil((new Date(g.injury_until!).getTime() - Date.now()) / 3600_000) : 0;
   const skillLevel = state.skills.find(s => s.weapon_type === g.weapon_type)?.level ?? 0;
   const trainingLevel = state.profile?.training_level ?? 1;
   const armoryLevel = state.profile?.armory_level ?? 1;
@@ -1106,7 +1306,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
         {/* Right side: portrait, vitals, stats, actions */}
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-1">
-            <FaceAvatar g={g} size={120} />
+            <FaceAvatar g={g} size={200} />
             <div className="mt-1 flex items-center gap-1.5 rounded-full border border-primary/40 bg-secondary/50 px-3 py-0.5 text-xs">
               <Swords className="h-3 w-3 text-primary" />
               <span className="uppercase tracking-widest text-muted-foreground">Power</span>
@@ -1124,7 +1324,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
             )}
             {injured && (
               <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
-                <Skull className="h-3 w-3" /> Injured — {injuryDaysLeft}d until recovery
+                <Skull className="h-3 w-3" /> Injured — {injuryHoursLeft}h until recovery
               </p>
             )}
           </div>
@@ -1160,10 +1360,17 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               const maxSessions = Math.min(trainTimes, Math.max(0, cap - val));
               const maxCost = tCost * maxSessions;
               const canAfford = denarii >= maxCost;
+              const onTrain = async () => {
+                const ok = await confirm({
+                  title: "Train gladiator?",
+                  description: `You are about to spend up to ${maxCost} denarii training ${g.name}'s ${label} (up to ${maxSessions} session${maxSessions === 1 ? "" : "s"}). Do you wish to proceed?`,
+                });
+                if (ok) trainMut.mutate(key);
+              };
               return (
                 <button
                   key={key}
-                  onClick={() => trainMut.mutate(key)}
+                  onClick={onTrain}
                   disabled={trainMut.isPending || !!injured || capped || !canAfford}
                   className="rounded border border-border bg-secondary/40 p-2 text-center transition hover:border-primary hover:bg-secondary disabled:opacity-50"
                   title={capped ? `Capped at ${cap} — upgrade Training Yard` : !canAfford ? `Need up to ${maxCost} denarii` : `Train up to ${maxSessions}× · up to ${maxCost} denarii`}
@@ -1187,14 +1394,32 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
                 <Swords className="mr-1 h-4 w-4" /> To the Arena
               </Button>
             </Link>
-            <Button size="sm" variant="outline" onClick={() => healMut.mutate()} disabled={healMut.isPending || !needsHealing}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Heal gladiator?",
+                  description: `You are about to spend ${healPrice} denarii to heal ${g.name}. Do you wish to proceed?`,
+                });
+                if (ok) healMut.mutate();
+              }}
+              disabled={healMut.isPending || !needsHealing}
+            >
               <Heart className="mr-1 h-4 w-4" /> {needsHealing ? `Heal · ${healPrice} denarii` : "Heal"}
             </Button>
             <Button
               size="sm"
               variant="ghost"
               className="text-muted-foreground hover:text-destructive"
-              onClick={() => { if (confirm(`Dismiss ${g.name}?`)) dismissMut.mutate(); }}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Release gladiator?",
+                  description: `You are about to release ${g.name} from your ludus. This cannot be undone. Do you wish to proceed?`,
+                  destructive: true,
+                });
+                if (ok) dismissMut.mutate();
+              }}
             >
               <X className="mr-1 h-4 w-4" /> Dismiss
             </Button>
@@ -1212,12 +1437,23 @@ function SlotButton({
   tier: number; disabled: boolean; onClick: () => void; cost?: number; denarii?: number; armoryLevel?: number;
   weaponType?: string; isBeast?: boolean;
 }) {
+  const confirm = useConfirm();
   const atMax = tier >= MAX_GEAR_TIER;
   const nextTier = tier + 1;
   const reqArmory = requiredArmoryLevel(nextTier);
   const forgeLocked = !atMax && armoryLevel !== undefined && armoryLevel < reqArmory;
   const unaffordable = cost !== undefined && (denarii ?? 0) < cost;
   const { Icon, label } = slot;
+  const handleClick = async () => {
+    if (cost !== undefined) {
+      const ok = await confirm({
+        title: "Upgrade equipment?",
+        description: `You are about to spend ${cost} denarii to upgrade ${label} to tier ${nextTier}. Do you wish to proceed?`,
+      });
+      if (!ok) return;
+    }
+    onClick();
+  };
   const emptyStars = Math.max(0, MAX_GEAR_TIER - tier);
   const img = isBeast ? gearImage(slot.key, weaponType ?? "", tier, true) : (weaponType ? gearImage(slot.key, weaponType, tier) : null);
   const title = atMax
@@ -1231,7 +1467,7 @@ function SlotButton({
     : `Upgrade ${label}`;
   return (
     <button
-      onClick={onClick}
+      onClick={handleClick}
       disabled={disabled || atMax || forgeLocked || unaffordable}
       title={title}
       className="group relative flex h-20 w-20 flex-col items-center justify-end overflow-hidden rounded-md border border-border bg-card/60 p-1 text-center transition hover:border-primary disabled:opacity-60"
@@ -1289,6 +1525,7 @@ function FallenSection({ state }: { state: State }) {
 
 function FallenRow({ g, denarii }: { g: Gladiator; denarii: number }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const honor = useServerFn(honorGladiator);
   const dismiss = useServerFn(dismissGladiator);
   const honorCost = Math.max(10, Math.ceil((g.total_invested ?? 0) * 0.05));
@@ -1319,7 +1556,13 @@ function FallenRow({ g, denarii }: { g: Gladiator; denarii: number }) {
           size="sm"
           variant="secondary"
           disabled={honorMut.isPending || denarii < honorCost}
-          onClick={() => honorMut.mutate()}
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Honor the fallen?",
+              description: `You are about to spend ${honorCost} denarii to enshrine ${g.name} in your Hall of Fame. Do you wish to proceed?`,
+            });
+            if (ok) honorMut.mutate();
+          }}
         >
           <Award className="mr-1 h-4 w-4" />
           Honor · {honorCost}d
@@ -1328,7 +1571,14 @@ function FallenRow({ g, denarii }: { g: Gladiator; denarii: number }) {
           size="sm"
           variant="ghost"
           disabled={dismissMut.isPending}
-          onClick={() => { if (confirm(`Bury ${g.name} without honor?`)) dismissMut.mutate(); }}
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Bury without honor?",
+              description: `You are about to bury ${g.name} without honoring them in your Hall of Fame. This cannot be undone. Do you wish to proceed?`,
+              destructive: true,
+            });
+            if (ok) dismissMut.mutate();
+          }}
         >
           Dismiss
         </Button>

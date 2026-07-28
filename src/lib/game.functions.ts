@@ -3,12 +3,14 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import backwaterImg from "@/assets/arena/backwater-pits.jpg.asset.json";
-import localImg from "@/assets/arena/local-games.jpg.asset.json";
-import provincialImg from "@/assets/arena/provincial-munera.jpg.asset.json";
-import capuaImg from "@/assets/arena/grand-capua.jpg.asset.json";
-import colosseumImg from "@/assets/arena/colosseum.jpg.asset.json";
-import emperorImg from "@/assets/arena/emperor-spectacle.jpg.asset.json";
+import backwaterImg from "@/assets/arena/arena-backwater-pits.jpg";
+import waysideImg from "@/assets/arena/arena-wayside-arena.jpg";
+import localImg from "@/assets/arena/arena-local-games.jpg";
+import provincialImg from "@/assets/arena/arena-provincial-munera.jpg";
+import capuaImg from "@/assets/arena/arena-grand-capua.jpg";
+import colosseumImg from "@/assets/arena/arena-colosseum.jpg";
+import emperorImg from "@/assets/arena/arena-emperor-spectacle.jpg";
+import { SOCIAL_EVENTS, type SocialEvent, type SocialTone } from "@/lib/social-events";
 
 // Structured per-round combat data for animated battle replays on the
 // client. `text` mirrors the exact line pushed into the fight's `log` for
@@ -73,6 +75,14 @@ export function requiredArmoryLevel(tier: number): number {
   const t = Math.max(1, Math.min(MAX_GEAR_TIER, tier));
   return ARMORY_REQ_FOR_TIER[t] ?? 5;
 }
+// Highest gear tier craftable at a given Forge (armory) level.
+export function maxCraftableTier(armoryLevel: number): number {
+  let max = 0;
+  for (let t = 1; t <= MAX_GEAR_TIER; t++) {
+    if (requiredArmoryLevel(t) <= armoryLevel) max = t;
+  }
+  return max;
+}
 
 // Stat cap grows with training facility (+10 per training-yard level)
 export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lvl1=25, lvl5=65
@@ -80,6 +90,13 @@ export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lv
 export const maxHealth = (strength: number) => 100 + strength * 5;
 // Training cost falls with training facility level
 export const trainCost = (trainingLevel: number) => Math.max(20, 50 - (trainingLevel - 1) * 6);
+// Chance a training session grants +2 instead of +1
+const TRAIN_BIG_CHANCE: Record<number, number> = { 1: 0.05, 2: 0.10, 3: 0.15, 4: 0.20, 5: 0.30 };
+export const trainBigChance = (trainingLevel: number) => TRAIN_BIG_CHANCE[trainingLevel] ?? 0;
+// Recruiting cost falls with the Scouting Network level
+export const recruitCost = (scoutingLevel: number) => Math.max(60, 100 - (scoutingLevel - 1) * 10);
+// Chance a scouted recruit is a beast
+export const beastChance = (scoutingLevel: number) => Math.min(0.02 + scoutingLevel * 0.03, 0.2);
 // Gear upgrade cost by slot, tier, and armory level
 const SLOT_COST_MULT: Record<string, number> = {
   weapon: 1.0, armor: 0.85, helmet: 0.55, legs: 0.55, offhand: 0.7,
@@ -103,6 +120,9 @@ export const healCost = (missingHealth: number, medicusLevel: number) => {
 // cap is ever raised later (same reasoning as the pit-fight cooldown).
 const MEDICUS_HEAL_SPEED_PCT: Record<number, number> = { 1: 0.05, 2: 0.10, 3: 0.15, 4: 0.20, 5: 0.50 };
 const AGILITY_HEAL_BONUS_MAX = 0.30;
+// The Valetudinarium's own contribution to heal-speed/injury-duration
+// reduction, before any per-gladiator Agility bonus is added on top.
+export const medicusSpeedPct = (medicusLevel: number) => MEDICUS_HEAL_SPEED_PCT[medicusLevel] ?? 0;
 export function healSpeedReduction(agility: number, medicusLevel: number, trainingLevel: number): number {
   const medicusPct = MEDICUS_HEAL_SPEED_PCT[medicusLevel] ?? 0;
   const cap = statCap(trainingLevel);
@@ -137,10 +157,18 @@ export function effectiveHealth(
   return Math.min(hpMax, Math.round(g.health + elapsedHours * rate));
 }
 
-// Injury-day cooldowns reduce by the same time-scaling as passive regen.
-export function injuryDays(baseDays: number, agility: number, medicusLevel: number, trainingLevel: number): number {
+// Injury cooldowns (capped at 24h — a full day is the worst case) reduce by
+// the same time-scaling as passive regen.
+export function injuryHours(baseHours: number, agility: number, medicusLevel: number, trainingLevel: number): number {
   const reduction = healSpeedReduction(agility, medicusLevel, trainingLevel);
-  return Math.max(1, Math.round(baseDays * (1 - reduction)));
+  return Math.max(1, Math.round(baseHours * (1 - reduction)));
+}
+
+// Pit-fight injury chance: a flat 10% baseline at full health, climbing to
+// a 60% ceiling the more wounded the gladiator was going into the fight —
+// fighting hurt is what risks an injury, not how rough any one bout was.
+export function pitInjuryChance(startHealthPct: number): number {
+  return Math.min(0.6, 0.1 + 0.5 * (1 - Math.max(0, Math.min(1, startHealthPct))));
 }
 
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -148,8 +176,7 @@ const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
 function generateGladiator(scoutingLevel: number) {
   // Better scouting = better base stats + chance of beast
-  const beastChance = Math.min(0.02 + scoutingLevel * 0.03, 0.2);
-  if (Math.random() < beastChance) {
+  if (Math.random() < beastChance(scoutingLevel)) {
     // Weighted species roll: lion 40%, tiger 30%, rhino 20%, elephant 10%.
     const r = Math.random();
     const species: "lion" | "tiger" | "rhino" | "elephant" =
@@ -277,12 +304,13 @@ export const getLudusState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [profile, gladiators, matches, skills, hall] = await Promise.all([
+    const [profile, gladiators, matches, skills, hall, socialEvents] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
       supabase.from("gladiators").select("*").eq("owner_id", userId).order("created_at", { ascending: true }),
       supabase.from("matches").select("*").eq("owner_id", userId).order("created_at", { ascending: false }).limit(20),
       supabase.from("ludus_skills").select("*").eq("owner_id", userId),
       supabase.from("hall_of_fame").select("*").eq("owner_id", userId).order("created_at", { ascending: false }),
+      supabase.from("social_events").select("*").eq("owner_id", userId).order("created_at", { ascending: false }).limit(10),
     ]);
     if (profile.error) throw new Error(profile.error.message);
     const medicusLevel = profile.data?.medicus_level ?? 1;
@@ -296,6 +324,7 @@ export const getLudusState = createServerFn({ method: "GET" })
       matches: matches.data ?? [],
       skills: skills.data ?? [],
       hallOfFame: hall.data ?? [],
+      socialEvents: socialEvents.data ?? [],
     };
   });
 
@@ -304,14 +333,14 @@ export const getLudusState = createServerFn({ method: "GET" })
 export const upgradeFacility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
-    facility: z.enum(["training", "scouting", "medicus", "armory", "pantry"]),
+    facility: z.enum(["training", "scouting", "medicus", "armory", "pantry", "social"]),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
-    const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level";
+    const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level" | "social_level";
     const curr = (profile as unknown as Record<string, number>)[col];
     if (curr >= MAX_FACILITY) throw new Error("Facility already at max level");
     const cost = FACILITY_COST(curr);
@@ -324,6 +353,7 @@ export const upgradeFacility = createServerFn({ method: "POST" })
       data.facility === "scouting" ? { scouting_level: next } :
       data.facility === "medicus" ? { medicus_level: next } :
       data.facility === "pantry" ? { pantry_level: next } :
+      data.facility === "social" ? { social_level: next } :
       { armory_level: next };
     const { error } = await supabaseAdmin.from("profiles").update(levelPatch as never).eq("id", userId);
     if (error) throw new Error(error.message);
@@ -380,7 +410,7 @@ export const recruitGladiator = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
-    const COST = Math.max(60, 100 - (profile.scouting_level - 1) * 10);
+    const COST = recruitCost(profile.scouting_level);
 
     const g = generateGladiator(profile.scouting_level);
 
@@ -431,7 +461,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
     // Simulate up to `times` sessions, stopping early if the stat caps out —
     // only sessions that actually ran get charged. Better training = bigger
     // gains per session.
-    const bigChance = 0.2 + profile.training_level * 0.1;
+    const bigChance = trainBigChance(profile.training_level);
     let val = startVal;
     let sessions = 0;
     for (let i = 0; i < data.times; i++) {
@@ -564,15 +594,23 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "backwater", label: "Backwater Pits",
     flavor: "Muddy village pits — a purse of copper and jeering peasants.",
-    imageUrl: backwaterImg.url,
+    imageUrl: backwaterImg,
     reqFame: 0, reqLevel: 1, reqWins: 0,
-    powerMin: 50, powerMax: 150, hp: 100, reward: 70, xp: 35, rep: 1,
+    powerMin: 50, powerMax: 110, hp: 100, reward: 70, xp: 35, rep: 1,
     opponents: ["Drunken Brawler", "Runaway Slave", "Village Bully", "Starving Thief"],
+  },
+  {
+    key: "wayside", label: "Wayside Arena",
+    flavor: "A fenced yard by the crossroads inn — bigger crowds, real wagers.",
+    imageUrl: waysideImg,
+    reqFame: 2, reqLevel: 1, reqWins: 0,
+    powerMin: 120, powerMax: 300, hp: 130, reward: 110, xp: 50, rep: 2,
+    opponents: ["Wayside Brawler", "Cart Driver Turned Fighter", "Indebted Gambler", "Local Tough"],
   },
   {
     key: "local", label: "Local Games",
     flavor: "Small town munera — a wooden stand and a modest crowd.",
-    imageUrl: localImg.url,
+    imageUrl: localImg,
     reqFame: 5, reqLevel: 2, reqWins: 1,
     powerMin: 300, powerMax: 700, hp: 160, reward: 160, xp: 75, rep: 3,
     opponents: ["Provincial Auctoratus", "Retired Legionary", "Pit Veteran", "Ostian Bruiser"],
@@ -580,7 +618,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "provincial", label: "Provincial Munera",
     flavor: "A magistrate's games — proper editors, painted programs, real steel.",
-    imageUrl: provincialImg.url,
+    imageUrl: provincialImg,
     reqFame: 25, reqLevel: 3, reqWins: 3,
     powerMin: 900, powerMax: 1300, hp: 230, reward: 320, xp: 130, rep: 6,
     opponents: ["Praetorian Washout", "Iberian Veteran", "Champion of Ostia", "Nubian Slayer"],
@@ -588,7 +626,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "capua", label: "Grand Games of Capua",
     flavor: "Capua's arena, where fortunes are made and legions bet their pay.",
-    imageUrl: capuaImg.url,
+    imageUrl: capuaImg,
     reqFame: 75, reqLevel: 5, reqWins: 8,
     powerMin: 1300, powerMax: 1700, hp: 280, reward: 650, xp: 240, rep: 14,
     opponents: ["Champion of Capua", "The Bloody Bull", "Marcus Ferrus", "The Thracian Wolf"],
@@ -596,7 +634,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "colosseum", label: "Colosseum of Rome",
     flavor: "The Flavian Amphitheatre. Fifty thousand voices thirsting for blood.",
-    imageUrl: colosseumImg.url,
+    imageUrl: colosseumImg,
     reqFame: 200, reqLevel: 8, reqWins: 20,
     powerMin: 1700, powerMax: 2200, hp: 330, reward: 1300, xp: 420, rep: 30,
     opponents: ["Priscus the Undefeated", "Verus of the Palatine", "Flamma Redivivus", "The Iron Senator"],
@@ -604,7 +642,7 @@ export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "emperor", label: "Emperor's Spectacle",
     flavor: "The Emperor himself watches. Death here becomes legend.",
-    imageUrl: emperorImg.url,
+    imageUrl: emperorImg,
     reqFame: 500, reqLevel: 12, reqWins: 40,
     powerMin: 2400, powerMax: 3200, hp: 440, reward: 2800, xp: 800, rep: 70,
     opponents: ["Spartacus Reborn", "Hermes of Thrace", "The Emperor's Champion", "Tetraites the Immortal"],
@@ -755,15 +793,14 @@ export const fightMatch = createServerFn({ method: "POST" })
     // Pit fights never kill — the loser is left at 1 HP, badly hurt but alive.
     const newHealth = Math.max(1, currentHealth - damageTaken);
     let injuryUntil: string | null = null;
-    // Medicus + Agility reduce injury duration (same scaling as passive regen)
-    if (newHealth <= 1) {
-      const days = injuryDays(rand(3, 5), g.agility, profile.medicus_level, profile.training_level);
-      injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
-      log.push(`${g.name} collapses, gravely wounded, and is dragged from the sand — ${days}d to recover.`);
-    } else if (damageTaken > myMaxHp * 0.6) {
-      const days = injuryDays(rand(2, 4), g.agility, profile.medicus_level, profile.training_level);
-      injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
-      log.push(`${g.name} is injured — cannot fight for ${days}d.`);
+    // Injury risk scales with how wounded the gladiator was *entering* this
+    // fight (10% baseline at full health, up to 60% near death) — not with
+    // how rough this particular fight was, since pit fights running the full
+    // HP pool now regularly push a fighter toward the 1 HP floor regardless.
+    if (Math.random() < pitInjuryChance(currentHealth / myMaxHp)) {
+      const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
+      injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
+      log.push(`${g.name} picks up a nasty wound — ${hours}h to recover.`);
     }
 
     log.push(won
@@ -1136,9 +1173,9 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       newHealth = 0;
       log.push(`${g.name} falls in the sand. The crowd chants "Iugula!" — the blade is driven home.`);
     } else if ((newHealth <= 1 || damageTaken > myMaxHp * 0.6) && newHealth > 0) {
-      const days = injuryDays(rand(2, 4), g.agility, profile.medicus_level, profile.training_level);
-      injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
-      log.push(`${g.name} is injured for ${days}d.`);
+      const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
+      injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
+      log.push(`${g.name} is injured for ${hours}h.`);
     }
     log.push(won
       ? (toDeath ? `${g.name} stands victorious over ${opp.name}'s corpse. The purse is enormous.` : `Victory over ${opp.name}! Fame spreads through the provinces.`)
@@ -1172,8 +1209,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       oppDied = true;
       oppNewHealth = 0;
     } else if ((oppNewHealth <= 1 || oppDamage > oppMaxHp * 0.6) && oppNewHealth > 0) {
-      const oppDays = injuryDays(rand(2, 4), opp.agility, oppMedicusLevel, oppTrainingLevel);
-      oppInjury = new Date(Date.now() + oppDays * 86400_000).toISOString();
+      const oppHours = injuryHours(rand(12, 24), opp.agility, oppMedicusLevel, oppTrainingLevel);
+      oppInjury = new Date(Date.now() + oppHours * 3600_000).toISOString();
     }
     const oppXp = won ? 40 : 100;
     await supabaseAdmin.from("gladiators").update({
@@ -1406,8 +1443,8 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       const newHealth = Math.max(1, currentHealthById.get(g.id)! - dmg);
       let injuryUntil: string | null = null;
       if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
-        const days = injuryDays(rand(2, 4), g.agility, profile.medicus_level, profile.training_level);
-        injuryUntil = new Date(Date.now() + days * 86400_000).toISOString();
+        const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
+        injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
       }
       const newXp = g.experience + xpEach;
       const xpNext = g.level * 100;
@@ -1713,5 +1750,154 @@ export const getAchievementProgress = createServerFn({ method: "GET" })
       beasts: glads.filter(g => g.is_beast).length,
     };
     return { progress };
+  });
+
+// ============================================================
+// CURSUS HONORUM — passive income. Every 30 minutes, send a delegation of
+// gladiators to court Rome's high society for a shot at coin, renown, or a
+// gift — or, sometimes, a bruised ego. Purely social: no fight, no HP risk
+// beyond the rare "injury" event. See src/lib/social-events.ts for the
+// 100-event pool this rolls from.
+// ============================================================
+export const SOCIAL_COOLDOWN_MINUTES = 30;
+
+// Delegation size scales 1:1 with facility level.
+export function socialDelegationSize(socialLevel: number): number {
+  return Math.max(1, Math.min(MAX_FACILITY, socialLevel));
+}
+
+// Odds shift toward positive outcomes as the facility levels up — 55/35/10
+// at level 1 (matching the base pool composition), 75/15/10 at level 5.
+// Neutral holds steady; the shift moves weight from negative to positive.
+export function socialToneWeights(socialLevel: number): Record<SocialTone, number> {
+  const shift = Math.max(0, socialLevel - 1) * 0.05;
+  const negative = Math.max(0.15, 0.35 - shift);
+  const positive = Math.min(0.75, 0.55 + shift);
+  const neutral = Math.max(0, 1 - negative - positive);
+  return { positive, negative, neutral };
+}
+
+function pickSocialEvent(socialLevel: number): SocialEvent {
+  const weights = socialToneWeights(socialLevel);
+  const r = Math.random();
+  const tone: SocialTone =
+    r < weights.positive ? "positive" :
+    r < weights.positive + weights.negative ? "negative" :
+    "neutral";
+  const pool = SOCIAL_EVENTS.filter(e => e.tone === tone);
+  return pick(pool);
+}
+
+// "Marcus" / "Marcus and Quintus" / "Marcus, Quintus, and Titus"
+function joinNames(names: string[]): string {
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+export const runSocialEvent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    gladiatorIds: z.array(z.string().uuid()).min(1).max(MAX_FACILITY),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
+
+    const maxSize = socialDelegationSize(profile.social_level);
+    if (data.gladiatorIds.length > maxSize) throw new Error(`Cursus Honorum can only send ${maxSize} at this level`);
+
+    const { data: last } = await supabase
+      .from("social_events")
+      .select("created_at")
+      .eq("owner_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (last) {
+      const nextAt = new Date(last.created_at).getTime() + SOCIAL_COOLDOWN_MINUTES * 60_000;
+      if (Date.now() < nextAt) {
+        const mins = Math.max(1, Math.ceil((nextAt - Date.now()) / 60_000));
+        throw new Error(`Your delegation is still resting — ${mins}m until the next outing`);
+      }
+    }
+
+    const { data: glads } = await supabase
+      .from("gladiators")
+      .select("*")
+      .in("id", data.gladiatorIds)
+      .eq("owner_id", userId);
+    const party = glads ?? [];
+    if (party.length !== data.gladiatorIds.length) throw new Error("One of those gladiators isn't yours");
+    if (party.some(g => g.status === "dead")) throw new Error("The dead do not attend feasts");
+
+    const event = pickSocialEvent(profile.social_level);
+    const names = party.map(g => g.name);
+    const text = event.text.replace("{g}", joinNames(names));
+
+    let denariiDelta = 0;
+    let reputationDelta = 0;
+    let summary = "";
+    const gladiatorUpdates: { id: string; patch: Record<string, unknown> }[] = [];
+
+    if (event.outcome === "denarii") {
+      const jitter = 0.85 + Math.random() * 0.3;
+      const base = Math.max(1, Math.round((event.amount ?? 0) * jitter));
+      denariiDelta = event.tone === "positive" ? base * party.length : -base;
+      summary = `${denariiDelta > 0 ? "+" : ""}${denariiDelta} denarii`;
+    } else if (event.outcome === "reputation") {
+      const base = event.amount ?? 0;
+      reputationDelta = event.tone === "positive" ? base * party.length : -base;
+      summary = `${reputationDelta > 0 ? "+" : ""}${reputationDelta} fame`;
+    } else if (event.outcome === "xp") {
+      const base = event.amount ?? 0;
+      for (const g of party) gladiatorUpdates.push({ id: g.id, patch: { experience: g.experience + base } });
+      summary = `+${base} XP each`;
+    } else if (event.outcome === "gear") {
+      const slotKeys = ["weapon_tier", "armor_tier", "helmet_tier", "legs_tier", "offhand_tier"] as const;
+      for (const g of party) {
+        const row = g as unknown as Record<string, number>;
+        const options = slotKeys.filter(k => (row[k] ?? 0) < MAX_GEAR_TIER);
+        if (options.length === 0) {
+          // Already maxed out everywhere — a small consolation purse instead.
+          denariiDelta += Math.max(1, Math.round(100 * (0.85 + Math.random() * 0.3)));
+          continue;
+        }
+        const slot = options[Math.floor(Math.random() * options.length)];
+        gladiatorUpdates.push({ id: g.id, patch: { [slot]: row[slot] + 1 } });
+      }
+      summary = "+1 gear tier each";
+    } else if (event.outcome === "injury") {
+      const victim = party[Math.floor(Math.random() * party.length)];
+      const hours = injuryHours(event.amount ?? 6, victim.agility, profile.medicus_level, profile.training_level);
+      gladiatorUpdates.push({ id: victim.id, patch: { injury_until: new Date(Date.now() + hours * 3600_000).toISOString() } });
+      summary = `${victim.name} injured — ${hours}h to recover`;
+    }
+
+    for (const u of gladiatorUpdates) {
+      await supabaseAdmin.from("gladiators").update(u.patch as never).eq("id", u.id);
+    }
+    if (denariiDelta !== 0 || reputationDelta !== 0) {
+      await supabaseAdmin.from("profiles").update({
+        denarii: Math.max(0, profile.denarii + denariiDelta),
+        reputation: Math.max(0, profile.reputation + reputationDelta),
+      }).eq("id", userId);
+    }
+
+    const fullLog = summary ? `${text} (${summary})` : text;
+    const { error: insertErr } = await supabaseAdmin.from("social_events").insert({
+      owner_id: userId,
+      event_id: event.id,
+      tone: event.tone,
+      gladiator_names: names,
+      log: fullLog,
+      denarii_delta: denariiDelta,
+      reputation_delta: reputationDelta,
+    });
+    if (insertErr) throw new Error(insertErr.message);
+
+    return { ok: true, tone: event.tone, log: fullLog, denariiDelta, reputationDelta };
   });
 

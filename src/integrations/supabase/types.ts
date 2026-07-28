@@ -229,6 +229,42 @@ export type Database = {
           },
         ]
       }
+      social_events: {
+        Row: {
+          created_at: string
+          denarii_delta: number
+          event_id: string
+          gladiator_names: string[]
+          id: string
+          log: string
+          owner_id: string
+          reputation_delta: number
+          tone: string
+        }
+        Insert: {
+          created_at?: string
+          denarii_delta?: number
+          event_id: string
+          gladiator_names: string[]
+          id?: string
+          log: string
+          owner_id: string
+          reputation_delta?: number
+          tone: string
+        }
+        Update: {
+          created_at?: string
+          denarii_delta?: number
+          event_id?: string
+          gladiator_names?: string[]
+          id?: string
+          log?: string
+          owner_id?: string
+          reputation_delta?: number
+          tone?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           armory_level: number
@@ -246,6 +282,7 @@ export type Database = {
           scouting_level: number
           showcase_gladiator_ids: string[]
           showcase_limit: number
+          social_level: number
           training_level: number
           updated_at: string
         }
@@ -265,6 +302,7 @@ export type Database = {
           scouting_level?: number
           showcase_gladiator_ids?: string[]
           showcase_limit?: number
+          social_level?: number
           training_level?: number
           updated_at?: string
         }
@@ -284,6 +322,7 @@ export type Database = {
           scouting_level?: number
           showcase_gladiator_ids?: string[]
           showcase_limit?: number
+          social_level?: number
           training_level?: number
           updated_at?: string
         }
