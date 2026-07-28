@@ -31,7 +31,7 @@ import bStudy from "@/assets/ludus/b-study.png";
 import bTemple from "@/assets/ludus/b-temple.png";
 import bChronicle from "@/assets/ludus/b-chronicle.png";
 import bPantry from "@/assets/ludus/b-pantry.png";
-import bSocial from "@/assets/ludus/b-social.svg";
+import bSocial from "@/assets/ludus/b-social.png";
 
 // gear tier art — 4 visual grades map to tiers 1-2 / 3-4 / 5-6 / 7-8
 import helmet1 from "@/assets/gear/helmet-1.png";
