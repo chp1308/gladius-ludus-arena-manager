@@ -1867,18 +1867,25 @@ export const runSocialEvent = createServerFn({ method: "POST" })
       summary = `+${base} XP each`;
     } else if (event.outcome === "gear") {
       const slotKeys = ["weapon_tier", "armor_tier", "helmet_tier", "legs_tier", "offhand_tier"] as const;
+      const slotLabels: Record<string, string> = {
+        weapon_tier: "weapon", armor_tier: "cuirass", helmet_tier: "helmet", legs_tier: "greaves", offhand_tier: "off-hand",
+      };
+      const perGladiator: string[] = [];
       for (const g of party) {
         const row = g as unknown as Record<string, number>;
         const options = slotKeys.filter(k => (row[k] ?? 0) < MAX_GEAR_TIER);
         if (options.length === 0) {
-          // Already maxed out everywhere — a small consolation purse instead.
-          denariiDelta += Math.max(1, Math.round(100 * (0.85 + Math.random() * 0.3)));
+          // Already mastercrafted everywhere — a small consolation purse instead.
+          const consolation = Math.max(1, Math.round(100 * (0.85 + Math.random() * 0.3)));
+          denariiDelta += consolation;
+          perGladiator.push(`${g.name}: already mastercrafted — +${consolation} denarii instead`);
           continue;
         }
         const slot = options[Math.floor(Math.random() * options.length)];
         gladiatorUpdates.push({ id: g.id, patch: { [slot]: row[slot] + 1 } });
+        perGladiator.push(`${g.name}: +1 ${slotLabels[slot]}`);
       }
-      summary = "+1 gear tier each";
+      summary = perGladiator.join(", ");
     } else if (event.outcome === "injury") {
       const victim = party[Math.floor(Math.random() * party.length)];
       const hours = injuryHours(event.amount ?? 6, victim.agility, profile.medicus_level, profile.training_level);
@@ -1887,7 +1894,8 @@ export const runSocialEvent = createServerFn({ method: "POST" })
     }
 
     for (const u of gladiatorUpdates) {
-      await supabaseAdmin.from("gladiators").update(u.patch as never).eq("id", u.id);
+      const { error: updateErr } = await supabaseAdmin.from("gladiators").update(u.patch as never).eq("id", u.id);
+      if (updateErr) throw new Error(updateErr.message);
     }
     if (denariiDelta !== 0 || reputationDelta !== 0) {
       await supabaseAdmin.from("profiles").update({
