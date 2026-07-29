@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Swords, Shield, Heart, Zap, Brain, Dumbbell, Award } from "lucide-react";
+import { ArrowLeft, Swords, Shield, Heart, Zap, Brain, Dumbbell, Award, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -7,7 +7,7 @@ export const Route = createFileRoute("/_authenticated/info")({
   head: () => ({
     meta: [
       { title: "Combat Codex — Gladius Ludus" },
-      { name: "description", content: "How stats, gear, level and skills shape a gladiator's fighting power." },
+      { name: "description", content: "How stats, gear, level, weapon style and skills shape a gladiator's fighting power — and how Power differs from PvP Rating." },
     ],
   }),
   component: InfoPage,
@@ -33,6 +33,13 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+const WEAPON_STYLES: { label: string; str: number; agi: number; sta: number; tec: number; favors: string }[] = [
+  { label: "Gladius & Shield", str: 4, agi: 2, sta: 4, tec: 2, favors: "Strength & Stamina" },
+  { label: "Spear", str: 2, agi: 3, sta: 3, tec: 4, favors: "Technique" },
+  { label: "Net & Trident", str: 2, agi: 4, sta: 2, tec: 4, favors: "Agility & Technique" },
+  { label: "Dual Blades", str: 3, agi: 5, sta: 2, tec: 2, favors: "Agility" },
+];
+
 function InfoPage() {
   return (
     <div className="min-h-screen">
@@ -55,17 +62,43 @@ function InfoPage() {
             Every duel is decided by <span className="text-foreground">Power</span> — the champion's raw might — and per-round <span className="text-foreground">Damage rolls</span> shaped by weapons, armor and grit.
           </p>
           <div className="mt-4 rounded-md border border-border/60 bg-background/60 p-4 font-mono text-xs text-foreground">
-            Power = ( 3 × (STR + AGI + STA + TEC) + Gear + Level×14 ) × Health% × (1 + (Level−1)×6%) × (1 + Style×8%)
+            Power = ( Weighted Stats + Gear + Level×6 ) × Health% × (1 + (Level−1)×2%) × (1 + Style×8%)
+          </div>
+          <p className="mt-2 text-xs italic text-muted-foreground">
+            "Weighted Stats" isn't a flat sum — each weapon style leans on different stats. See <span className="text-foreground">Weapon Styles</span> below.
+          </p>
+        </Card>
+
+        <Card className="p-6 border-accent/40">
+          <div className="mb-3 flex items-center gap-2 font-display text-lg tracking-wider text-primary">
+            <Scale className="h-5 w-5" /> Power vs. Rating — not the same number
+          </div>
+          <div className="space-y-2 text-sm font-serif leading-relaxed text-muted-foreground">
+            <p>
+              You'll see two different scores for the same gladiator. They measure different things on purpose.
+            </p>
+            <p>
+              <span className="text-foreground">Power</span> — shown on a gladiator's sheet and in fight logs — is how strong they are <span className="italic">right now</span>. It's weighted by weapon style, counts gear heavily, includes Study of Arms training, and drops when a gladiator is wounded. This is what actually decides win chance in a fight.
+            </p>
+            <p>
+              <span className="text-foreground">Rating</span> — shown when posting or accepting PvP challenges — only exists to keep matchmaking fair. It's a flatter snapshot of overall investment (level, raw stats, gear), the same regardless of weapon style, current wounds, or skill training.
+            </p>
+            <div className="mt-2 rounded-md border border-border/60 bg-background/60 p-4 font-mono text-xs text-foreground">
+              Rating = Level×10 + (STR+AGI+STA+TEC) + Weapon×2 + Armor×2 + Helmet + Greaves + Off-hand
+            </div>
+            <p>
+              A challenger's and acceptor's Rating must sit within 25% of each other to fight — Rating exists so nobody can dodge a fair matchup by fielding a strong gladiator that "looks" weak. It never changes with injuries, and never reflects skill training.
+            </p>
           </div>
         </Card>
 
         <div className="grid gap-4 md:grid-cols-2">
           <Section title="Level" icon={<Award className="h-5 w-5" />}>
             <p>Experience is the veteran's edge. Every level adds to your gladiator on three fronts:</p>
-            <Row label="Flat Power bonus" value="+14 per level" />
-            <Row label="Multiplier" value="+6% Power per level above 1" />
-            <Row label="Hit damage" value="+2 min & max per level above 1" />
-            <p>A level 10 champion strikes noticeably harder than the same fighter at level 1 — even with identical stats and gear.</p>
+            <Row label="Flat Power bonus" value="+6 per level" />
+            <Row label="Multiplier" value="+2% Power per level above 1" />
+            <Row label="Hit damage" value="+1 min & max per level above 1" />
+            <p>A high-level champion strikes harder than the same fighter at level 1 — even with identical stats and gear.</p>
           </Section>
 
           <Section title="Weapons" icon={<Swords className="h-5 w-5" />}>
@@ -78,46 +111,58 @@ function InfoPage() {
 
           <Section title="Armor" icon={<Shield className="h-5 w-5" />}>
             <p>Armor reduces incoming damage. Each hit subtracts a mitigation roll from the enemy's weapon damage.</p>
-            <Row label="Cuirass (body)" value="weight ×1.5" />
-            <Row label="Helmet" value="weight ×1.0" />
-            <Row label="Greaves (legs)" value="weight ×1.0" />
-            <Row label="Off-hand / Shield" value="weight ×0.8" />
-            <p>Higher tiers absorb more. The <span className="text-foreground">Defensive Doctrine</span> skill (Study of Arms) further hardens armor by +15% per rank.</p>
+            <Row label="Cuirass (body)" value="mitigation ×1.5" />
+            <Row label="Helmet" value="mitigation ×1.0" />
+            <Row label="Greaves (legs)" value="mitigation ×1.0" />
+            <Row label="Off-hand / Shield" value="mitigation ×0.8" />
+            <p>Each piece also feeds Power directly: Cuirass +9, Helmet +4, Greaves +4, Off-hand +5 per tier. The <span className="text-foreground">Defensive Doctrine</span> skill (Study of Arms) further hardens mitigation by +15% per rank.</p>
+          </Section>
+
+          <Section title="Weapon Styles" icon={<Scale className="h-5 w-5" />}>
+            <p>
+              Your gladiator's <span className="text-foreground">weapon style</span> (not their class name — class is flavor only) decides how much each stat point is worth in Power.
+            </p>
+            <div className="space-y-1.5">
+              {WEAPON_STYLES.map((w) => (
+                <div key={w.label} className="flex items-center justify-between border-b border-border/40 py-1.5 text-xs">
+                  <span className="text-foreground">{w.label}</span>
+                  <span className="italic">STR×{w.str} AGI×{w.agi} STA×{w.sta} TEC×{w.tec} — favors {w.favors}</span>
+                </div>
+              ))}
+            </div>
+            <p>Beasts have their own weightings too — lions and tigers lean Strength/Agility, rhinos and elephants lean pure Strength and Stamina.</p>
           </Section>
 
           <Section title="Strength" icon={<Dumbbell className="h-5 w-5" />}>
-            <p>Raw muscle. Contributes +3 Power per point via the core stat pool.</p>
-            <p className="italic">Best for: Murmillo, Secutor, Dimachaerus — brawlers who trade blows.</p>
+            <p>Raw muscle. Weighted per weapon style (see Weapon Styles) — worth the most to Gladius & Shield fighters — AND separately sets maximum Health.</p>
+            <div className="rounded-md bg-background/60 p-3 font-mono text-xs text-foreground">Max HP = 100 + Strength × 5</div>
+            <p>Wounded gladiators fight at reduced Power (Health % applies) — keep your champions healed, or let the Valetudinarium's passive regeneration do its work.</p>
           </Section>
 
           <Section title="Agility" icon={<Zap className="h-5 w-5" />}>
-            <p>Speed and footwork. +3 Power per point. Nimble fighters win more round exchanges via the initiative roll.</p>
-            <p className="italic">Best for: Retiarius, Dimachaerus — hit-and-retreat styles.</p>
+            <p>Speed and footwork. Weighted per weapon style — Dual Blades leans on it hardest, followed by Net & Trident.</p>
           </Section>
 
           <Section title="Stamina" icon={<Heart className="h-5 w-5" />}>
-            <p>Endurance and constitution. +3 Power per point AND +5 maximum Health per point.</p>
-            <div className="rounded-md bg-background/60 p-3 font-mono text-xs text-foreground">Max HP = 100 + Stamina × 5</div>
-            <p>Wounded gladiators fight at reduced Power (Health % applies). Keep your champions healed.</p>
+            <p>Endurance and grit. Weighted per weapon style — heaviest for Gladius & Shield fighters, moderate for Spear and Dual Blades.</p>
           </Section>
 
           <Section title="Technique" icon={<Brain className="h-5 w-5" />}>
-            <p>Skill of arms. +3 Power per point. Rewards fighters with clean, disciplined technique.</p>
-            <p className="italic">Best for: any class — but Provocator and Hoplomachus benefit most.</p>
+            <p>Skill of arms. Weighted per weapon style — Spear and Net & Trident fighters lean on it most.</p>
           </Section>
 
           <Section title="Skills & Style Mastery" icon={<Award className="h-5 w-5" />}>
             <p>Trained at the Study of Arms:</p>
             <Row label="Style mastery (Gladius, Spear, etc.)" value="+8% Power per rank" />
             <Row label="Defensive Doctrine" value="+15% armor mitigation per rank" />
-            <p>A gladiator only benefits from the style matching their weapon.</p>
+            <p>A gladiator only benefits from the style matching their own weapon.</p>
           </Section>
 
           <Section title="Round Combat" icon={<Swords className="h-5 w-5" />}>
             <p>Each round a fighter's chance to land the hit is:</p>
             <div className="rounded-md bg-background/60 p-3 font-mono text-xs text-foreground">WinChance = 5% + 90% × (Power^0.75 / (Power^0.75 + EnemyPower^0.75))</div>
             <p>This gives a 5% minimum upset chance and a 95% maximum dominance chance. The winner then rolls damage from their weapon tier + level bonus, minus the target's armor mitigation.</p>
-            <p>First fighter to 0 HP loses. In <span className="text-foreground">Sine Missione</span> death matches, the loser is lost forever.</p>
+            <p>Pit fights and standard PvP never kill — the loser is left at 1 HP. Only <span className="text-foreground">Sine Missione</span> death matches can end in the loser being lost forever.</p>
           </Section>
         </div>
       </main>

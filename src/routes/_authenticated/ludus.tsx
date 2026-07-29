@@ -1312,6 +1312,11 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               <span className="uppercase tracking-widest text-muted-foreground">Power</span>
               <span className="font-display text-sm text-primary">{gladiatorPower(g, skillLevel)}</span>
             </div>
+            {skillLevel > 0 && (
+              <div className="text-[10px] text-muted-foreground">
+                includes <span className="text-accent">+{gladiatorPower(g, skillLevel) - gladiatorPower(g, 0)}</span> from Study of Arms (rank {skillLevel})
+              </div>
+            )}
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between text-xs">
