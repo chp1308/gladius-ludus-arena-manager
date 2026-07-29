@@ -106,9 +106,13 @@ export const gearCost = (slot: "weapon" | "armor" | "helmet" | "legs" | "offhand
   return Math.max(40, Math.floor(base * (1 - (armoryLevel - 1) * 0.1)));
 };
 // Healing cost falls with the Valetudinarium (medicus) facility level
-export const healCost = (missingHealth: number, medicusLevel: number) => {
+// Weak/new gladiators are capped so a full heal never costs more than 100
+// denarii at level 1 — the ceiling rises gradually as they level up.
+export const healCostCap = (level: number) => 100 + Math.max(0, level - 1) * 20;
+export const healCost = (missingHealth: number, medicusLevel: number, level: number = 1) => {
   const baseCost = Math.max(30, missingHealth * 2);
-  return Math.max(15, Math.floor(baseCost * (1 - (medicusLevel - 1) * 0.12)));
+  const discounted = Math.max(15, Math.floor(baseCost * (1 - (medicusLevel - 1) * 0.12)));
+  return Math.min(discounted, healCostCap(level));
 };
 
 // ---------- PASSIVE HEALING ----------
@@ -544,7 +548,7 @@ export const healGladiator = createServerFn({ method: "POST" })
     const currentHealth = effectiveHealth(g, profile.medicus_level, profile.training_level);
     const missing = hpMax - currentHealth;
     if (missing <= 0 && !g.injury_until) throw new Error("Already at full health");
-    const cost = healCost(missing, profile.medicus_level);
+    const cost = healCost(missing, profile.medicus_level, g.level);
 
     await spendDenarii(supabaseAdmin, userId, cost, `Physician needs ${cost} denarii`);
 

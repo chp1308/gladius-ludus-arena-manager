@@ -1109,7 +1109,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const tCost = trainCost(trainingLevel);
   const medicusLevel = state.profile?.medicus_level ?? 1;
   const needsHealing = g.health < hpMax || !!injured;
-  const healPrice = healCost(hpMax - g.health, medicusLevel);
+  const healPrice = healCost(hpMax - g.health, medicusLevel, g.level);
   const missingHealth = hpMax - g.health;
   const regenHoursLeft = missingHealth > 0
     ? Math.ceil(missingHealth / healRegenPerHour(g.agility, medicusLevel, trainingLevel))

@@ -39,7 +39,7 @@ function HealButton({ g, medicusLevel }: { g: Gladiator; medicusLevel: number })
   const heal = useServerFn(healGladiator);
   const injured = !!(g.injury_until && new Date(g.injury_until) > new Date());
   const needsHeal = g.health < maxHealth(g.strength) || injured;
-  const cost = healCost(maxHealth(g.strength) - g.health, medicusLevel);
+  const cost = healCost(maxHealth(g.strength) - g.health, medicusLevel, g.level);
   const mut = useMutation({
     mutationFn: () => heal({ data: { gladiatorId: g.id } }),
     onSuccess: (r) => { toast.success(`${g.name} healed for ${r.cost}d`); qc.invalidateQueries({ queryKey: ["ludus"] }); qc.invalidateQueries({ queryKey: ["rivals"] }); },
