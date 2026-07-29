@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/lib/confirm";
+import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
 import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark } from "lucide-react";
 import cityBg from "@/assets/ludus/city-bg.jpg";
@@ -243,6 +244,9 @@ function LudusPage() {
   const scoutingLevel = data.profile?.scouting_level ?? 1;
   const recruitCost = recruitCostFor(scoutingLevel);
 
+  const [open, setOpen] = useState<BuildingKey | null>(null);
+  const { onCooldown: socialOnCooldown, minutesLeft: socialMinutesLeft } = socialCooldownStatus(data.socialEvents);
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-border/70 bg-card/60 backdrop-blur">
@@ -260,6 +264,15 @@ function LudusPage() {
             <Link to="/info"><Button variant="outline" size="sm"><BookOpen className="mr-1 h-4 w-4" /> Codex</Button></Link>
             <Link to="/leaderboard"><Button variant="outline" size="sm"><Trophy className="mr-1 h-4 w-4" /> Champions</Button></Link>
             <Link to="/achievements"><Button variant="outline" size="sm"><Medal className="mr-1 h-4 w-4" /> Achievements</Button></Link>
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 px-5 text-base"
+              onClick={() => setOpen("social")}
+            >
+              <Landmark className="mr-2 h-5 w-5" />
+              {socialOnCooldown ? `Resting — ${formatMinutes(socialMinutesLeft)}` : "Cursus Honorum"}
+            </Button>
             <Link to="/arena">
               <Button size="lg" className="h-11 px-5 text-base shadow-lg shadow-primary/20">
                 <Swords className="mr-2 h-5 w-5" /> Arena
@@ -272,7 +285,14 @@ function LudusPage() {
 
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <VillageView state={data} recruitCost={recruitCost} recruitPending={recruitMut.isPending} onRecruit={onRecruit} />
+        <VillageView
+          state={data}
+          recruitCost={recruitCost}
+          recruitPending={recruitMut.isPending}
+          onRecruit={onRecruit}
+          open={open}
+          setOpen={setOpen}
+        />
       </main>
     </div>
   );
@@ -307,11 +327,11 @@ const BUILDINGS: Building[] = [
 ];
 
 function VillageView({
-  state, recruitCost, recruitPending, onRecruit,
+  state, recruitCost, recruitPending, onRecruit, open, setOpen,
 }: {
   state: State; recruitCost: number; recruitPending: boolean; onRecruit: () => void;
+  open: BuildingKey | null; setOpen: (key: BuildingKey | null) => void;
 }) {
-  const [open, setOpen] = useState<BuildingKey | null>(null);
   const denarii = state.profile?.denarii ?? 0;
   const scoutingLevel = state.profile?.scouting_level ?? 1;
   const dead = state.gladiators.filter(g => g.status === "dead").length;
@@ -603,10 +623,13 @@ function PantryTable({ pantryLevel }: { pantryLevel: number }) {
   );
 }
 
-function socialCountdown(mins: number): string {
-  if (mins <= 0) return "now";
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+function socialCooldownStatus(socialEvents: State["socialEvents"]): { onCooldown: boolean; minutesLeft: number } {
+  const last = socialEvents[0];
+  if (!last) return { onCooldown: false, minutesLeft: 0 };
+  const nextAt = new Date(last.created_at).getTime() + SOCIAL_COOLDOWN_MINUTES * 60_000;
+  const onCooldown = Date.now() < nextAt;
+  const minutesLeft = onCooldown ? Math.max(1, Math.ceil((nextAt - Date.now()) / 60_000)) : 0;
+  return { onCooldown, minutesLeft };
 }
 
 const TONE_STYLES: Record<string, string> = {
@@ -625,10 +648,7 @@ function SocialEventPanel({ state }: { state: State }) {
   const eligible = state.gladiators.filter(g => g.status !== "dead");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const lastEvent = state.socialEvents[0];
-  const nextAvailableAt = lastEvent ? new Date(lastEvent.created_at).getTime() + SOCIAL_COOLDOWN_MINUTES * 60_000 : 0;
-  const onCooldown = !!lastEvent && Date.now() < nextAvailableAt;
-  const cooldownMins = onCooldown ? Math.max(1, Math.ceil((nextAvailableAt - Date.now()) / 60_000)) : 0;
+  const { onCooldown, minutesLeft: cooldownMins } = socialCooldownStatus(state.socialEvents);
 
   const toggle = (id: string) => {
     setSelectedIds(prev => {
@@ -703,7 +723,7 @@ function SocialEventPanel({ state }: { state: State }) {
             {mut.isPending
               ? "The delegation departs..."
               : onCooldown
-                ? `Resting — ${socialCountdown(cooldownMins)}`
+                ? `Resting — ${formatMinutes(cooldownMins)}`
                 : `Send ${selectedIds.length || ""} to Rome`.trim()}
           </Button>
         </CardContent>
@@ -1099,7 +1119,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const dismiss = useServerFn(dismissGladiator);
 
   const injured = g.injury_until && new Date(g.injury_until) > new Date();
-  const injuryHoursLeft = injured ? Math.ceil((new Date(g.injury_until!).getTime() - Date.now()) / 3600_000) : 0;
+  const injuryMinsLeft = injured ? minutesUntil(g.injury_until!) : 0;
   const skillLevel = state.skills.find(s => s.weapon_type === g.weapon_type)?.level ?? 0;
   const trainingLevel = state.profile?.training_level ?? 1;
   const armoryLevel = state.profile?.armory_level ?? 1;
@@ -1111,8 +1131,8 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   const needsHealing = g.health < hpMax || !!injured;
   const healPrice = healCost(hpMax - g.health, medicusLevel, g.level);
   const missingHealth = hpMax - g.health;
-  const regenHoursLeft = missingHealth > 0
-    ? Math.ceil(missingHealth / healRegenPerHour(g.agility, medicusLevel, trainingLevel))
+  const regenMinsLeft = missingHealth > 0
+    ? Math.ceil((missingHealth / healRegenPerHour(g.agility, medicusLevel, trainingLevel)) * 60)
     : 0;
   const invalidate = () => qc.invalidateQueries({ queryKey: ["ludus"] });
 
@@ -1324,12 +1344,12 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               <span>{g.health}/{hpMax}</span>
             </div>
             <Progress value={(g.health / hpMax) * 100} className="h-2" />
-            {regenHoursLeft > 0 && (
-              <p className="mt-1 text-xs text-muted-foreground">Heals to full naturally in ~{regenHoursLeft}h</p>
+            {regenMinsLeft > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">Heals to full naturally in ~{formatMinutes(regenMinsLeft)}</p>
             )}
             {injured && (
               <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
-                <Skull className="h-3 w-3" /> Injured — {injuryHoursLeft}h until recovery
+                <Skull className="h-3 w-3" /> Injured — {formatMinutes(injuryMinsLeft)} until recovery
               </p>
             )}
           </div>

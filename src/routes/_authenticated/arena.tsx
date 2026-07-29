@@ -23,14 +23,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/lib/confirm";
+import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
 import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart, Flame } from "lucide-react";
 
-
 function formatCountdown(iso: string): string {
-  const mins = Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 60000));
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return formatMinutes(minutesUntil(iso));
 }
 
 function HealButton({ g, medicusLevel }: { g: Gladiator; medicusLevel: number }) {
