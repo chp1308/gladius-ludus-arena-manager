@@ -734,7 +734,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       .eq("owner_id", userId).eq("weapon_type", "defense").maybeSingle();
     const defenseLevel = defenseRow?.level ?? 0;
 
-    const myPower = gladiatorPower(g, skillLevel);
+    const myPower = gladiatorPower({ ...g, health: currentHealth }, skillLevel);
     const opponentPower = rand(tier.powerMin, tier.powerMax);
     const opponentName = g.is_beast
       ? pick(["Doomed Slave", "Damnatus", "Condemned Thief"])
@@ -1097,6 +1097,9 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     if (!opp) throw new Error("Opposing gladiator no longer exists");
     if (opp.status === "dead") throw new Error("Opposing champion has fallen");
     const { data: oppFacilities } = await supabaseAdmin.from("profiles").select("medicus_level,training_level").eq("id", opp.owner_id).maybeSingle();
+    const oppMedicusLevel = oppFacilities?.medicus_level ?? 1;
+    const oppTrainingLevel = oppFacilities?.training_level ?? 1;
+    const oppCurrentHealth = effectiveHealth(opp, oppMedicusLevel, oppTrainingLevel);
 
     // Atomically claim the challenge before simulating the fight — two
     // players accepting the same "open" challenge in the same window could
@@ -1118,8 +1121,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const { data: oppSkill } = await supabaseAdmin.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", opp.weapon_type).maybeSingle();
     const { data: myDefense } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", "defense").maybeSingle();
     const { data: oppDefense } = await supabaseAdmin.from("ludus_skills").select("level").eq("owner_id", opp.owner_id).eq("weapon_type", "defense").maybeSingle();
-    const myPower = gladiatorPower(g, mySkill?.level ?? 0);
-    const oppPower = gladiatorPower(opp, oppSkill?.level ?? 0);
+    const myPower = gladiatorPower({ ...g, health: myCurrentHealth }, mySkill?.level ?? 0);
+    const oppPower = gladiatorPower({ ...opp, health: oppCurrentHealth }, oppSkill?.level ?? 0);
     const myDefenseLevel = myDefense?.level ?? 0;
     const oppDefenseLevel = oppDefense?.level ?? 0;
 
@@ -1197,10 +1200,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       reputation: Math.max(0, profile.reputation + repGained),
     }).eq("id", userId);
 
-    // Update opposing (challenger) gladiator via admin
-    const oppMedicusLevel = oppFacilities?.medicus_level ?? 1;
-    const oppTrainingLevel = oppFacilities?.training_level ?? 1;
-    const oppCurrentHealth = effectiveHealth(opp, oppMedicusLevel, oppTrainingLevel);
+    // Update opposing (challenger) gladiator via admin (medicus/training/health already resolved above, before the fight sim)
     const oppDamage = Math.max(5, oppMaxHp - Math.max(0, oHp));
     let oppNewHealth = Math.max(toDeath ? 0 : 1, oppCurrentHealth - oppDamage);
     let oppInjury: string | null = null;
@@ -1388,7 +1388,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     const { data: skills } = await supabase.from("ludus_skills").select("weapon_type,level").eq("owner_id", userId);
     const skillMap = new Map((skills ?? []).map(s => [s.weapon_type, s.level]));
 
-    const teamPower = team.reduce((sum, g) => sum + gladiatorPower(g, skillMap.get(g.weapon_type) ?? 0), 0);
+    const teamPower = team.reduce((sum, g) => sum + gladiatorPower({ ...g, health: currentHealthById.get(g.id)! }, skillMap.get(g.weapon_type) ?? 0), 0);
     const enemyPower = Math.floor(teamPower * battle.powerScale + rand(-30, 30));
 
     const defenseLevel = skillMap.get("defense") ?? 0;
@@ -1853,7 +1853,17 @@ export const runSocialEvent = createServerFn({ method: "POST" })
       summary = `${reputationDelta > 0 ? "+" : ""}${reputationDelta} fame`;
     } else if (event.outcome === "xp") {
       const base = event.amount ?? 0;
-      for (const g of party) gladiatorUpdates.push({ id: g.id, patch: { experience: g.experience + base } });
+      for (const g of party) {
+        const newXp = g.experience + base;
+        const xpForNext = g.level * 100;
+        const leveledUp = newXp >= xpForNext;
+        gladiatorUpdates.push({
+          id: g.id,
+          patch: leveledUp
+            ? { experience: newXp - xpForNext, level: g.level + 1 }
+            : { experience: newXp },
+        });
+      }
       summary = `+${base} XP each`;
     } else if (event.outcome === "gear") {
       const slotKeys = ["weapon_tier", "armor_tier", "helmet_tier", "legs_tier", "offhand_tier"] as const;
