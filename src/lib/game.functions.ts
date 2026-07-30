@@ -11,6 +11,8 @@ import capuaImg from "@/assets/arena/arena-grand-capua.jpg";
 import colosseumImg from "@/assets/arena/arena-colosseum.jpg";
 import emperorImg from "@/assets/arena/arena-emperor-spectacle.jpg";
 import { SOCIAL_EVENTS, type SocialEvent, type SocialTone } from "@/lib/social-events";
+import { BOSS_ENCOUNTERS, bossRequirementError, type LootItem } from "@/lib/boss-encounters";
+import { RELICS, applyGoldBonus } from "@/lib/relics";
 
 // Structured per-round combat data for animated battle replays on the
 // client. `text` mirrors the exact line pushed into the fight's `log` for
@@ -789,7 +791,11 @@ export const fightMatch = createServerFn({ method: "POST" })
 
 
     const won = oppHp <= myHp;
-    const denariiGained = won ? tier.reward + rand(0, Math.floor(tier.reward * 0.2)) : Math.floor(tier.reward * 0.12);
+    const denariiGained = applyGoldBonus(
+      won ? tier.reward + rand(0, Math.floor(tier.reward * 0.2)) : Math.floor(tier.reward * 0.12),
+      profile.relics,
+      profile.boss_kills as Record<string, number>,
+    );
     const xpGained = won ? tier.xp : Math.floor(tier.xp * 0.4);
     const repGained = won ? tier.rep : 0;
 
@@ -1166,7 +1172,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
 
     const won = oHp <= myHp;
 
-    const denariiGained = won ? (200 + rand(0, 80)) * rewardMult : 30;
+    const denariiGained = applyGoldBonus(won ? (200 + rand(0, 80)) * rewardMult : 30, profile.relics, profile.boss_kills as Record<string, number>);
     const xpGained = won ? 140 * rewardMult : 50;
     const repGained = won ? 8 * rewardMult : -2;
 
@@ -1228,10 +1234,10 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       losses: opp.losses + (won ? 1 : 0),
     }).eq("id", opp.id);
 
-    const { data: oppProfile } = await supabaseAdmin.from("profiles").select("denarii,reputation").eq("id", opp.owner_id).maybeSingle();
+    const { data: oppProfile } = await supabaseAdmin.from("profiles").select("denarii,reputation,relics,boss_kills").eq("id", opp.owner_id).maybeSingle();
     if (oppProfile) {
       await supabaseAdmin.from("profiles").update({
-        denarii: oppProfile.denarii + (won ? 30 : 150 * rewardMult),
+        denarii: oppProfile.denarii + applyGoldBonus(won ? 30 : 150 * rewardMult, oppProfile.relics, oppProfile.boss_kills as Record<string, number>),
         reputation: Math.max(0, oppProfile.reputation + (won ? -1 : 6 * rewardMult)),
       }).eq("id", opp.owner_id);
     }
@@ -1431,7 +1437,11 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     }
     const won = enemyHp <= teamHp;
 
-    const denariiGained = won ? battle.reward + rand(0, Math.floor(battle.reward * 0.2)) : Math.floor(battle.reward * 0.15);
+    const denariiGained = applyGoldBonus(
+      won ? battle.reward + rand(0, Math.floor(battle.reward * 0.2)) : Math.floor(battle.reward * 0.15),
+      profile.relics,
+      profile.boss_kills as Record<string, number>,
+    );
     const xpEach = Math.floor((won ? battle.xp : Math.floor(battle.xp * 0.4)) / 1);
     const repGained = won ? battle.rep : 0;
 
@@ -1482,6 +1492,439 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     }).eq("id", userId);
 
     return { won, log, denariiGained, repGained, rounds: fightRounds, myMaxHp: teamMaxHp, oppMaxHp: enemyMaxHp };
+  });
+
+
+// ============================================================
+// BOSS FIGHTS — reflex-driven raids. See boss-encounters.ts for the
+// telegraph/damage-scale content; this is the round-by-round state machine.
+// ============================================================
+const BOSS_KEYS = BOSS_ENCOUNTERS.map(b => b.key) as [string, ...string[]];
+const GEAR_SLOT_KEYS = ["weapon_tier", "armor_tier", "helmet_tier", "legs_tier", "offhand_tier"] as const;
+const GEAR_SLOT_LABELS: Record<string, string> = {
+  weapon_tier: "weapon", armor_tier: "cuirass", helmet_tier: "helmet", legs_tier: "greaves", offhand_tier: "off-hand",
+};
+
+function computeTeamPowerAndHp(
+  team: {
+    strength: number; agility: number; stamina: number; technique: number;
+    level: number; weapon_tier: number; armor_tier: number;
+    helmet_tier?: number; legs_tier?: number; offhand_tier?: number;
+    health: number; weapon_type: string;
+  }[],
+  skillMap: Map<string, number>,
+) {
+  const teamPower = team.reduce((sum, g) => sum + gladiatorPower(g, skillMap.get(g.weapon_type) ?? 0), 0);
+  const teamMaxHp = team.reduce((sum, g) => sum + maxHealth(g.strength), 0);
+  return { teamPower, teamMaxHp };
+}
+
+export const getBossFightState = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [sessionRes, attemptsRes, localWinRes] = await Promise.all([
+      supabase.from("boss_fight_sessions").select("*").eq("owner_id", userId).maybeSingle(),
+      supabase.from("boss_attempts").select("boss_key,created_at,won,loot_drops").eq("owner_id", userId).order("created_at", { ascending: false }),
+      // Unbounded by the 20-row recent-matches list used elsewhere — a Local
+      // Games win from long ago still counts, it just needs to have happened.
+      supabase.from("matches").select("id").eq("owner_id", userId).eq("difficulty", "local").eq("result", "win").limit(1),
+    ]);
+    const latestByBoss = new Map<string, string>();
+    const defeatedBosses = new Set<string>();
+    const lootCounts: Record<string, Record<string, number>> = {};
+    for (const row of attemptsRes.data ?? []) {
+      if (!latestByBoss.has(row.boss_key)) latestByBoss.set(row.boss_key, row.created_at);
+      if (row.won) defeatedBosses.add(row.boss_key);
+      const counts = lootCounts[row.boss_key] ?? (lootCounts[row.boss_key] = {});
+      for (const key of row.loot_drops ?? []) counts[key] = (counts[key] ?? 0) + 1;
+    }
+    const cooldowns: Record<string, string | null> = {};
+    const defeated: Record<string, boolean> = {};
+    for (const boss of BOSS_ENCOUNTERS) {
+      const last = latestByBoss.get(boss.key);
+      if (!last) { cooldowns[boss.key] = null; } else {
+        const availableAt = new Date(new Date(last).getTime() + 24 * 3600_000);
+        cooldowns[boss.key] = availableAt > new Date() ? availableAt.toISOString() : null;
+      }
+      defeated[boss.key] = defeatedBosses.has(boss.key);
+    }
+    return { session: sessionRes.data, cooldowns, hasWonLocal: (localWinRes.data ?? []).length > 0, defeated, lootCounts };
+  });
+
+export const startBossFight = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    bossKey: z.enum(BOSS_KEYS),
+    gladiatorIds: z.array(z.string().uuid()),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const boss = BOSS_ENCOUNTERS.find(b => b.key === data.bossKey);
+    if (!boss) throw new Error("Unknown boss");
+
+    // Only one session can exist per player (unique index on owner_id) — if
+    // one is already in flight (e.g. a page refresh mid-fight), hand it back
+    // instead of erroring or starting a second one.
+    const { data: existingSession } = await supabase.from("boss_fight_sessions").select("*").eq("owner_id", userId).maybeSingle();
+    if (existingSession) return { done: false as const, session: existingSession };
+
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
+
+    const { data: lastAttempt } = await supabase.from("boss_attempts")
+      .select("created_at").eq("owner_id", userId).eq("boss_key", boss.key)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (lastAttempt) {
+      const availableAt = new Date(lastAttempt.created_at).getTime() + 24 * 3600_000;
+      if (Date.now() < availableAt) {
+        throw new Error(`${boss.name} is not ready — recovers in ${Math.ceil((availableAt - Date.now()) / 3_600_000)}h`);
+      }
+    }
+
+    const { data: localWin } = await supabase.from("matches").select("id")
+      .eq("owner_id", userId).eq("difficulty", "local").eq("result", "win").limit(1);
+    const { data: gs } = await supabase.from("gladiators").select("*").in("id", data.gladiatorIds).eq("owner_id", userId);
+    const team = gs ?? [];
+    const currentHealthById = new Map(team.map(g => [g.id, effectiveHealth(g, profile.medicus_level, profile.training_level)]));
+    const withCurrentHealth = team.map(g => ({ ...g, health: currentHealthById.get(g.id)! }));
+    const err = bossRequirementError(boss, withCurrentHealth, (localWin ?? []).length > 0);
+    if (err) throw new Error(err);
+
+    const { data: skills } = await supabase.from("ludus_skills").select("weapon_type,level").eq("owner_id", userId);
+    const skillMap = new Map((skills ?? []).map(s => [s.weapon_type, s.level]));
+    const { teamPower, teamMaxHp } = computeTeamPowerAndHp(withCurrentHealth, skillMap);
+
+    const phase1 = boss.phases[0];
+    const bossMaxHp = Math.max(1, Math.round(teamPower * phase1.hpScale));
+    const hasNet = team.some(g => g.weapon_type === "net");
+    const beatType = phase1.netBonus && hasNet ? "net_bonus" : (Math.random() < phase1.vulnerableChance ? "vulnerable" : "defensive");
+    const log = [`${team.map(g => g.name).join(", ")} face ${boss.name}. ${boss.flavor}`];
+
+    // Shield-bearers (weapon_type "gladius") must block a charge, everyone
+    // else must dodge — frozen at fight start so a mid-fight gear change
+    // can't retroactively flip who owes which reflex. Armor reduction for
+    // the boss's passive per-second mauling is frozen the same way.
+    const shieldMap: Record<string, boolean> = Object.fromEntries(team.map(g => [g.id, g.weapon_type === "gladius"]));
+    const defenseLevel = skillMap.get("defense") ?? 0;
+    const armorReduction = team.length
+      ? Math.round(team.reduce((sum, g) => sum + armorMitigation(g, defenseLevel).min, 0) / team.length)
+      : 0;
+
+    const { data: session, error } = await supabaseAdmin.from("boss_fight_sessions").insert({
+      owner_id: userId,
+      boss_key: boss.key,
+      gladiator_ids: data.gladiatorIds,
+      gladiator_names: team.map(g => g.name),
+      shield_map: shieldMap,
+      armor_reduction: armorReduction,
+      phase: 1,
+      team_power: teamPower,
+      boss_hp: bossMaxHp,
+      boss_max_hp: bossMaxHp,
+      party_hp: teamMaxHp,
+      party_max_hp: teamMaxHp,
+      round: 1,
+      beat_type: beatType,
+      round_deadline: new Date(Date.now() + boss.roundDeadlineMs).toISOString(),
+      log,
+    }).select("*").single();
+    if (error) throw new Error(error.message);
+    return { done: false as const, session };
+  });
+
+export const resolveBossRound = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    action: z.enum(["strike", "hold"]).optional(),
+    defenses: z.record(z.string(), z.enum(["block", "dodge"])).optional(),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: session } = await supabase.from("boss_fight_sessions").select("*").eq("owner_id", userId).maybeSingle();
+    if (!session) throw new Error("No boss fight in progress");
+
+    const boss = BOSS_ENCOUNTERS.find(b => b.key === session.boss_key);
+    if (!boss) throw new Error("Unknown boss");
+    const phaseDef = boss.phases[session.phase - 1];
+
+    // The server owns the round's deadline — a request arriving after it
+    // (slow client, dropped connection, tab left open) always resolves as
+    // the worst case for whatever beat is live, regardless of what the
+    // client actually submitted.
+    const late = Date.now() > new Date(session.round_deadline).getTime();
+    const action: "strike" | "hold" = late ? "hold" : (data.action ?? "hold");
+
+    const log: string[] = Array.isArray(session.log) ? [...(session.log as string[])] : [];
+    let bossHp = session.boss_hp;
+    let partyHp = session.party_hp;
+
+    if (session.beat_type === "net_bonus") {
+      if (action === "strike") {
+        const dmg = Math.round(session.team_power * (phaseDef.netBonusDamageScale ?? 0));
+        bossHp -= dmg;
+        log.push(`Round ${session.round}: the net snares ${boss.name} — a clean opening for ${dmg}.`);
+      } else {
+        log.push(`Round ${session.round}: the net goes unused.`);
+      }
+    } else if (session.beat_type === "vulnerable") {
+      if (action === "strike") {
+        const dmg = Math.round(session.team_power * phaseDef.vulnerableDamageScale);
+        bossHp -= dmg;
+        log.push(`Round ${session.round}: ${boss.name} is exposed — you strike for ${dmg}.`);
+      } else {
+        log.push(`Round ${session.round}: an opening comes and goes.`);
+      }
+    } else {
+      // Defensive beat — every gladiator must individually block (if they
+      // carry a shield) or dodge (if they don't). A late/missing response
+      // counts as failed for that gladiator, same "worst case" rule as
+      // every other timeout in this fight. One gap in the line is enough
+      // for the boar through — a single failure costs the whole party, this
+      // isn't graduated by how many got it wrong.
+      const shieldMap = (session.shield_map ?? {}) as Record<string, boolean>;
+      const names = session.gladiator_names ?? [];
+      const defenses: Record<string, string> = late ? {} : (data.defenses ?? {});
+      let failedCount = 0;
+      const beats: string[] = [];
+      const allShieldParty = session.gladiator_ids.every(id => shieldMap[id]);
+      session.gladiator_ids.forEach((id, i) => {
+        const correct = shieldMap[id] ? "block" : "dodge";
+        const picked = defenses[id];
+        const name = names[i] ?? "A gladiator";
+        if (picked === correct) {
+          beats.push(`${name} ${correct === "block" ? "blocks" : "dodges"} clean`);
+        } else {
+          failedCount++;
+          beats.push(picked ? `${name} ${picked === "block" ? "blocks" : "dodges"} the wrong way` : `${name} hesitates`);
+        }
+      });
+      if (failedCount > 0) {
+        const dmg = Math.round(session.party_max_hp * phaseDef.defensiveDamageScale);
+        partyHp -= dmg;
+        log.push(`Round ${session.round}: ${beats.join("; ")} — the line breaks, ${dmg} damage taken.`);
+      } else if (allShieldParty) {
+        // Shieldwall — a full line of shields, all blocking clean, punches
+        // back with a critical counter instead of just weathering the hit.
+        const dmg = Math.round(session.team_power * phaseDef.vulnerableDamageScale * boss.shieldwallCritMult);
+        bossHp -= dmg;
+        log.push(`Round ${session.round}: ${beats.join("; ")} — Shieldwall! The cohort counters as one, a critical strike for ${dmg}.`);
+      } else {
+        log.push(`Round ${session.round}: ${beats.join("; ")} — no damage taken.`);
+      }
+    }
+
+    // The boar keeps mauling passively every second, regardless of the
+    // round's beat — reduced by the party's frozen average armor
+    // mitigation, floored so armor can blunt it but never fully negate it.
+    const roundStartedAt = new Date(session.round_deadline).getTime() - boss.roundDeadlineMs;
+    const elapsedMs = Math.min(boss.roundDeadlineMs, Math.max(0, Date.now() - roundStartedAt));
+    const tickPerSecond = Math.max(1, Math.round(session.party_max_hp * phaseDef.tickDamageScale) - session.armor_reduction);
+    const tickDamage = Math.round(tickPerSecond * (elapsedMs / 1000));
+    if (tickDamage > 0) {
+      partyHp -= tickDamage;
+      log.push(`The boar's constant mauling costs ${tickDamage} more.`);
+    }
+
+    bossHp = Math.max(0, bossHp);
+    const partyDefeated = partyHp <= 1;
+    partyHp = Math.max(1, partyHp);
+
+    const XP_PER_GLADIATOR = 200;
+
+    const finish = async (won: boolean) => {
+      const { data: gs } = await supabase.from("gladiators").select("*").in("id", session.gladiator_ids).eq("owner_id", userId);
+      const team = gs ?? [];
+      const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+      const medicusLevel = profile?.medicus_level ?? 1;
+      const trainingLevel = profile?.training_level ?? 1;
+      const ownedRelics = profile?.relics ?? [];
+      const bossKills = { ...(profile?.boss_kills as Record<string, number> ?? {}) };
+      if (won) bossKills[boss.key] = (bossKills[boss.key] ?? 0) + 1;
+
+      const damageTaken = session.party_max_hp - partyHp;
+      let denariiGained = 0;
+      const gearNotes: string[] = [];
+      const lootDrops: string[] = [];
+      const newRelics: string[] = [];
+      const denariiItem = boss.lootTable.find((i): i is Extract<LootItem, { effect: "denarii" }> => i.effect === "denarii");
+      const gearItem = boss.lootTable.find((i): i is Extract<LootItem, { effect: "gear" }> => i.effect === "gear");
+      const trinketItems = boss.lootTable.filter((i): i is Extract<LootItem, { effect: "trinket" }> => i.effect === "trinket");
+
+      // Group-level rewards roll once per fight, not per gladiator — only
+      // "gear" is an individual roll, below. Trinkets are unique: the roll
+      // is skipped once the ludus already owns that relic.
+      if (won) {
+        if (denariiItem && Math.random() < denariiItem.chance) {
+          lootDrops.push(denariiItem.key);
+          denariiGained += rand(denariiItem.min, denariiItem.max);
+        }
+        for (const item of trinketItems) {
+          if (ownedRelics.includes(item.relicKey) || newRelics.includes(item.relicKey)) continue;
+          if (Math.random() < item.chance) {
+            lootDrops.push(item.key);
+            newRelics.push(item.relicKey);
+          }
+        }
+      }
+
+      // Flat 200 XP per gladiator on a win — but a costly win still costs
+      // you: losing a third of the party's pooled health forfeits XP for
+      // the last-picked gladiator, two-thirds forfeits it for the last two.
+      // A loss already grants none (the whole party effectively "wiped").
+      const damageFraction = session.party_max_hp > 0 ? damageTaken / session.party_max_hp : 0;
+      const xpIneligibleCount = damageFraction >= 2 / 3 ? 2 : damageFraction >= 1 / 3 ? 1 : 0;
+      const xpIneligibleIds = new Set(xpIneligibleCount > 0 ? session.gladiator_ids.slice(-xpIneligibleCount) : []);
+      const xpNotes: string[] = [];
+      const xpByGladiator = new Map<string, number>();
+
+      for (const g of team) {
+        const shareDamage = Math.floor(damageTaken / team.length) + rand(-5, 10);
+        const dmg = Math.max(1, shareDamage);
+        const currentHealth = effectiveHealth(g, medicusLevel, trainingLevel);
+        const newHealth = Math.max(1, currentHealth - dmg);
+        let injuryUntil: string | null = null;
+        if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
+          const hours = injuryHours(rand(12, 24), g.agility, medicusLevel, trainingLevel);
+          injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
+        }
+
+        let newXp = g.experience;
+        let newLevel = g.level;
+        const gladXp = won && !xpIneligibleIds.has(g.id) ? XP_PER_GLADIATOR : 0;
+        xpByGladiator.set(g.id, gladXp);
+        if (gladXp > 0) {
+          newXp += gladXp;
+          const xpForNext = newLevel * 100;
+          if (newXp >= xpForNext) { newXp -= xpForNext; newLevel += 1; }
+        } else if (won) {
+          xpNotes.push(`${g.name} is too battered to profit from the win — no XP.`);
+        }
+
+        const patch: Record<string, unknown> = {
+          health: newHealth,
+          health_updated_at: new Date().toISOString(),
+          injury_until: injuryUntil,
+          wins: g.wins + (won ? 1 : 0),
+          losses: g.losses + (won ? 0 : 1),
+          experience: newXp,
+          level: newLevel,
+        };
+
+        if (won && gearItem && Math.random() < gearItem.chance) {
+          lootDrops.push(gearItem.key);
+          const row = g as unknown as Record<string, number>;
+          const options = GEAR_SLOT_KEYS.filter(k => (row[k] ?? 0) < MAX_GEAR_TIER);
+          if (options.length > 0) {
+            const slot = options[Math.floor(Math.random() * options.length)];
+            patch[slot] = row[slot] + 1;
+            gearNotes.push(`${g.name}: +1 ${GEAR_SLOT_LABELS[slot]}`);
+          } else {
+            const consolation = Math.max(1, Math.round(50 * (0.85 + Math.random() * 0.3)));
+            denariiGained += consolation;
+            gearNotes.push(`${g.name}: already mastercrafted — +${consolation} denarii instead`);
+          }
+        }
+
+        const { error: updateErr } = await supabaseAdmin.from("gladiators").update(patch as never).eq("id", g.id);
+        if (updateErr) throw new Error(updateErr.message);
+      }
+
+      if (!won && denariiItem) {
+        denariiGained += Math.floor(((denariiItem.min + denariiItem.max) / 2) * 0.15);
+      }
+      const allRelics = [...ownedRelics, ...newRelics];
+      denariiGained = applyGoldBonus(denariiGained, allRelics, bossKills);
+      const totalXpGained = [...xpByGladiator.values()].reduce((a, b) => a + b, 0);
+
+      const relicNotes = newRelics.map(k => RELICS.find(r => r.key === k)?.label ?? k);
+      log.push(won
+        ? `${boss.name} falls. +${denariiGained} denarii.${totalXpGained > 0 ? ` +${XP_PER_GLADIATOR} XP each.` : ""}${gearNotes.length ? " " + gearNotes.join(", ") : ""}${xpNotes.length ? " " + xpNotes.join(" ") : ""}${relicNotes.length ? ` The cohort discovers ${relicNotes.join(", ")}!` : ""}`
+        : `The cohort is broken and falls back. A small purse of ${denariiGained} denarii for their courage.`);
+
+      if (profile) {
+        await supabaseAdmin.from("profiles").update({
+          denarii: profile.denarii + denariiGained,
+          relics: allRelics,
+          boss_kills: bossKills,
+        }).eq("id", userId);
+      }
+
+      for (const g of team) {
+        await supabase.from("matches").insert({
+          owner_id: userId,
+          gladiator_id: g.id,
+          opponent_name: boss.name,
+          opponent_power: session.boss_max_hp,
+          difficulty: `boss:${boss.key}`,
+          result: won ? "win" : "loss",
+          xp_gained: xpByGladiator.get(g.id) ?? 0,
+          denarii_gained: Math.floor(denariiGained / team.length),
+          reputation_gained: 0,
+          log,
+        });
+      }
+
+      await supabaseAdmin.from("boss_attempts").insert({
+        owner_id: userId,
+        boss_key: boss.key,
+        gladiator_ids: session.gladiator_ids,
+        won,
+        denarii_gained: denariiGained,
+        xp_gained: totalXpGained,
+        reputation_gained: 0,
+        loot_drops: lootDrops,
+        log,
+      });
+      await supabaseAdmin.from("boss_fight_sessions").delete().eq("owner_id", userId);
+
+      return { done: true as const, won, log, denariiGained, repGained: 0 };
+    };
+
+    if (bossHp <= 0) {
+      if (session.phase < boss.phases.length) {
+        const nextPhaseDef = boss.phases[session.phase];
+        const nextBossMaxHp = Math.max(1, Math.round(session.team_power * nextPhaseDef.hpScale));
+        const { data: gs } = await supabase.from("gladiators").select("weapon_type").in("id", session.gladiator_ids);
+        const hasNet = (gs ?? []).some(g => g.weapon_type === "net");
+        const nextBeat = nextPhaseDef.netBonus && hasNet
+          ? "net_bonus"
+          : (Math.random() < nextPhaseDef.vulnerableChance ? "vulnerable" : "defensive");
+        log.push(`Phase ${session.phase + 1}: ${boss.name} presses on.`);
+        const { data: updated, error } = await supabaseAdmin.from("boss_fight_sessions").update({
+          phase: session.phase + 1,
+          boss_hp: nextBossMaxHp,
+          boss_max_hp: nextBossMaxHp,
+          party_hp: partyHp,
+          round: 1,
+          beat_type: nextBeat,
+          round_deadline: new Date(Date.now() + boss.roundDeadlineMs).toISOString(),
+          log,
+        }).eq("owner_id", userId).select("*").single();
+        if (error) throw new Error(error.message);
+        return { done: false as const, session: updated };
+      }
+      return await finish(true);
+    }
+
+    if (partyDefeated) return await finish(false);
+
+    if (session.round >= boss.maxRoundsPerPhase) return await finish(false);
+
+    const nextBeat = Math.random() < phaseDef.vulnerableChance ? "vulnerable" : "defensive";
+    const { data: updated, error } = await supabaseAdmin.from("boss_fight_sessions").update({
+      boss_hp: bossHp,
+      party_hp: partyHp,
+      round: session.round + 1,
+      beat_type: nextBeat,
+      round_deadline: new Date(Date.now() + boss.roundDeadlineMs).toISOString(),
+      log,
+    }).eq("owner_id", userId).select("*").single();
+    if (error) throw new Error(error.message);
+    return { done: false as const, session: updated };
   });
 
 
@@ -1849,7 +2292,7 @@ export const runSocialEvent = createServerFn({ method: "POST" })
     if (event.outcome === "denarii") {
       const jitter = 0.85 + Math.random() * 0.3;
       const base = Math.max(1, Math.round((event.amount ?? 0) * jitter));
-      denariiDelta = event.tone === "positive" ? base * party.length : -base;
+      denariiDelta = event.tone === "positive" ? applyGoldBonus(base * party.length, profile.relics, profile.boss_kills as Record<string, number>) : -base;
       summary = `${denariiDelta > 0 ? "+" : ""}${denariiDelta} denarii`;
     } else if (event.outcome === "reputation") {
       const base = event.amount ?? 0;
@@ -1880,7 +2323,7 @@ export const runSocialEvent = createServerFn({ method: "POST" })
         const options = slotKeys.filter(k => (row[k] ?? 0) < MAX_GEAR_TIER);
         if (options.length === 0) {
           // Already mastercrafted everywhere — a small consolation purse instead.
-          const consolation = Math.max(1, Math.round(100 * (0.85 + Math.random() * 0.3)));
+          const consolation = applyGoldBonus(Math.max(1, Math.round(100 * (0.85 + Math.random() * 0.3))), profile.relics, profile.boss_kills as Record<string, number>);
           denariiDelta += consolation;
           perGladiator.push(`${g.name}: already mastercrafted — +${consolation} denarii instead`);
           continue;

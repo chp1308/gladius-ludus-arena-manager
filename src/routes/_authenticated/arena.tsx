@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   getLudusState, fightMatch, fightTeamBattle,
@@ -11,8 +11,10 @@ import {
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator, healCost,
   getPitFightAvailability, PIT_MAX_CHARGES,
+  getBossFightState, startBossFight, resolveBossRound,
 } from "@/lib/game.functions";
 import type { FightRound } from "@/lib/game.functions";
+import { BOSS_ENCOUNTERS, bossRequirementError, type BossDefinition } from "@/lib/boss-encounters";
 import { FaceAvatar } from "./ludus";
 import type { PortraitSubject } from "./ludus";
 import { Button } from "@/components/ui/button";
@@ -25,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart, Flame } from "lucide-react";
+import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart, Flame, Zap, Wind } from "lucide-react";
 
 function formatCountdown(iso: string): string {
   return formatMinutes(minutesUntil(iso));
@@ -71,6 +73,7 @@ export const Route = createFileRoute("/_authenticated/arena")({
 
 type State = Awaited<ReturnType<typeof getLudusState>>;
 type Gladiator = State["gladiators"][number];
+type BossSessionRow = NonNullable<Awaited<ReturnType<typeof getBossFightState>>["session"]>;
 
 function ArenaPage() {
   const fetchState = useServerFn(getLudusState);
@@ -86,7 +89,7 @@ function ArenaPage() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <div>
-              <div className="font-display text-xl tracking-widest text-primary">The Arena</div>
+              <div className="font-display text-xl tracking-widest text-primary">Fights</div>
               <div className="mt-1 flex items-center gap-4 text-sm font-serif italic text-muted-foreground">
                 <span className="flex items-center gap-1"><Coins className="h-4 w-4 text-accent" /> {denarii} denarii</span>
                 <span className="flex items-center gap-1"><Award className="h-4 w-4 text-accent" /> {data.profile?.reputation ?? 0} fame</span>
@@ -102,15 +105,17 @@ function ArenaPage() {
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Tabs defaultValue="pits" className="w-full">
-          <TabsList className="grid w-full max-w-xl grid-cols-3">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
             <TabsTrigger value="pits"><Swords className="mr-1 h-4 w-4" /> Pit Fights</TabsTrigger>
             <TabsTrigger value="pvp"><Shield className="mr-1 h-4 w-4" /> Rival Ludi</TabsTrigger>
             <TabsTrigger value="team"><Users className="mr-1 h-4 w-4" /> Team Battles</TabsTrigger>
+            <TabsTrigger value="boss"><Skull className="mr-1 h-4 w-4" /> Boss Fights</TabsTrigger>
           </TabsList>
 
           <TabsContent value="pits" className="mt-6"><PitFights state={data} /></TabsContent>
           <TabsContent value="pvp" className="mt-6"><PvpFights state={data} /></TabsContent>
           <TabsContent value="team" className="mt-6"><TeamFights state={data} /></TabsContent>
+          <TabsContent value="boss" className="mt-6"><BossFights state={data} /></TabsContent>
         </Tabs>
       </main>
     </div>
@@ -777,6 +782,439 @@ function TeamFights({ state }: { state: State }) {
 }
 
 // -----------------------------------------------------------
+// BOSS FIGHTS — a live, multi-round reflex encounter. Unlike the other
+// fight types, this isn't fully resolved server-side in one call: each
+// round telegraphs a "beat" (vulnerable / defensive / a rare bonus opening),
+// the player has a few seconds to strike or hold, and the server scores
+// that round immediately before rolling the next one. See
+// startBossFight/resolveBossRound in game.functions.ts for the state
+// machine this screen is driving.
+// -----------------------------------------------------------
+function BossFights({ state }: { state: State }) {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const fetchBossState = useServerFn(getBossFightState);
+  const { data: bossState } = useQuery({
+    queryKey: ["boss-fight-state"],
+    queryFn: () => fetchBossState({}),
+  });
+  const startFn = useServerFn(startBossFight);
+  const resolveFn = useServerFn(resolveBossRound);
+
+  const [session, setSession] = useState<BossSessionRow | null>(null);
+  const [result, setResult] = useState<{ won: boolean; log: string[]; bossKey: string } | null>(null);
+  const [bossKey, setBossKey] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [resumed, setResumed] = useState(false);
+
+  useEffect(() => {
+    if (bossState?.session && !session && !resumed) {
+      setSession(bossState.session);
+      setResumed(true);
+    }
+  }, [bossState, session, resumed]);
+
+  const boss = bossKey ? BOSS_ENCOUNTERS.find(b => b.key === bossKey) ?? null : null;
+  const hasWonLocal = bossState?.hasWonLocal ?? false;
+  const chosen = state.gladiators.filter(g => selectedIds.includes(g.id));
+  const reqErr = boss && selectedIds.length === boss.size ? bossRequirementError(boss, chosen, hasWonLocal) : null;
+  const cooldownAt = boss ? (bossState?.cooldowns?.[boss.key] ?? null) : null;
+
+  const toggle = (id: string) => {
+    if (!boss) return;
+    setSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length >= boss.size) return prev;
+      return [...prev, id];
+    });
+  };
+
+  const beginEncounter = async () => {
+    if (!boss) return;
+    const ok = await confirm({
+      title: "Begin the encounter?",
+      description: `You are about to send ${boss.size} gladiators against ${boss.name}. This party is committed for the whole encounter and it plays out live — stay on this screen until it resolves. Do you wish to proceed?`,
+    });
+    if (ok) startMut.mutate();
+  };
+
+  const startMut = useMutation({
+    mutationFn: () => startFn({ data: { bossKey: boss!.key, gladiatorIds: selectedIds } }),
+    onSuccess: (r) => {
+      setSession(r.session);
+      setSelectedIds([]);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const resolveMut = useMutation({
+    mutationFn: (payload: { action?: "strike" | "hold"; defenses?: Record<string, "block" | "dodge"> }) => resolveFn({ data: payload }),
+    onSuccess: (r) => {
+      if (r.done) {
+        setResult({ ...r, bossKey: session!.boss_key });
+        setSession(null);
+        qc.invalidateQueries({ queryKey: ["ludus"] });
+        qc.invalidateQueries({ queryKey: ["boss-fight-state"] });
+      } else {
+        setSession(r.session);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (result) {
+    const resultBoss = BOSS_ENCOUNTERS.find(b => b.key === result.bossKey);
+    const resultImage = resultBoss ? (result.won ? resultBoss.defeatedImage : resultBoss.lossImage) : undefined;
+    return <ResultView result={result} image={resultImage} onClose={() => { setResult(null); qc.invalidateQueries({ queryKey: ["boss-fight-state"] }); }} />;
+  }
+
+  if (session) {
+    const party = state.gladiators.filter(g => session.gladiator_ids.includes(g.id));
+    const sessionBoss = BOSS_ENCOUNTERS.find(b => b.key === session.boss_key)!;
+    return (
+      <BossFightScreen
+        session={session}
+        boss={sessionBoss}
+        party={party}
+        pending={resolveMut.isPending}
+        onAction={(payload) => resolveMut.mutate(payload)}
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div>
+        <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">Choose an encounter</div>
+        <div className="space-y-2">
+          {BOSS_ENCOUNTERS.map(b => {
+            const selected = bossKey === b.key;
+            const locked = !hasWonLocal;
+            const cd = bossState?.cooldowns?.[b.key] ?? null;
+            const defeated = bossState?.defeated?.[b.key] ?? false;
+            const lootCounts = bossState?.lootCounts?.[b.key] ?? {};
+            return (
+              <div
+                key={b.key}
+                className={`rounded-lg border transition ${selected ? "border-primary bg-primary/10" : "border-border"}`}
+              >
+                <button
+                  disabled={locked || !!cd}
+                  onClick={() => { setBossKey(prev => prev === b.key ? null : b.key); setSelectedIds([]); }}
+                  className="flex w-full items-start gap-3 p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 hover:bg-primary/5"
+                >
+                  <img src={b.image} alt={b.name} className="h-16 w-16 shrink-0 rounded-md object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <div className="font-display text-base">{b.name}</div>
+                      <div className="text-xs text-accent">{defeated ? "Loot table revealed" : "??? reward"}</div>
+                    </div>
+                    <div className="mt-1 font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Requires: {b.size} gladiators</div>
+                    {locked && <div className="mt-1 text-xs text-destructive">🔒 Win a fight in Local Games first</div>}
+                    {cd && <div className="mt-1 text-xs text-destructive">Recovering — next in {formatCountdown(cd)}</div>}
+                  </div>
+                </button>
+                {selected && (
+                  <div className="border-t border-border p-4">
+                    <img src={b.image} alt={b.name} className="mb-3 h-64 w-full rounded-md object-cover" />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <div className="mb-1 text-xs uppercase tracking-widest text-muted-foreground">Myth</div>
+                        <p className="font-serif text-sm italic text-muted-foreground">{b.myth}</p>
+                        <div className="mb-1 mt-3 text-xs uppercase tracking-widest text-muted-foreground">Bestiary</div>
+                        {defeated ? (
+                          <ul className="space-y-1 text-sm">
+                            {b.phases.map(p => (
+                              <li key={p.name}><span className="font-display">{p.name}</span> — <span className="text-muted-foreground">{p.blurb}</span></li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">??? — defeat {b.name} once to reveal its true nature.</p>
+                        )}
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs uppercase tracking-widest text-muted-foreground">Loot Table</div>
+                        {defeated ? (
+                          <table className="w-full border-collapse text-sm">
+                            <thead>
+                              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                                <th className="py-1 font-normal">Item</th>
+                                <th className="py-1 font-normal">Odds</th>
+                                <th className="py-1 text-right font-normal">Found</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {b.lootTable.map(item => {
+                                const count = lootCounts[item.key] ?? 0;
+                                const found = count > 0;
+                                const itemLabel = item.effect === "denarii" ? `${item.label} (${item.min}–${item.max})` : item.label;
+                                return (
+                                  <tr key={item.key} className={`border-b border-border/60 ${found ? "text-green-600 dark:text-green-400" : ""}`}>
+                                    <td className={`py-1.5 ${found ? "font-semibold" : ""}`}>{itemLabel}</td>
+                                    <td className="py-1.5">{Math.round(item.chance * 100)}%</td>
+                                    <td className={`py-1.5 text-right font-display ${found ? "font-semibold" : "text-muted-foreground"}`}>
+                                      {item.effect === "trinket" ? (found ? "✓ Owned" : "—") : (found ? `×${count}` : "—")}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">??? — defeat {b.name} once to reveal its loot table.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        {boss ? (
+          <>
+            <Button
+              className="mb-4 w-full"
+              size="lg"
+              disabled={!!cooldownAt || startMut.isPending || selectedIds.length !== boss.size || !!reqErr}
+              onClick={beginEncounter}
+            >
+              {startMut.isPending ? "Entering the wilds..." : "Begin Encounter"}
+            </Button>
+            <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">
+              Party — {selectedIds.length}/{boss.size}
+            </div>
+            <div className="space-y-2">
+              {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
+                const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
+                const disabled = injured || gl.health < 30;
+                const selected = selectedIds.includes(gl.id);
+                return (
+                  <div key={gl.id}>
+                    <button
+                      disabled={!!disabled || startMut.isPending}
+                      onClick={() => toggle(gl.id)}
+                      className={`w-full rounded-lg border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        selected ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-display text-sm">
+                        <span className="flex items-center gap-1">
+                          {gl.is_beast && <Cat className="h-3 w-3 text-accent" />}
+                          {gl.name}
+                        </span>
+                        <Badge variant="outline">Lv {gl.level}</Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {gl.is_beast ? "Beast" : gl.class} · {WEAPON_LABELS[gl.weapon_type] ?? gl.weapon_type} · HP {gl.health}
+                      </div>
+                    </button>
+                    <HealButton g={gl} medicusLevel={state.profile?.medicus_level ?? 1} />
+                  </div>
+                );
+              })}
+            </div>
+            {reqErr && <p className="mt-3 text-xs text-destructive">{reqErr}</p>}
+            <Button
+              className="mt-4 w-full"
+              size="lg"
+              disabled={!!cooldownAt || startMut.isPending || selectedIds.length !== boss.size || !!reqErr}
+              onClick={beginEncounter}
+            >
+              {startMut.isPending ? "Entering the wilds..." : "Begin Encounter"}
+            </Button>
+          </>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            Choose an encounter to assemble your party.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type BossAction = { action?: "strike" | "hold"; defenses?: Record<string, "block" | "dodge"> };
+
+// One live round: a countdown against the server-issued deadline, a
+// telegraph banner for the current beat, and the choice — Strike/Hold on an
+// offensive beat, or a per-gladiator Block/Dodge call on a defensive one. If
+// the deadline lapses without a full response this auto-submits whatever's
+// chosen so far — matching the server, which treats any missing answer as
+// the worst case, so the two can never disagree about what happened.
+function BossFightScreen({
+  session, boss, party, pending, onAction,
+}: {
+  session: BossSessionRow; boss: BossDefinition; party: Gladiator[];
+  pending: boolean; onAction: (payload: BossAction) => void;
+}) {
+  const [msLeft, setMsLeft] = useState(() => new Date(session.round_deadline).getTime() - Date.now());
+  const [defenses, setDefenses] = useState<Record<string, "block" | "dodge">>({});
+  const autoSubmittedRef = useRef(false);
+
+  useEffect(() => {
+    autoSubmittedRef.current = false;
+    setDefenses({});
+    const tick = () => setMsLeft(Math.max(0, new Date(session.round_deadline).getTime() - Date.now()));
+    tick();
+    const interval = setInterval(tick, 100);
+    return () => clearInterval(interval);
+  }, [session.round, session.phase, session.round_deadline]);
+
+  const beat = session.beat_type;
+  const isDefensive = beat === "defensive";
+  const allChosen = isDefensive && party.every(g => defenses[g.id]);
+  const expired = msLeft <= 0;
+
+  useEffect(() => {
+    if (pending || autoSubmittedRef.current) return;
+    if (msLeft <= 0) {
+      autoSubmittedRef.current = true;
+      onAction(isDefensive ? { defenses } : { action: "hold" });
+    } else if (isDefensive && allChosen) {
+      autoSubmittedRef.current = true;
+      onAction({ defenses });
+    }
+  }, [msLeft, pending, onAction, isDefensive, allChosen, defenses]);
+
+  // B/D hotkeys during a defensive beat — each press calls block/dodge for
+  // the next gladiator in the party who doesn't have a choice locked in yet,
+  // so a player can clear the whole line from the keyboard under the timer.
+  useEffect(() => {
+    if (!isDefensive || pending) return;
+    const handler = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (key !== "b" && key !== "d") return;
+      const choice = key === "b" ? "block" : "dodge";
+      setDefenses(prev => {
+        const next = party.find(g => !prev[g.id]);
+        if (!next) return prev;
+        return { ...prev, [next.id]: choice };
+      });
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isDefensive, pending, party]);
+
+  // S/H hotkeys for the offensive beat's Strike/Hold call.
+  useEffect(() => {
+    if (isDefensive || pending || expired) return;
+    const handler = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (key !== "s" && key !== "h") return;
+      onAction({ action: key === "s" ? "strike" : "hold" });
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isDefensive, pending, expired, onAction]);
+
+  const log = Array.isArray(session.log) ? (session.log as string[]) : [];
+  const lastLine = log[log.length - 1];
+  const beatLabel = beat === "net_bonus" ? "AN OPENING — Net it!" : beat === "vulnerable" ? "VULNERABLE — Strike!" : "CHARGING — Block or dodge!";
+  const beatColor = beat === "net_bonus"
+    ? "border-sky-500/60 text-sky-400"
+    : beat === "vulnerable"
+      ? "border-amber-500/60 text-amber-400"
+      : "border-destructive/60 text-destructive";
+  const secondsLeft = Math.ceil(msLeft / 1000);
+
+  return (
+    <div
+      className="space-y-6 rounded-xl p-4 md:p-6"
+      style={{
+        backgroundImage: `linear-gradient(to bottom, oklch(0.15 0.02 40 / 0.72) 0%, oklch(0.12 0.02 40 / 0.85) 100%), url(${boss.arenaBg})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      <div className="text-center">
+        <div className="font-display text-lg text-primary">{boss.name} — Phase {session.phase}/{boss.phases.length}</div>
+        {lastLine && <p className="mt-1 font-serif text-sm italic text-muted-foreground">{lastLine}</p>}
+      </div>
+
+      <div className="flex items-center justify-center gap-10">
+        <FighterPanel label="Your Cohort" portrait={<PortraitCluster gladiators={party} />} hp={session.party_hp} maxHp={session.party_max_hp} hit={false} />
+        <FighterPanel label={boss.name} portrait={<BossPortrait boss={boss} beat={beat} />} hp={session.boss_hp} maxHp={session.boss_max_hp} hit={false} />
+      </div>
+
+      <div className={`mx-auto max-w-sm rounded-lg border-2 p-4 text-center ${beatColor}`}>
+        <div className="font-display text-xl tracking-wide">{beatLabel}</div>
+        <div className="mt-1 font-display text-3xl tabular-nums">{expired ? "..." : `${secondsLeft}s`}</div>
+      </div>
+
+      {isDefensive ? (
+        <div className="mx-auto grid max-w-xl gap-2 sm:grid-cols-3">
+          {party.map(g => {
+            const picked = defenses[g.id];
+            return (
+              <div key={g.id} className="rounded-lg border border-border p-2 text-center">
+                <div className="truncate font-display text-sm">{g.name}</div>
+                <div className="mb-2 text-xs text-muted-foreground">{g.is_beast ? "Beast" : (WEAPON_LABELS[g.weapon_type] ?? g.weapon_type)}</div>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant={picked === "block" ? "default" : "outline"}
+                    className="relative min-w-0 flex-1 gap-1 overflow-visible px-1.5"
+                    disabled={pending || expired}
+                    onClick={() => setDefenses(prev => ({ ...prev, [g.id]: "block" }))}
+                  >
+                    <Shield className="h-3 w-3 shrink-0" />
+                    <span className="min-w-0 truncate">Block</span>
+                    <kbd className="absolute -right-1 -top-1.5 rounded border border-border bg-background px-1 text-[9px] leading-tight text-foreground opacity-90">B</kbd>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={picked === "dodge" ? "default" : "outline"}
+                    className="relative min-w-0 flex-1 gap-1 overflow-visible px-1.5"
+                    disabled={pending || expired}
+                    onClick={() => setDefenses(prev => ({ ...prev, [g.id]: "dodge" }))}
+                  >
+                    <Wind className="h-3 w-3 shrink-0" />
+                    <span className="min-w-0 truncate">Dodge</span>
+                    <kbd className="absolute -right-1 -top-1.5 rounded border border-border bg-background px-1 text-[9px] leading-tight text-foreground opacity-90">D</kbd>
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex justify-center gap-3">
+          <Button size="lg" className="relative overflow-visible" disabled={pending || expired} onClick={() => onAction({ action: "strike" })}>
+            <Zap className="mr-2 h-5 w-5" /> Strike
+            <kbd className="absolute -right-1.5 -top-1.5 rounded border border-border bg-background px-1 text-[10px] leading-tight text-foreground opacity-90">S</kbd>
+          </Button>
+          <Button size="lg" variant="outline" className="relative overflow-visible" disabled={pending || expired} onClick={() => onAction({ action: "hold" })}>
+            <Shield className="mr-2 h-5 w-5" /> Hold
+            <kbd className="absolute -right-1.5 -top-1.5 rounded border border-border bg-background px-1 text-[10px] leading-tight text-foreground opacity-90">H</kbd>
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Charge art for the "CHARGING" defensive beat, howl art for everything
+// else (vulnerable openings and the rare net-bonus) — dummy placeholders
+// for now, swapped for the real per-boss poses at the same import paths
+// once art lands (see boss-encounters.ts).
+function BossPortrait({ boss, beat }: { boss: BossDefinition; beat: string }) {
+  const ring = beat === "net_bonus" ? "border-sky-500/70 shadow-[0_0_22px_rgba(56,189,248,0.55)]"
+    : beat === "vulnerable" ? "border-amber-500/70 shadow-[0_0_22px_rgba(251,191,36,0.55)]"
+      : "border-destructive/70 shadow-[0_0_22px_rgba(220,38,38,0.55)]";
+  const pose = beat === "defensive" ? boss.chargeImage : boss.howlImage;
+  return (
+    <div className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 transition-shadow duration-300 ${ring}`}>
+      <img src={pose} alt={boss.name} className="h-full w-full object-cover" />
+    </div>
+  );
+}
+
+// -----------------------------------------------------------
 // Animated battle replay — plays before the reward/result dialog.
 // The fight is fully resolved server-side (fair, ungameable); this just
 // gives the already-computed rounds a round-by-round visual presentation.
@@ -912,16 +1350,20 @@ function BattleAnimation({
 // -----------------------------------------------------------
 // Shared result view
 // -----------------------------------------------------------
-function ResultView({ result, onClose }: { result: { won: boolean; log: string[] }; onClose: () => void }) {
+function ResultView({ result, onClose, image }: { result: { won: boolean; log: string[] }; onClose: () => void; image?: string }) {
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl">{result.won ? "Victory!" : "Defeat"}</DialogTitle>
         </DialogHeader>
-        <div className={`rounded-lg p-3 text-center ${result.won ? "bg-accent/20" : "bg-muted"}`}>
-          {result.won ? <Trophy className="mx-auto h-8 w-8 text-accent" /> : <Skull className="mx-auto h-8 w-8 text-muted-foreground" />}
-        </div>
+        {image ? (
+          <img src={image} alt={result.won ? "Victory" : "Defeat"} className="h-48 w-full rounded-lg object-cover" />
+        ) : (
+          <div className={`rounded-lg p-3 text-center ${result.won ? "bg-accent/20" : "bg-muted"}`}>
+            {result.won ? <Trophy className="mx-auto h-8 w-8 text-accent" /> : <Skull className="mx-auto h-8 w-8 text-muted-foreground" />}
+          </div>
+        )}
         <ol className="max-h-72 space-y-1 overflow-y-auto font-serif text-sm">
           {result.log.map((line, i) => (
             <li key={i} className="border-l-2 border-border pl-3">{line}</li>

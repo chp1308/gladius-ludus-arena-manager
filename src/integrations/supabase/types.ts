@@ -229,6 +229,111 @@ export type Database = {
           },
         ]
       }
+      boss_fight_sessions: {
+        Row: {
+          armor_reduction: number
+          beat_type: string
+          boss_hp: number
+          boss_key: string
+          boss_max_hp: number
+          created_at: string
+          gladiator_ids: string[]
+          gladiator_names: string[]
+          id: string
+          log: Json
+          owner_id: string
+          party_hp: number
+          party_max_hp: number
+          phase: number
+          round: number
+          round_deadline: string
+          shield_map: Json
+          team_power: number
+        }
+        Insert: {
+          armor_reduction?: number
+          beat_type: string
+          boss_hp: number
+          boss_key: string
+          boss_max_hp: number
+          created_at?: string
+          gladiator_ids: string[]
+          gladiator_names?: string[]
+          id?: string
+          log?: Json
+          owner_id: string
+          party_hp: number
+          party_max_hp: number
+          phase?: number
+          round?: number
+          round_deadline: string
+          shield_map?: Json
+          team_power: number
+        }
+        Update: {
+          armor_reduction?: number
+          beat_type?: string
+          boss_hp?: number
+          boss_key?: string
+          boss_max_hp?: number
+          created_at?: string
+          gladiator_ids?: string[]
+          gladiator_names?: string[]
+          id?: string
+          log?: Json
+          owner_id?: string
+          party_hp?: number
+          party_max_hp?: number
+          phase?: number
+          round?: number
+          round_deadline?: string
+          shield_map?: Json
+          team_power?: number
+        }
+        Relationships: []
+      }
+      boss_attempts: {
+        Row: {
+          boss_key: string
+          created_at: string
+          denarii_gained: number
+          gladiator_ids: string[]
+          id: string
+          log: Json
+          loot_drops: string[]
+          owner_id: string
+          reputation_gained: number
+          won: boolean
+          xp_gained: number
+        }
+        Insert: {
+          boss_key: string
+          created_at?: string
+          denarii_gained?: number
+          gladiator_ids: string[]
+          id?: string
+          log?: Json
+          loot_drops?: string[]
+          owner_id: string
+          reputation_gained?: number
+          won: boolean
+          xp_gained?: number
+        }
+        Update: {
+          boss_key?: string
+          created_at?: string
+          denarii_gained?: number
+          gladiator_ids?: string[]
+          id?: string
+          log?: Json
+          loot_drops?: string[]
+          owner_id?: string
+          reputation_gained?: number
+          won?: boolean
+          xp_gained?: number
+        }
+        Relationships: []
+      }
       social_events: {
         Row: {
           created_at: string
@@ -270,6 +375,7 @@ export type Database = {
           armory_level: number
           best_rank: number | null
           bio: string
+          boss_kills: Json
           created_at: string
           denarii: number
           description: string
@@ -278,6 +384,7 @@ export type Database = {
           ludus_name: string
           medicus_level: number
           pantry_level: number
+          relics: string[]
           reputation: number
           scouting_level: number
           showcase_gladiator_ids: string[]
@@ -290,6 +397,7 @@ export type Database = {
           armory_level?: number
           best_rank?: number | null
           bio?: string
+          boss_kills?: Json
           created_at?: string
           denarii?: number
           description?: string
@@ -298,6 +406,7 @@ export type Database = {
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number
+          relics?: string[]
           reputation?: number
           scouting_level?: number
           showcase_gladiator_ids?: string[]
@@ -310,6 +419,7 @@ export type Database = {
           armory_level?: number
           best_rank?: number | null
           bio?: string
+          boss_kills?: Json
           created_at?: string
           denarii?: number
           description?: string
@@ -318,6 +428,7 @@ export type Database = {
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number
+          relics?: string[]
           reputation?: number
           scouting_level?: number
           showcase_gladiator_ids?: string[]

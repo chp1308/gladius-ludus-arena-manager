@@ -14,13 +14,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MAX_GEAR_TIER, requiredArmoryLevel } from "@/lib/game.functions";
+import { RELICS } from "@/lib/relics";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem } from "lucide-react";
 import cityBg from "@/assets/ludus/city-bg.jpg";
 import bLudus from "@/assets/ludus/b-ludus.png";
 import bMarket from "@/assets/ludus/b-market.png";
@@ -33,6 +34,7 @@ import bTemple from "@/assets/ludus/b-temple.png";
 import bChronicle from "@/assets/ludus/b-chronicle.png";
 import bPantry from "@/assets/ludus/b-pantry.png";
 import bSocial from "@/assets/ludus/b-social.png";
+import bRelics from "@/assets/ludus/b-relics.png";
 
 // gear tier art — 4 visual grades map to tiers 1-2 / 3-4 / 5-6 / 7-8
 import helmet1 from "@/assets/gear/helmet-1.png";
@@ -275,7 +277,7 @@ function LudusPage() {
             </Button>
             <Link to="/arena">
               <Button size="lg" className="h-11 px-5 text-base shadow-lg shadow-primary/20">
-                <Swords className="mr-2 h-5 w-5" /> Arena
+                <Swords className="mr-2 h-5 w-5" /> Fights
               </Button>
             </Link>
             <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
@@ -301,7 +303,7 @@ function LudusPage() {
 // -----------------------------------------------------------
 // VILLAGE — map of interactive buildings replacing the tab menu
 // -----------------------------------------------------------
-type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "pantry" | "study" | "temple" | "chronicle" | "social";
+type BuildingKey = "ludus" | "market" | "training" | "scouting" | "medicus" | "armory" | "pantry" | "study" | "temple" | "chronicle" | "social" | "relics";
 
 type Building = {
   key: BuildingKey;
@@ -324,6 +326,7 @@ const BUILDINGS: Building[] = [
   { key: "temple",   name: "Temple of Memory", flavor: "Honor the fallen in your Hall of Fame.", Icon: Award,      image: bTemple },
   { key: "chronicle",name: "Chronicle Stele",  flavor: "Every match, carved in stone.",          Icon: ScrollText, image: bChronicle },
   { key: "social",   name: "Cursus Honorum",   flavor: "Climb Rome's social ladder.",            Icon: Landmark,   image: bSocial },
+  { key: "relics",   name: "Temple of Relics", flavor: "Rare treasures won from mythic beasts.", Icon: Gem,        image: bRelics },
 ];
 
 function VillageView({
@@ -535,6 +538,8 @@ function BuildingPanel({
             <HallOfFame state={state} />
           </>
         )}
+
+        {buildingKey === "relics" && <RelicsPanel state={state} />}
 
         {buildingKey === "chronicle" && (
           <Card className="inscribed ornate-border">
@@ -1416,7 +1421,7 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
               className={`flex-1 ${(!!injured || g.health < 30) ? "pointer-events-none opacity-50" : ""}`}
             >
               <Button size="sm" className="w-full" disabled={!!injured || g.health < 30}>
-                <Swords className="mr-1 h-4 w-4" /> To the Arena
+                <Swords className="mr-1 h-4 w-4" /> To the Fights
               </Button>
             </Link>
             <Button
@@ -1654,6 +1659,61 @@ function HallOfFame({ state }: { state: State }) {
             ))}
           </ul>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RelicsPanel({ state }: { state: State }) {
+  const owned = state.profile?.relics ?? [];
+  const bossKills = (state.profile as unknown as { boss_kills?: Record<string, number> })?.boss_kills ?? {};
+  return (
+    <Card className="inscribed ornate-border">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 font-display">
+          <Gem className="h-5 w-5 text-accent" /> Relics
+        </CardTitle>
+        <p className="font-serif text-sm italic text-muted-foreground">
+          Rare treasures won from mythic beasts — permanent, account-wide boons found in boss loot tables.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <ul className="divide-y divide-border">
+          {RELICS.map((r) => {
+            const has = owned.includes(r.key);
+            const kills = r.bonusTier ? (bossKills[r.bonusTier.bossKey] ?? 0) : 0;
+            const tierUnlocked = !!r.bonusTier && kills >= r.bonusTier.killsRequired;
+            return (
+              <li key={r.key} className="flex items-center justify-between gap-4 py-3">
+                <div className="flex items-center gap-3">
+                  {has ? (
+                    <img src={r.image} alt={r.label} className="h-14 w-14 shrink-0 rounded-md object-cover" />
+                  ) : (
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
+                      <Gem className="h-6 w-6" />
+                    </div>
+                  )}
+                  <div>
+                    <div className={`flex items-center gap-2 font-display text-base ${has ? "text-primary" : "text-muted-foreground"}`}>
+                      {has ? r.label : "???"}
+                    </div>
+                    <p className="mt-1 font-serif text-sm italic text-muted-foreground">
+                      {has ? r.description : "An undiscovered relic. Defeat the beast that guards it to find out what it does."}
+                    </p>
+                    {has && r.bonusTier && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {tierUnlocked ? r.bonusTier.label : `${kills}/${r.bonusTier.killsRequired} slain — ${r.bonusTier.killsRequired - kills} more for another +${Math.round(r.bonusTier.extraGoldBonusPct * 100)}%.`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Badge variant={has ? "default" : "outline"} className="shrink-0">
+                  {has ? "Owned" : "Not found"}
+                </Badge>
+              </li>
+            );
+          })}
+        </ul>
       </CardContent>
     </Card>
   );
