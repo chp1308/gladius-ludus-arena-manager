@@ -1,7 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Swords, Shield, Heart, Zap, Brain, Dumbbell, Award, Scale } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { createFileRoute } from "@tanstack/react-router";
+import { Swords, Shield, Heart, Zap, Brain, Dumbbell, Award, Scale } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { AppHeader } from "@/components/app-header";
 
 export const Route = createFileRoute("/_authenticated/info")({
   head: () => ({
@@ -43,17 +43,7 @@ const WEAPON_STYLES: { label: string; str: number; agi: number; sta: number; tec
 function InfoPage() {
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-card/60 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/ludus" className="text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div className="font-display text-xl tracking-widest text-primary">Combat Codex</div>
-          </div>
-          <Link to="/ludus"><Button variant="ghost" size="sm">Back to Ludus</Button></Link>
-        </div>
-      </header>
+      <AppHeader backTo="/ludus" maxWidth="max-w-5xl" title="Combat Codex" />
 
       <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
         <Card className="p-6">

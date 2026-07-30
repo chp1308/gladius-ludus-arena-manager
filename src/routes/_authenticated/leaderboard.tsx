@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Trophy, Crown, Swords } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Trophy, Crown, Swords } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AppHeader } from "@/components/app-header";
 import { getLeaderboards, WEAPON_LABELS } from "@/lib/game.functions";
 
 export const Route = createFileRoute("/_authenticated/leaderboard")({
@@ -26,19 +26,10 @@ function LeaderboardPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-card/60 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/ludus" className="text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div className="flex items-center gap-2 font-display text-xl tracking-widest text-primary">
-              <Trophy className="h-5 w-5" /> Hall of Champions
-            </div>
-          </div>
-          <Link to="/ludus"><Button variant="ghost" size="sm">Back to Ludus</Button></Link>
-        </div>
-      </header>
+      <AppHeader
+        backTo="/ludus"
+        title={<span className="flex items-center gap-2"><Trophy className="h-5 w-5" /> Hall of Champions</span>}
+      />
 
       <main className="mx-auto grid max-w-6xl gap-6 px-6 py-8 md:grid-cols-2">
         <Card className="p-6">

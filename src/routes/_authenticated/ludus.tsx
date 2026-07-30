@@ -18,6 +18,7 @@ import { RELICS } from "@/lib/relics";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
@@ -249,42 +250,33 @@ function LudusPage() {
   const [open, setOpen] = useState<BuildingKey | null>(null);
   const { onCooldown: socialOnCooldown, minutesLeft: socialMinutesLeft } = socialCooldownStatus(data.socialEvents);
 
+  const headerActions: HeaderAction[] = [
+    { key: "profile", label: "Public Profile", icon: <ScrollText className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/profile" }) },
+    { key: "codex", label: "Codex", icon: <BookOpen className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/info" }) },
+    { key: "champions", label: "Champions", icon: <Trophy className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/leaderboard" }) },
+    { key: "achievements", label: "Achievements", icon: <Medal className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/achievements" }) },
+    {
+      key: "cursus", icon: <Landmark className="mr-1 h-4 w-4" />, onClick: () => setOpen("social"),
+      label: socialOnCooldown ? `Resting — ${formatMinutes(socialMinutesLeft)}` : "Cursus Honorum",
+    },
+    { key: "signout", label: "Sign out", onClick: signOut, variant: "ghost" },
+  ];
+
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-card/60 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <div className="font-display text-xl tracking-widest text-primary">{data.profile?.ludus_name ?? "Ludus"}</div>
-            <div className="mt-1 flex items-center gap-4 text-sm font-serif italic text-muted-foreground">
-              <span className="flex items-center gap-1"><Coins className="h-4 w-4 text-accent" /> {denarii} denarii</span>
-              <span className="flex items-center gap-1"><Award className="h-4 w-4 text-accent" /> {data.profile?.reputation ?? 0} fame</span>
-              <span>{data.gladiators.length} gladiators</span>
-            </div>
+      <AppHeader
+        maxWidth="max-w-7xl"
+        title={data.profile?.ludus_name ?? "Ludus"}
+        meta={
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1"><Coins className="h-4 w-4 text-accent" /> {denarii} denarii</span>
+            <span className="flex items-center gap-1"><Award className="h-4 w-4 text-accent" /> {data.profile?.reputation ?? 0} fame</span>
+            <span>{data.gladiators.length} gladiators</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Link to="/profile"><Button variant="outline" size="sm"><ScrollText className="mr-1 h-4 w-4" /> Public Profile</Button></Link>
-            <Link to="/info"><Button variant="outline" size="sm"><BookOpen className="mr-1 h-4 w-4" /> Codex</Button></Link>
-            <Link to="/leaderboard"><Button variant="outline" size="sm"><Trophy className="mr-1 h-4 w-4" /> Champions</Button></Link>
-            <Link to="/achievements"><Button variant="outline" size="sm"><Medal className="mr-1 h-4 w-4" /> Achievements</Button></Link>
-            <Button
-              variant="outline"
-              size="lg"
-              className="h-11 px-5 text-base"
-              onClick={() => setOpen("social")}
-            >
-              <Landmark className="mr-2 h-5 w-5" />
-              {socialOnCooldown ? `Resting — ${formatMinutes(socialMinutesLeft)}` : "Cursus Honorum"}
-            </Button>
-            <Link to="/arena">
-              <Button size="lg" className="h-11 px-5 text-base shadow-lg shadow-primary/20">
-                <Swords className="mr-2 h-5 w-5" /> Fights
-              </Button>
-            </Link>
-            <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
-          </div>
-        </div>
-      </header>
-
+        }
+        actions={headerActions}
+        primaryAction={{ key: "fights", label: "Fights", icon: <Swords className="mr-2 h-5 w-5" />, onClick: () => navigate({ to: "/arena" }) }}
+      />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <VillageView

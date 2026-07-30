@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
@@ -79,37 +80,33 @@ function ArenaPage() {
   const fetchState = useServerFn(getLudusState);
   const { data } = useSuspenseQuery({ queryKey: ["ludus"], queryFn: () => fetchState() });
   const denarii = data.profile?.denarii ?? 0;
+  const navigate = useNavigate();
+
+  const headerActions: HeaderAction[] = [
+    { key: "codex", label: "Codex", onClick: () => navigate({ to: "/info" }) },
+  ];
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-card/60 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <AppHeader
+        backTo="/ludus"
+        title="Fights"
+        meta={
           <div className="flex items-center gap-4">
-            <Link to="/ludus" className="text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div>
-              <div className="font-display text-xl tracking-widest text-primary">Fights</div>
-              <div className="mt-1 flex items-center gap-4 text-sm font-serif italic text-muted-foreground">
-                <span className="flex items-center gap-1"><Coins className="h-4 w-4 text-accent" /> {denarii} denarii</span>
-                <span className="flex items-center gap-1"><Award className="h-4 w-4 text-accent" /> {data.profile?.reputation ?? 0} fame</span>
-              </div>
-            </div>
+            <span className="flex items-center gap-1"><Coins className="h-4 w-4 text-accent" /> {denarii} denarii</span>
+            <span className="flex items-center gap-1"><Award className="h-4 w-4 text-accent" /> {data.profile?.reputation ?? 0} fame</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Link to="/info"><Button variant="outline" size="sm">Codex</Button></Link>
-            <Link to="/ludus"><Button variant="ghost" size="sm">Back to Ludus</Button></Link>
-          </div>
-        </div>
-      </header>
+        }
+        actions={headerActions}
+      />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Tabs defaultValue="pits" className="w-full">
           <TabsList className="grid w-full max-w-2xl grid-cols-4">
-            <TabsTrigger value="pits"><Swords className="mr-1 h-4 w-4" /> Pit Fights</TabsTrigger>
-            <TabsTrigger value="pvp"><Shield className="mr-1 h-4 w-4" /> Rival Ludi</TabsTrigger>
-            <TabsTrigger value="team"><Users className="mr-1 h-4 w-4" /> Team Battles</TabsTrigger>
-            <TabsTrigger value="boss"><Skull className="mr-1 h-4 w-4" /> Boss Fights</TabsTrigger>
+            <TabsTrigger value="pits"><Swords className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Pit Fights</span><span className="sm:hidden">Pits</span></TabsTrigger>
+            <TabsTrigger value="pvp"><Shield className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Rival Ludi</span><span className="sm:hidden">Rivals</span></TabsTrigger>
+            <TabsTrigger value="team"><Users className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Team Battles</span><span className="sm:hidden">Teams</span></TabsTrigger>
+            <TabsTrigger value="boss"><Skull className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Boss Fights</span><span className="sm:hidden">Bosses</span></TabsTrigger>
           </TabsList>
 
           <TabsContent value="pits" className="mt-6"><PitFights state={data} /></TabsContent>

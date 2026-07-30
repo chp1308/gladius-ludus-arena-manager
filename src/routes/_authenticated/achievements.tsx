@@ -1,10 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Medal, Lock } from "lucide-react";
+import { Medal, Lock } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { AppHeader } from "@/components/app-header";
 import { getAchievementProgress, ACHIEVEMENTS, type AchievementCategory } from "@/lib/game.functions";
 
 export const Route = createFileRoute("/_authenticated/achievements")({
@@ -33,24 +33,12 @@ function AchievementsPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-card/60 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/ludus" className="text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div className="flex items-center gap-2 font-display text-xl tracking-widest text-primary">
-              <Medal className="h-5 w-5" /> Achievements
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="font-serif text-sm italic text-muted-foreground">
-              {earnedBadges} / {totalBadges} badges
-            </span>
-            <Link to="/ludus"><Button variant="ghost" size="sm">Back to Ludus</Button></Link>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        backTo="/ludus"
+        maxWidth="max-w-4xl"
+        title={<span className="flex items-center gap-2"><Medal className="h-5 w-5" /> Achievements</span>}
+        meta={`${earnedBadges} / ${totalBadges} badges`}
+      />
 
       <main className="mx-auto max-w-4xl space-y-4 px-6 py-8">
         <p className="font-serif text-sm italic text-muted-foreground">

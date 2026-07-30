@@ -1,10 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Crown, Shield, Trophy } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Crown, Shield, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AppHeader } from "@/components/app-header";
 import { getPublicLudus, WEAPON_LABELS } from "@/lib/game.functions";
 
 export const Route = createFileRoute("/_authenticated/ludi/$id")({
@@ -27,19 +27,10 @@ function VisitLudusPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-card/60 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/leaderboard" className="text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div className="flex items-center gap-2 font-display text-xl tracking-widest text-primary">
-              <Shield className="h-5 w-5" /> Visiting Ludus
-            </div>
-          </div>
-          <Link to="/leaderboard"><Button variant="ghost" size="sm">Hall of Champions</Button></Link>
-        </div>
-      </header>
+      <AppHeader
+        backTo="/leaderboard"
+        title={<span className="flex items-center gap-2"><Shield className="h-5 w-5" /> Visiting Ludus</span>}
+      />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         {isLoading && <p className="text-sm text-muted-foreground">The gates creak open…</p>}

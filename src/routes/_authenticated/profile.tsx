@@ -1,11 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { ArrowLeft, ScrollText, Eye, Save, Users } from "lucide-react";
+import { ScrollText, Eye, Save, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { toast } from "sonner";
 import { getMyLudusRoster, updateLudusProfile, WEAPON_LABELS } from "@/lib/game.functions";
 
@@ -23,6 +24,7 @@ function PublicProfilePage() {
   const fetchMine = useServerFn(getMyLudusRoster);
   const save = useServerFn(updateLudusProfile);
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["my-ludus-roster"],
@@ -79,25 +81,22 @@ function PublicProfilePage() {
   const roster = data?.roster ?? [];
   const autoMode = picks.length === 0;
 
+  const profileId = data?.profile?.id;
+  const headerActions: HeaderAction[] = profileId
+    ? [{
+        key: "preview", label: "Preview visitor view", icon: <Eye className="mr-1 h-4 w-4" />,
+        onClick: () => navigate({ to: "/ludi/$id", params: { id: profileId } }),
+      }]
+    : [];
+
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-card/60 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/ludus" className="text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div className="flex items-center gap-2 font-display text-xl tracking-widest text-primary">
-              <ScrollText className="h-5 w-5" /> Public Profile
-            </div>
-          </div>
-          {data?.profile?.id && (
-            <Link to="/ludi/$id" params={{ id: data.profile.id }}>
-              <Button variant="outline" size="sm"><Eye className="mr-1 h-4 w-4" /> Preview visitor view</Button>
-            </Link>
-          )}
-        </div>
-      </header>
+      <AppHeader
+        backTo="/ludus"
+        maxWidth="max-w-5xl"
+        title={<span className="flex items-center gap-2"><ScrollText className="h-5 w-5" /> Public Profile</span>}
+        actions={headerActions}
+      />
 
       <main className="mx-auto grid max-w-5xl gap-6 px-6 py-8">
         {isLoading && <p className="text-sm text-muted-foreground">Fetching your tablets…</p>}
