@@ -12,8 +12,9 @@ import {
   healGladiator, maxHealth, honorGladiator, healCost,
   getPitFightAvailability, PIT_MAX_CHARGES,
   getBossFightState, startBossFight, resolveBossRound,
+  BOSS_PLAYER_REVEAL_MS, BOSS_BOAR_REVEAL_MS,
 } from "@/lib/game.functions";
-import type { FightRound } from "@/lib/game.functions";
+import type { FightRound, BossRoundOutcome } from "@/lib/game.functions";
 import { BOSS_ENCOUNTERS, bossRequirementError, type BossDefinition } from "@/lib/boss-encounters";
 import { FaceAvatar } from "./ludus";
 import type { PortraitSubject } from "./ludus";
@@ -787,6 +788,10 @@ function TeamFights({ state }: { state: State }) {
 // startBossFight/resolveBossRound in game.functions.ts for the state
 // machine this screen is driving.
 // -----------------------------------------------------------
+type ResolveResult =
+  | { done: false; session: BossSessionRow; roundOutcome: BossRoundOutcome }
+  | { done: true; won: boolean; log: string[]; denariiGained: number; repGained: number; roundOutcome: BossRoundOutcome };
+
 function BossFights({ state }: { state: State }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -803,6 +808,32 @@ function BossFights({ state }: { state: State }) {
   const [bossKey, setBossKey] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [resumed, setResumed] = useState(false);
+  const [reveal, setReveal] = useState<{ prevSession: BossSessionRow; outcome: BossRoundOutcome; next: ResolveResult } | null>(null);
+  const [revealStage, setRevealStage] = useState<"player" | "boar" | null>(null);
+
+  // Two-stage pause between a resolved round and the next prompt — see
+  // BossRoundReveal. Timed locally rather than off session.round_deadline
+  // (which the server already pushed back by the same total, see
+  // BOSS_PLAYER_REVEAL_MS/BOSS_BOAR_REVEAL_MS) so it's not at the mercy of
+  // clock drift between client and server.
+  useEffect(() => {
+    if (!reveal) { setRevealStage(null); return; }
+    setRevealStage("player");
+    const t1 = setTimeout(() => setRevealStage("boar"), BOSS_PLAYER_REVEAL_MS);
+    const t2 = setTimeout(() => {
+      const r = reveal.next;
+      if (r.done) {
+        setResult({ won: r.won, log: r.log, bossKey: reveal.prevSession.boss_key });
+        setSession(null);
+        qc.invalidateQueries({ queryKey: ["ludus"] });
+        qc.invalidateQueries({ queryKey: ["boss-fight-state"] });
+      } else {
+        setSession(r.session);
+      }
+      setReveal(null);
+    }, BOSS_PLAYER_REVEAL_MS + BOSS_BOAR_REVEAL_MS);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [reveal, qc]);
 
   useEffect(() => {
     if (bossState?.session && !session && !resumed) {
@@ -847,14 +878,8 @@ function BossFights({ state }: { state: State }) {
   const resolveMut = useMutation({
     mutationFn: (payload: { action?: "strike" | "hold"; defenses?: Record<string, "block" | "dodge"> }) => resolveFn({ data: payload }),
     onSuccess: (r) => {
-      if (r.done) {
-        setResult({ ...r, bossKey: session!.boss_key });
-        setSession(null);
-        qc.invalidateQueries({ queryKey: ["ludus"] });
-        qc.invalidateQueries({ queryKey: ["boss-fight-state"] });
-      } else {
-        setSession(r.session);
-      }
+      if (!session) return;
+      setReveal({ prevSession: session, outcome: r.roundOutcome, next: r as ResolveResult });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -863,6 +888,21 @@ function BossFights({ state }: { state: State }) {
     const resultBoss = BOSS_ENCOUNTERS.find(b => b.key === result.bossKey);
     const resultImage = resultBoss ? (result.won ? resultBoss.defeatedImage : resultBoss.lossImage) : undefined;
     return <ResultView result={result} image={resultImage} onClose={() => { setResult(null); qc.invalidateQueries({ queryKey: ["boss-fight-state"] }); }} />;
+  }
+
+  if (reveal) {
+    const revealBoss = BOSS_ENCOUNTERS.find(b => b.key === reveal.prevSession.boss_key)!;
+    const revealParty = state.gladiators.filter(g => reveal.prevSession.gladiator_ids.includes(g.id));
+    return (
+      <BossRoundReveal
+        boss={revealBoss}
+        party={revealParty}
+        prevSession={reveal.prevSession}
+        nextSession={reveal.next.done ? null : reveal.next.session}
+        outcome={reveal.outcome}
+        stage={revealStage ?? "player"}
+      />
+    );
   }
 
   if (session) {
@@ -1063,26 +1103,27 @@ function BossFightScreen({
   }, [session.round, session.phase, session.round_deadline]);
 
   const beat = session.beat_type;
-  const isDefensive = beat === "defensive";
-  const allChosen = isDefensive && party.every(g => defenses[g.id]);
+  const isDefenseBeat = beat === "defensive" || beat === "howl";
+  const allChosen = isDefenseBeat && party.every(g => defenses[g.id]);
   const expired = msLeft <= 0;
 
   useEffect(() => {
     if (pending || autoSubmittedRef.current) return;
     if (msLeft <= 0) {
       autoSubmittedRef.current = true;
-      onAction(isDefensive ? { defenses } : { action: "hold" });
-    } else if (isDefensive && allChosen) {
+      onAction(isDefenseBeat ? { defenses } : { action: "hold" });
+    } else if (isDefenseBeat && allChosen) {
       autoSubmittedRef.current = true;
       onAction({ defenses });
     }
-  }, [msLeft, pending, onAction, isDefensive, allChosen, defenses]);
+  }, [msLeft, pending, onAction, isDefenseBeat, allChosen, defenses]);
 
-  // B/D hotkeys during a defensive beat — each press calls block/dodge for
-  // the next gladiator in the party who doesn't have a choice locked in yet,
-  // so a player can clear the whole line from the keyboard under the timer.
+  // B/D hotkeys during a defensive or howl beat — each press calls
+  // block/dodge for the next gladiator in the party who doesn't have a
+  // choice locked in yet, so a player can clear the whole line from the
+  // keyboard under the timer.
   useEffect(() => {
-    if (!isDefensive || pending) return;
+    if (!isDefenseBeat || pending) return;
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if (key !== "b" && key !== "d") return;
@@ -1095,11 +1136,11 @@ function BossFightScreen({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isDefensive, pending, party]);
+  }, [isDefenseBeat, pending, party]);
 
   // S/H hotkeys for the offensive beat's Strike/Hold call.
   useEffect(() => {
-    if (isDefensive || pending || expired) return;
+    if (isDefenseBeat || pending || expired) return;
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if (key !== "s" && key !== "h") return;
@@ -1107,16 +1148,21 @@ function BossFightScreen({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isDefensive, pending, expired, onAction]);
+  }, [isDefenseBeat, pending, expired, onAction]);
 
   const log = Array.isArray(session.log) ? (session.log as string[]) : [];
   const lastLine = log[log.length - 1];
-  const beatLabel = beat === "net_bonus" ? "AN OPENING — Net it!" : beat === "vulnerable" ? "VULNERABLE — Strike!" : "CHARGING — Block or dodge!";
+  const beatLabel = beat === "net_bonus" ? "AN OPENING — Net it!"
+    : beat === "vulnerable" ? "VULNERABLE — Strike!"
+      : beat === "howl" ? "HOWL — Brace, block or dodge!"
+        : "CHARGING — Block or dodge!";
   const beatColor = beat === "net_bonus"
     ? "border-sky-500/60 text-sky-400"
     : beat === "vulnerable"
       ? "border-amber-500/60 text-amber-400"
-      : "border-destructive/60 text-destructive";
+      : beat === "howl"
+        ? "border-red-600/70 text-red-500"
+        : "border-destructive/60 text-destructive";
   const secondsLeft = Math.ceil(msLeft / 1000);
 
   return (
@@ -1143,7 +1189,7 @@ function BossFightScreen({
         <div className="mt-1 font-display text-3xl tabular-nums">{expired ? "..." : `${secondsLeft}s`}</div>
       </div>
 
-      {isDefensive ? (
+      {isDefenseBeat ? (
         <div className="mx-auto grid max-w-xl gap-2 sm:grid-cols-3">
           {party.map(g => {
             const picked = defenses[g.id];
@@ -1195,14 +1241,77 @@ function BossFightScreen({
   );
 }
 
-// Charge art for the "CHARGING" defensive beat, howl art for everything
-// else (vulnerable openings and the rare net-bonus) — dummy placeholders
-// for now, swapped for the real per-boss poses at the same import paths
-// once art lands (see boss-encounters.ts).
+// Two-stage pause between a resolved round and the next beat's prompt: the
+// player's own roll first (black on red), then the boar's passive mauling
+// (red on black) — gives each round some weight instead of an instant
+// state flip, and visibly tells player-caused damage apart from the boar's.
+// HP bars show the round's starting values during the player stage, then
+// settle to the fully-resolved values once the boar stage begins (skipped
+// on the fight's final round, where the screen cuts to the result dialog
+// right after).
+function BossRoundReveal({
+  boss, party, prevSession, nextSession, outcome, stage,
+}: {
+  boss: BossDefinition; party: Gladiator[]; prevSession: BossSessionRow; nextSession: BossSessionRow | null;
+  outcome: BossRoundOutcome; stage: "player" | "boar";
+}) {
+  const showFinal = stage === "boar" && nextSession;
+  const bossHp = showFinal ? nextSession!.boss_hp : prevSession.boss_hp;
+  const partyHp = showFinal ? nextSession!.party_hp : prevSession.party_hp;
+
+  return (
+    <div
+      className="space-y-6 rounded-xl p-4 md:p-6"
+      style={{
+        backgroundImage: `linear-gradient(to bottom, oklch(0.15 0.02 40 / 0.72) 0%, oklch(0.12 0.02 40 / 0.85) 100%), url(${boss.arenaBg})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      <div className="text-center">
+        <div className="font-display text-lg text-primary">{boss.name} — Phase {prevSession.phase}/{boss.phases.length}</div>
+      </div>
+
+      <div className="flex items-center justify-center gap-10">
+        <FighterPanel
+          label="Your Cohort" portrait={<PortraitCluster gladiators={party} />}
+          hp={partyHp} maxHp={prevSession.party_max_hp}
+          hit={stage === "player" && outcome.playerTarget === "party" && outcome.playerDamage > 0}
+        />
+        <FighterPanel
+          label={boss.name} portrait={<BossPortrait boss={boss} beat={prevSession.beat_type} />}
+          hp={bossHp} maxHp={prevSession.boss_max_hp}
+          hit={stage === "player" && outcome.playerTarget === "boss" && outcome.playerDamage > 0}
+        />
+      </div>
+
+      {stage === "player" ? (
+        <div className="mx-auto max-w-sm rounded-lg border-2 border-red-700 bg-red-600 p-6 text-center shadow-lg">
+          <div className="font-display text-lg tracking-wide text-black/80">{outcome.playerLabel}</div>
+          <div className="mt-1 font-display text-4xl font-black tabular-nums text-black">
+            {outcome.playerDamage > 0 ? `-${outcome.playerDamage}` : "—"}
+          </div>
+        </div>
+      ) : (
+        <div className="mx-auto max-w-sm rounded-lg border-2 border-red-900 bg-black p-6 text-center shadow-lg">
+          <div className="font-display text-lg tracking-wide text-red-500/80">The boar's mauling continues</div>
+          <div className="mt-1 font-display text-4xl font-black tabular-nums text-red-500">
+            {outcome.tickDamage > 0 ? `-${outcome.tickDamage}` : "—"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Charge art for the "CHARGING" regular attack, howl art for the special
+// howl attack and for strike windows (vulnerable openings and the rare
+// net-bonus) — there's no dedicated "exposed" pose yet, see boss-encounters.ts.
 function BossPortrait({ boss, beat }: { boss: BossDefinition; beat: string }) {
   const ring = beat === "net_bonus" ? "border-sky-500/70 shadow-[0_0_22px_rgba(56,189,248,0.55)]"
     : beat === "vulnerable" ? "border-amber-500/70 shadow-[0_0_22px_rgba(251,191,36,0.55)]"
-      : "border-destructive/70 shadow-[0_0_22px_rgba(220,38,38,0.55)]";
+      : beat === "howl" ? "border-red-600/70 shadow-[0_0_26px_rgba(220,38,38,0.7)]"
+        : "border-destructive/70 shadow-[0_0_22px_rgba(220,38,38,0.55)]";
   const pose = beat === "defensive" ? boss.chargeImage : boss.howlImage;
   return (
     <div className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 transition-shadow duration-300 ${ring}`}>

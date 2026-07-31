@@ -1,8 +1,10 @@
 // BOSS ENCOUNTERS — reflex-driven PvE raids. Unlike pit/team fights (fully
 // resolved server-side in one call, then replayed for the client), a boss
-// fight advances one telegraphed "beat" at a time: the server rolls whether
-// the boss is "vulnerable" or "defensive" this round, the player chooses to
-// strike or hold, and the round is scored immediately. All HP pools and
+// fight advances one telegraphed "beat" at a time in a fixed, learnable
+// rhythm — strike window, boar attack, strike window, boar special (howl)
+// attack, repeat (see bossBeatForRound in game.functions.ts) — rather than
+// rolling an independent random beat every round, which let players just
+// mash Strike whenever the label happened to say so. All HP pools and
 // damage numbers are fractions of the sent party's own power/health rather
 // than fixed constants, so the same boss scales to whatever party is sent —
 // the fight's difficulty is a function of the roster you commit, not a
@@ -18,16 +20,23 @@ import boarWinImg from "@/assets/bosses/boar-win.png";
 export type BossPhase = {
   // Phase HP = teamPower * hpScale.
   hpScale: number;
-  // Probability a given round telegraphs "vulnerable" rather than "defensive".
+  // Unused by the fixed 4-beat rotation itself (see bossBeatForRound) —
+  // kept only for the one-off net_bonus override at a phase's first round.
   vulnerableChance: number;
   // Damage to the boss on a correctly-timed strike = teamPower * this.
   vulnerableDamageScale: number;
-  // On a "defensive" beat every gladiator must individually choose block
-  // (shield-bearers, weapon_type "gladius") or dodge (everyone else). A
-  // single wrong or missing answer costs the WHOLE party — this isn't
-  // graduated, one gap in the line is enough for the boar through. Damage
-  // to the party's pooled HP on any failure = teamMaxHp * this.
+  // On a "defensive" beat (the boar's regular attack) every gladiator must
+  // individually choose block (shield-bearers, weapon_type "gladius") or
+  // dodge (everyone else). A single wrong or missing answer costs the WHOLE
+  // party — this isn't graduated, one gap in the line is enough for the
+  // boar through. Damage to the party's pooled HP on any failure =
+  // teamMaxHp * this.
   defensiveDamageScale: number;
+  // The boar's special "howl" attack — same block/dodge call as the regular
+  // attack above, but harsher: a shorter reaction window (see
+  // HOWL_DEADLINE_MULT in game.functions.ts) and more damage to the party's
+  // pooled HP on any failure = teamMaxHp * this.
+  howlDamageScale: number;
   // The boar also keeps mauling passively, every second, regardless of the
   // round's outcome — teamMaxHp * this per second, reduced (never below 1)
   // by the party's frozen average armor mitigation. Rewards fast decisions
@@ -91,10 +100,10 @@ export const BOSS_ENCOUNTERS: BossDefinition[] = [
     myth: "The fourth labor of Hercules: a monstrous boar that terrorized the slopes of Mount Erymanthos, goring farms and travelers alike. Hercules ran it down through the deep snow until it exhausted itself, then bound it in nets and dragged it back to Mycenae alive — a feat no lesser hunter dared attempt.",
     size: 3,
     phases: [
-      { name: "The Chase", blurb: "It charges past again and again — mostly about reading its rhythm.",
-        hpScale: 0.32, vulnerableChance: 0.6, vulnerableDamageScale: 0.075, defensiveDamageScale: 0.10, tickDamageScale: 0.015 },
-      { name: "Cornered and Furious", blurb: "Fewer safe reads, higher stakes both ways — and a chance for a net to snare it outright.",
-        hpScale: 0.32, vulnerableChance: 0.5, vulnerableDamageScale: 0.095, defensiveDamageScale: 0.16, tickDamageScale: 0.022, netBonus: true, netBonusDamageScale: 0.12 },
+      { name: "The Chase", blurb: "It charges past again and again — mostly about reading its rhythm, with the odd bellow to punish a slow line.",
+        hpScale: 0.32, vulnerableChance: 0.6, vulnerableDamageScale: 0.075, defensiveDamageScale: 0.10, howlDamageScale: 0.17, tickDamageScale: 0.015 },
+      { name: "Cornered and Furious", blurb: "Fewer safe reads, higher stakes both ways, a fiercer howl — and a chance for a net to snare it outright.",
+        hpScale: 0.32, vulnerableChance: 0.5, vulnerableDamageScale: 0.095, defensiveDamageScale: 0.16, howlDamageScale: 0.27, tickDamageScale: 0.022, netBonus: true, netBonusDamageScale: 0.12 },
     ],
     lootTable: [
       { key: "denarii", label: "Denarii Purse", chance: 1, effect: "denarii", min: 200, max: 400 },

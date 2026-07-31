@@ -11,7 +11,7 @@ import capuaImg from "@/assets/arena/arena-grand-capua.jpg";
 import colosseumImg from "@/assets/arena/arena-colosseum.jpg";
 import emperorImg from "@/assets/arena/arena-emperor-spectacle.jpg";
 import { SOCIAL_EVENTS, type SocialEvent, type SocialTone } from "@/lib/social-events";
-import { BOSS_ENCOUNTERS, bossRequirementError, type LootItem } from "@/lib/boss-encounters";
+import { BOSS_ENCOUNTERS, bossRequirementError, type LootItem, type BossDefinition } from "@/lib/boss-encounters";
 import { RELICS, applyGoldBonus } from "@/lib/relics";
 
 // Structured per-round combat data for animated battle replays on the
@@ -719,6 +719,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       .select("created_at")
       .eq("gladiator_id", g.id)
       .in("difficulty", TIER_KEYS)
+      .eq("refunded_charge", false)
       .order("created_at", { ascending: false })
       .limit(PIT_MAX_CHARGES);
     const { chargesAvailable, nextAvailableAt } = pitFightAvailability(
@@ -801,13 +802,26 @@ export const fightMatch = createServerFn({ method: "POST" })
 
     const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
     // Pit fights never kill — the loser is left at 1 HP, badly hurt but alive.
-    const newHealth = Math.max(1, currentHealth - damageTaken);
+    let newHealth = Math.max(1, currentHealth - damageTaken);
+
+    const newXp = g.experience + xpGained;
+    const xpForNext = g.level * 100;
+    const leveledUp = newXp >= xpForNext;
+    const newLevel = leveledUp ? g.level + 1 : g.level;
+    const finalXp = leveledUp ? newXp - xpForNext : newXp;
+
     let injuryUntil: string | null = null;
-    // Injury risk scales with how wounded the gladiator was *entering* this
-    // fight (10% baseline at full health, up to 60% near death) — not with
-    // how rough this particular fight was, since pit fights running the full
-    // HP pool now regularly push a fighter toward the 1 HP floor regardless.
-    if (Math.random() < pitInjuryChance(currentHealth / myMaxHp)) {
+    if (leveledUp) {
+      // Leveling up fully heals the gladiator and shakes off any wound this
+      // same fight would otherwise have inflicted, and this match doesn't
+      // burn a pit-fight charge — see refunded_charge below.
+      newHealth = myMaxHp;
+    } else if (Math.random() < pitInjuryChance(currentHealth / myMaxHp)) {
+      // Injury risk scales with how wounded the gladiator was *entering*
+      // this fight (10% baseline at full health, up to 60% near death) —
+      // not with how rough this particular fight was, since pit fights
+      // running the full HP pool now regularly push a fighter toward the
+      // 1 HP floor regardless.
       const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
       injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
       log.push(`${g.name} picks up a nasty wound — ${hours}h to recover.`);
@@ -816,15 +830,8 @@ export const fightMatch = createServerFn({ method: "POST" })
     log.push(won
       ? `Victory! The crowd showers ${g.name} with praise. +${denariiGained} denarii, +${xpGained} XP.`
       : `Defeat. ${g.name} limps from the sand. +${denariiGained} denarii.`);
-
-    const newXp = g.experience + xpGained;
-    const xpForNext = g.level * 100;
-    let newLevel = g.level;
-    let finalXp = newXp;
-    if (newXp >= xpForNext) {
-      newLevel = g.level + 1;
-      finalXp = newXp - xpForNext;
-      log.push(`⚔ ${g.name} advances to level ${newLevel}!`);
+    if (leveledUp) {
+      log.push(`⚔ ${g.name} advances to level ${newLevel} — fully healed, and ready to fight again!`);
     }
 
     const gladPatch = {
@@ -855,6 +862,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       xp_gained: xpGained,
       denarii_gained: denariiGained,
       reputation_gained: repGained,
+      refunded_charge: leveledUp,
       log,
     });
 
@@ -877,6 +885,7 @@ export const getPitFightAvailability = createServerFn({ method: "GET" })
       .select("gladiator_id,created_at")
       .eq("owner_id", userId)
       .in("difficulty", TIER_KEYS)
+      .eq("refunded_charge", false)
       .gte("created_at", windowStart)
       .order("created_at", { ascending: false });
 
@@ -1177,14 +1186,23 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const repGained = won ? 8 * rewardMult : -2;
 
     const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
+    const myDied = toDeath && !won;
+    const myNewXp = g.experience + xpGained;
+    const myXpForNext = g.level * 100;
+    const myLeveledUp = !myDied && myNewXp >= myXpForNext;
+    const myNewLevel = myLeveledUp ? g.level + 1 : g.level;
+    const myFinalXp = myLeveledUp ? myNewXp - myXpForNext : myNewXp;
+
     // Only sine missione can kill — otherwise the loser is left at 1 HP.
     let newHealth = Math.max(toDeath ? 0 : 1, myCurrentHealth - damageTaken);
     let injuryUntil: string | null = null;
-    let myDied = false;
-    if (toDeath && !won) {
-      myDied = true;
+    if (myDied) {
       newHealth = 0;
       log.push(`${g.name} falls in the sand. The crowd chants "Iugula!" — the blade is driven home.`);
+    } else if (myLeveledUp) {
+      // Leveling up fully heals the gladiator and shakes off any wound this
+      // same fight would otherwise have inflicted.
+      newHealth = myMaxHp;
     } else if ((newHealth <= 1 || damageTaken > myMaxHp * 0.6) && newHealth > 0) {
       const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
       injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
@@ -1193,14 +1211,15 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     log.push(won
       ? (toDeath ? `${g.name} stands victorious over ${opp.name}'s corpse. The purse is enormous.` : `Victory over ${opp.name}! Fame spreads through the provinces.`)
       : (toDeath ? `${opp.name}'s ludus claims your champion's life.` : `${opp.name}'s ludus claims the honor.`));
+    if (myLeveledUp) log.push(`⚔ ${g.name} advances to level ${myNewLevel} — fully healed!`);
 
     await supabaseAdmin.from("gladiators").update({
       health: newHealth,
       health_updated_at: new Date().toISOString(),
       injury_until: injuryUntil,
       status: myDied ? "dead" : "idle",
-      experience: g.experience + xpGained,
-      level: (g.experience + xpGained) >= g.level * 100 ? g.level + 1 : g.level,
+      experience: myFinalXp,
+      level: myNewLevel,
       wins: g.wins + (won ? 1 : 0),
       losses: g.losses + (won ? 0 : 1),
     }).eq("id", g.id);
@@ -1212,24 +1231,31 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
 
     // Update opposing (challenger) gladiator via admin (medicus/training/health already resolved above, before the fight sim)
     const oppDamage = Math.max(5, oppMaxHp - Math.max(0, oHp));
+    const oppDied = toDeath && won;
+    const oppXp = won ? 40 : 100;
+    const oppNewXp = opp.experience + oppXp;
+    const oppXpForNext = opp.level * 100;
+    const oppLeveledUp = !oppDied && oppNewXp >= oppXpForNext;
+    const oppNewLevel = oppLeveledUp ? opp.level + 1 : opp.level;
+    const oppFinalXp = oppLeveledUp ? oppNewXp - oppXpForNext : oppNewXp;
+
     let oppNewHealth = Math.max(toDeath ? 0 : 1, oppCurrentHealth - oppDamage);
     let oppInjury: string | null = null;
-    let oppDied = false;
-    if (toDeath && won) {
-      oppDied = true;
+    if (oppDied) {
       oppNewHealth = 0;
+    } else if (oppLeveledUp) {
+      oppNewHealth = oppMaxHp;
     } else if ((oppNewHealth <= 1 || oppDamage > oppMaxHp * 0.6) && oppNewHealth > 0) {
       const oppHours = injuryHours(rand(12, 24), opp.agility, oppMedicusLevel, oppTrainingLevel);
       oppInjury = new Date(Date.now() + oppHours * 3600_000).toISOString();
     }
-    const oppXp = won ? 40 : 100;
     await supabaseAdmin.from("gladiators").update({
       health: oppNewHealth,
       health_updated_at: new Date().toISOString(),
       injury_until: oppInjury,
       status: oppDied ? "dead" : "idle",
-      experience: opp.experience + oppXp,
-      level: (opp.experience + oppXp) >= opp.level * 100 ? opp.level + 1 : opp.level,
+      experience: oppFinalXp,
+      level: oppNewLevel,
       wins: opp.wins + (won ? 0 : 1),
       losses: opp.losses + (won ? 1 : 0),
     }).eq("id", opp.id);
@@ -1453,22 +1479,28 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     for (const g of team) {
       const shareDamage = Math.floor((teamMaxHp - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
       const dmg = Math.max(5, shareDamage);
-      // Team battles are never lethal — floor at 1 HP, not 0.
-      const newHealth = Math.max(1, currentHealthById.get(g.id)! - dmg);
-      let injuryUntil: string | null = null;
-      if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
-        const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
-        injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
-      }
       const newXp = g.experience + xpEach;
       const xpNext = g.level * 100;
       const leveledUp = newXp >= xpNext;
+      const newLevel = leveledUp ? g.level + 1 : g.level;
+      const finalXp = leveledUp ? newXp - xpNext : newXp;
+
+      // Team battles are never lethal — floor at 1 HP, not 0.
+      let newHealth = Math.max(1, currentHealthById.get(g.id)! - dmg);
+      let injuryUntil: string | null = null;
+      if (leveledUp) {
+        newHealth = maxHealth(g.strength);
+        log.push(`⚔ ${g.name} advances to level ${newLevel} — fully healed!`);
+      } else if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
+        const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
+        injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
+      }
       await supabaseAdmin.from("gladiators").update({
         health: newHealth,
         health_updated_at: new Date().toISOString(),
         injury_until: injuryUntil,
-        experience: leveledUp ? newXp - xpNext : newXp,
-        level: leveledUp ? g.level + 1 : g.level,
+        experience: finalXp,
+        level: newLevel,
         wins: g.wins + (won ? 1 : 0),
         losses: g.losses + (won ? 0 : 1),
       }).eq("id", g.id);
@@ -1552,6 +1584,41 @@ export const getBossFightState = createServerFn({ method: "GET" })
     return { session: sessionRes.data, cooldowns, hasWonLocal: (localWinRes.data ?? []).length > 0, defeated, lootCounts };
   });
 
+// Fixed, learnable per-phase rhythm: strike window, boar attack, strike
+// window, boar special (howl) attack, then repeats — replaces an earlier
+// version that rolled an independent random beat every round, which let
+// players just mash Strike whenever that round's label happened to say so.
+// `round` is 1-indexed and resets to 1 at the start of each phase.
+type BossBeat = "vulnerable" | "defensive" | "howl" | "net_bonus";
+function bossBeatForRound(round: number): BossBeat {
+  const pos = (round - 1) % 4;
+  return pos === 1 ? "defensive" : pos === 3 ? "howl" : "vulnerable";
+}
+
+// The howl beat's reaction window is shorter than a normal round's, on top
+// of hitting harder — see BossPhase.howlDamageScale.
+const HOWL_DEADLINE_MULT = 0.7;
+function bossRoundDeadlineMs(boss: BossDefinition, beat: BossBeat): number {
+  return beat === "howl" ? Math.round(boss.roundDeadlineMs * HOWL_DEADLINE_MULT) : boss.roundDeadlineMs;
+}
+
+// After a round resolves, the client plays a two-stage reveal — the
+// player's own roll, then the boar's passive mauling — before the next
+// beat's prompt opens. The next round's deadline is pushed back by this
+// much so the reveal doesn't eat into the player's actual reaction window
+// (see roundStartedAt reconstruction below, which cancels this back out).
+export const BOSS_PLAYER_REVEAL_MS = 2000;
+export const BOSS_BOAR_REVEAL_MS = 2000;
+const BOSS_REVEAL_TOTAL_MS = BOSS_PLAYER_REVEAL_MS + BOSS_BOAR_REVEAL_MS;
+
+export type BossRoundOutcome = {
+  beat: BossBeat;
+  playerLabel: string;
+  playerDamage: number;
+  playerTarget: "boss" | "party";
+  tickDamage: number;
+};
+
 export const startBossFight = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
@@ -1599,7 +1666,7 @@ export const startBossFight = createServerFn({ method: "POST" })
     const phase1 = boss.phases[0];
     const bossMaxHp = Math.max(1, Math.round(teamPower * phase1.hpScale));
     const hasNet = team.some(g => g.weapon_type === "net");
-    const beatType = phase1.netBonus && hasNet ? "net_bonus" : (Math.random() < phase1.vulnerableChance ? "vulnerable" : "defensive");
+    const beatType: BossBeat = phase1.netBonus && hasNet ? "net_bonus" : bossBeatForRound(1);
     const log = [`${team.map(g => g.name).join(", ")} face ${boss.name}. ${boss.flavor}`];
 
     // Shield-bearers (weapon_type "gladius") must block a charge, everyone
@@ -1627,7 +1694,7 @@ export const startBossFight = createServerFn({ method: "POST" })
       party_max_hp: teamMaxHp,
       round: 1,
       beat_type: beatType,
-      round_deadline: new Date(Date.now() + boss.roundDeadlineMs).toISOString(),
+      round_deadline: new Date(Date.now() + bossRoundDeadlineMs(boss, beatType)).toISOString(),
       log,
     }).select("*").single();
     if (error) throw new Error(error.message);
@@ -1662,29 +1729,44 @@ export const resolveBossRound = createServerFn({ method: "POST" })
     let bossHp = session.boss_hp;
     let partyHp = session.party_hp;
 
+    // Populated by whichever branch below runs, then handed back to the
+    // client as roundOutcome so it can play a two-stage reveal (this round's
+    // own result, then the boar's passive mauling) instead of jumping
+    // straight to the next beat's prompt.
+    let playerLabel = "";
+    let playerDamage = 0;
+    let playerTarget: "boss" | "party" = "boss";
+
     if (session.beat_type === "net_bonus") {
       if (action === "strike") {
         const dmg = Math.round(session.team_power * (phaseDef.netBonusDamageScale ?? 0));
         bossHp -= dmg;
         log.push(`Round ${session.round}: the net snares ${boss.name} — a clean opening for ${dmg}.`);
+        playerLabel = "The net snares it!"; playerDamage = dmg; playerTarget = "boss";
       } else {
         log.push(`Round ${session.round}: the net goes unused.`);
+        playerLabel = "The net goes unused."; playerDamage = 0; playerTarget = "boss";
       }
     } else if (session.beat_type === "vulnerable") {
       if (action === "strike") {
         const dmg = Math.round(session.team_power * phaseDef.vulnerableDamageScale);
         bossHp -= dmg;
         log.push(`Round ${session.round}: ${boss.name} is exposed — you strike for ${dmg}.`);
+        playerLabel = "You strike!"; playerDamage = dmg; playerTarget = "boss";
       } else {
         log.push(`Round ${session.round}: an opening comes and goes.`);
+        playerLabel = "An opening comes and goes."; playerDamage = 0; playerTarget = "boss";
       }
     } else {
-      // Defensive beat — every gladiator must individually block (if they
-      // carry a shield) or dodge (if they don't). A late/missing response
-      // counts as failed for that gladiator, same "worst case" rule as
-      // every other timeout in this fight. One gap in the line is enough
-      // for the boar through — a single failure costs the whole party, this
-      // isn't graduated by how many got it wrong.
+      // Defensive beat — the boar's regular attack ("defensive") or its
+      // harsher special ("howl") — every gladiator must individually block
+      // (if they carry a shield) or dodge (if they don't). A late/missing
+      // response counts as failed for that gladiator, same "worst case"
+      // rule as every other timeout in this fight. One gap in the line is
+      // enough for the boar through — a single failure costs the whole
+      // party, this isn't graduated by how many got it wrong.
+      const isHowl = session.beat_type === "howl";
+      const failDamageScale = isHowl ? phaseDef.howlDamageScale : phaseDef.defensiveDamageScale;
       const shieldMap = (session.shield_map ?? {}) as Record<string, boolean>;
       const names = session.gladiator_names ?? [];
       const defenses: Record<string, string> = late ? {} : (data.defenses ?? {});
@@ -1703,31 +1785,41 @@ export const resolveBossRound = createServerFn({ method: "POST" })
         }
       });
       if (failedCount > 0) {
-        const dmg = Math.round(session.party_max_hp * phaseDef.defensiveDamageScale);
+        const dmg = Math.round(session.party_max_hp * failDamageScale);
         partyHp -= dmg;
-        log.push(`Round ${session.round}: ${beats.join("; ")} — the line breaks, ${dmg} damage taken.`);
+        log.push(`Round ${session.round}: ${beats.join("; ")} — ${isHowl ? "the howl shatters the line" : "the line breaks"}, ${dmg} damage taken.`);
+        playerLabel = isHowl ? "The howl shatters the line!" : "The line breaks!"; playerDamage = dmg; playerTarget = "party";
       } else if (allShieldParty) {
         // Shieldwall — a full line of shields, all blocking clean, punches
         // back with a critical counter instead of just weathering the hit.
         const dmg = Math.round(session.team_power * phaseDef.vulnerableDamageScale * boss.shieldwallCritMult);
         bossHp -= dmg;
         log.push(`Round ${session.round}: ${beats.join("; ")} — Shieldwall! The cohort counters as one, a critical strike for ${dmg}.`);
+        playerLabel = "Shieldwall!"; playerDamage = dmg; playerTarget = "boss";
       } else {
         log.push(`Round ${session.round}: ${beats.join("; ")} — no damage taken.`);
+        playerLabel = "The line holds."; playerDamage = 0; playerTarget = "party";
       }
     }
 
     // The boar keeps mauling passively every second, regardless of the
     // round's beat — reduced by the party's frozen average armor
     // mitigation, floored so armor can blunt it but never fully negate it.
-    const roundStartedAt = new Date(session.round_deadline).getTime() - boss.roundDeadlineMs;
-    const elapsedMs = Math.min(boss.roundDeadlineMs, Math.max(0, Date.now() - roundStartedAt));
+    const thisRoundMs = bossRoundDeadlineMs(boss, session.beat_type as BossBeat);
+    const roundStartedAt = new Date(session.round_deadline).getTime() - thisRoundMs;
+    const elapsedMs = Math.min(thisRoundMs, Math.max(0, Date.now() - roundStartedAt));
     const tickPerSecond = Math.max(1, Math.round(session.party_max_hp * phaseDef.tickDamageScale) - session.armor_reduction);
     const tickDamage = Math.round(tickPerSecond * (elapsedMs / 1000));
     if (tickDamage > 0) {
       partyHp -= tickDamage;
       log.push(`The boar's constant mauling costs ${tickDamage} more.`);
     }
+
+    const roundOutcome: BossRoundOutcome = {
+      beat: session.beat_type as BossBeat,
+      playerLabel, playerDamage, playerTarget,
+      tickDamage,
+    };
 
     bossHp = Math.max(0, bossHp);
     const partyDefeated = partyHp <= 1;
@@ -1785,23 +1877,28 @@ export const resolveBossRound = createServerFn({ method: "POST" })
         const shareDamage = Math.floor(damageTaken / team.length) + rand(-5, 10);
         const dmg = Math.max(1, shareDamage);
         const currentHealth = effectiveHealth(g, medicusLevel, trainingLevel);
-        const newHealth = Math.max(1, currentHealth - dmg);
-        let injuryUntil: string | null = null;
-        if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
-          const hours = injuryHours(rand(12, 24), g.agility, medicusLevel, trainingLevel);
-          injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
-        }
 
         let newXp = g.experience;
         let newLevel = g.level;
+        let leveledUp = false;
         const gladXp = won && !xpIneligibleIds.has(g.id) ? XP_PER_GLADIATOR : 0;
         xpByGladiator.set(g.id, gladXp);
         if (gladXp > 0) {
           newXp += gladXp;
           const xpForNext = newLevel * 100;
-          if (newXp >= xpForNext) { newXp -= xpForNext; newLevel += 1; }
+          if (newXp >= xpForNext) { newXp -= xpForNext; newLevel += 1; leveledUp = true; }
         } else if (won) {
           xpNotes.push(`${g.name} is too battered to profit from the win — no XP.`);
+        }
+
+        let newHealth = Math.max(1, currentHealth - dmg);
+        let injuryUntil: string | null = null;
+        if (leveledUp) {
+          newHealth = maxHealth(g.strength);
+          xpNotes.push(`${g.name} advances to level ${newLevel} — fully healed!`);
+        } else if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
+          const hours = injuryHours(rand(12, 24), g.agility, medicusLevel, trainingLevel);
+          injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
         }
 
         const patch: Record<string, unknown> = {
@@ -1890,9 +1987,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
         const nextBossMaxHp = Math.max(1, Math.round(session.team_power * nextPhaseDef.hpScale));
         const { data: gs } = await supabase.from("gladiators").select("weapon_type").in("id", session.gladiator_ids);
         const hasNet = (gs ?? []).some(g => g.weapon_type === "net");
-        const nextBeat = nextPhaseDef.netBonus && hasNet
-          ? "net_bonus"
-          : (Math.random() < nextPhaseDef.vulnerableChance ? "vulnerable" : "defensive");
+        const nextBeat: BossBeat = nextPhaseDef.netBonus && hasNet ? "net_bonus" : bossBeatForRound(1);
         log.push(`Phase ${session.phase + 1}: ${boss.name} presses on.`);
         const { data: updated, error } = await supabaseAdmin.from("boss_fight_sessions").update({
           phase: session.phase + 1,
@@ -1901,30 +1996,30 @@ export const resolveBossRound = createServerFn({ method: "POST" })
           party_hp: partyHp,
           round: 1,
           beat_type: nextBeat,
-          round_deadline: new Date(Date.now() + boss.roundDeadlineMs).toISOString(),
+          round_deadline: new Date(Date.now() + BOSS_REVEAL_TOTAL_MS + bossRoundDeadlineMs(boss, nextBeat)).toISOString(),
           log,
         }).eq("owner_id", userId).select("*").single();
         if (error) throw new Error(error.message);
-        return { done: false as const, session: updated };
+        return { done: false as const, session: updated, roundOutcome };
       }
-      return await finish(true);
+      return { ...(await finish(true)), roundOutcome };
     }
 
-    if (partyDefeated) return await finish(false);
+    if (partyDefeated) return { ...(await finish(false)), roundOutcome };
 
-    if (session.round >= boss.maxRoundsPerPhase) return await finish(false);
+    if (session.round >= boss.maxRoundsPerPhase) return { ...(await finish(false)), roundOutcome };
 
-    const nextBeat = Math.random() < phaseDef.vulnerableChance ? "vulnerable" : "defensive";
+    const nextBeat: BossBeat = bossBeatForRound(session.round + 1);
     const { data: updated, error } = await supabaseAdmin.from("boss_fight_sessions").update({
       boss_hp: bossHp,
       party_hp: partyHp,
       round: session.round + 1,
       beat_type: nextBeat,
-      round_deadline: new Date(Date.now() + boss.roundDeadlineMs).toISOString(),
+      round_deadline: new Date(Date.now() + BOSS_REVEAL_TOTAL_MS + bossRoundDeadlineMs(boss, nextBeat)).toISOString(),
       log,
     }).eq("owner_id", userId).select("*").single();
     if (error) throw new Error(error.message);
-    return { done: false as const, session: updated };
+    return { done: false as const, session: updated, roundOutcome };
   });
 
 

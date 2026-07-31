@@ -187,6 +187,7 @@ export type Database = {
           opponent_name: string
           opponent_power: number
           owner_id: string
+          refunded_charge: boolean
           reputation_gained: number
           result: string
           xp_gained: number
@@ -201,6 +202,7 @@ export type Database = {
           opponent_name: string
           opponent_power: number
           owner_id: string
+          refunded_charge?: boolean
           reputation_gained?: number
           result: string
           xp_gained?: number
@@ -215,6 +217,7 @@ export type Database = {
           opponent_name?: string
           opponent_power?: number
           owner_id?: string
+          refunded_charge?: boolean
           reputation_gained?: number
           result?: string
           xp_gained?: number
