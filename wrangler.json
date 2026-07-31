@@ -1,0 +1,7 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "routes": [
+    { "pattern": "gladiusludus.com", "custom_domain": true },
+    { "pattern": "www.gladiusludus.com", "custom_domain": true }
+  ]
+}
