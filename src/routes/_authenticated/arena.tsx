@@ -372,6 +372,8 @@ function PostChallengeCard({ state }: { state: State }) {
           {eligible.length === 0 && <p className="font-serif text-sm italic text-muted-foreground">No rested champions available to post.</p>}
           {eligible.map(gl => {
             const rating = matchRating(gl);
+            const woundedPct = gl.health / maxHealth(gl.strength);
+            const wounded = woundedPct < 0.85;
             return (
               <button
                 key={gl.id}
@@ -385,6 +387,11 @@ function PostChallengeCard({ state }: { state: State }) {
                 <div className="text-xs text-muted-foreground">
                   {WEAPON_LABELS[gl.weapon_type] ?? gl.weapon_type} · Rating {rating} · HP {gl.health}
                 </div>
+                {wounded && (
+                  <div className="mt-0.5 text-xs text-destructive">
+                    ⚠ Wounded — fighting at {Math.round(woundedPct * 100)}% power; rating doesn't reflect this
+                  </div>
+                )}
               </button>
             );
           })}
@@ -497,17 +504,24 @@ function RivalChallengesCard({ state }: { state: State }) {
           <div className="mb-1 text-xs uppercase tracking-widest text-muted-foreground">Answer with</div>
           <div className="flex flex-wrap gap-2">
             {eligible.length === 0 && <p className="font-serif text-sm italic text-muted-foreground">No rested champions.</p>}
-            {eligible.map(gl => (
-              <button
-                key={gl.id}
-                disabled={accept.isPending}
-                onClick={() => setMyId(gl.id)}
-                className={`rounded-lg border px-3 py-1.5 text-sm transition ${myId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"}`}
-              >
-                <span className="font-display">{gl.name}</span>
-                <span className="ml-2 text-xs text-muted-foreground">R{matchRating(gl)}</span>
-              </button>
-            ))}
+            {eligible.map(gl => {
+              const woundedPct = gl.health / maxHealth(gl.strength);
+              const wounded = woundedPct < 0.85;
+              return (
+                <button
+                  key={gl.id}
+                  disabled={accept.isPending}
+                  onClick={() => setMyId(gl.id)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm transition ${myId === gl.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"}`}
+                >
+                  <span className="font-display">{gl.name}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">R{matchRating(gl)}</span>
+                  {wounded && (
+                    <span className="ml-2 text-xs text-destructive">⚠ {Math.round(woundedPct * 100)}% pwr</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
