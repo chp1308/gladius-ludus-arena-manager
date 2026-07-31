@@ -980,7 +980,7 @@ function BossFights({ state }: { state: State }) {
                 className={`rounded-lg border transition ${selected ? "border-primary bg-primary/10" : "border-border"}`}
               >
                 <button
-                  disabled={locked || !!cd}
+                  disabled={locked}
                   onClick={() => { setBossKey(prev => prev === b.key ? null : b.key); setSelectedIds([]); }}
                   className="flex w-full items-start gap-3 p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 hover:bg-primary/5"
                 >
@@ -1069,10 +1069,15 @@ function BossFights({ state }: { state: State }) {
             <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">
               Party — {selectedIds.length}/{boss.size}
             </div>
+            {cooldownAt && (
+              <p className="mb-2 text-xs text-destructive">
+                Recovering — next in {formatCountdown(cooldownAt)}. Browse the encounter, but you can't set a roster until it's ready.
+              </p>
+            )}
             <div className="space-y-2">
               {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
                 const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
-                const disabled = injured || gl.health < 30;
+                const disabled = injured || gl.health < 30 || !!cooldownAt;
                 const selected = selectedIds.includes(gl.id);
                 return (
                   <div key={gl.id}>
@@ -1205,6 +1210,9 @@ function BossFightScreen({
     const handler = (e: KeyboardEvent) => {
       const zone = e.key === "ArrowLeft" ? "left" : e.key === "ArrowDown" ? "center" : e.key === "ArrowRight" ? "right" : null;
       if (!zone) return;
+      // Arrow keys scroll the page by default — stop that before it fights
+      // the fixed-position fight screen.
+      e.preventDefault();
       onAction({ zone });
     };
     window.addEventListener("keydown", handler);
@@ -1246,7 +1254,7 @@ function BossFightScreen({
       </div>
 
       <div className="flex items-center justify-center gap-10">
-        <FighterPanel label="Your Cohort" portrait={<PortraitCluster gladiators={party} />} hp={session.party_hp} maxHp={session.party_max_hp} hit={false} />
+        <FighterPanel label="Your Cohort" portrait={<PortraitCluster gladiators={party} size={64} />} hp={session.party_hp} maxHp={session.party_max_hp} hit={false} />
         <FighterPanel label={boss.name} portrait={<BossPortrait boss={boss} beat={beat} />} hp={session.boss_hp} maxHp={session.boss_max_hp} hit={false} />
       </div>
 
@@ -1355,7 +1363,7 @@ function BossRoundReveal({
 
       <div className="flex items-center justify-center gap-10">
         <FighterPanel
-          label="Your Cohort" portrait={<PortraitCluster gladiators={party} />}
+          label="Your Cohort" portrait={<PortraitCluster gladiators={party} size={64} />}
           hp={partyHp} maxHp={prevSession.party_max_hp}
           hit={stage === "player" && outcome.playerTarget === "party" && outcome.playerDamage > 0}
         />
@@ -1401,7 +1409,7 @@ function BossPortrait({ boss, beat }: { boss: BossDefinition; beat: string }) {
     ? (isSnake ? boss.snakeAttackImage : lungeVariant ? boss.dogLungeImages?.[lungeVariant] : boss.image) ?? boss.image
     : beat === "defensive" ? boss.chargeImage : boss.howlImage;
   return (
-    <div className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 transition-shadow duration-300 ${ring}`}>
+    <div className={`relative flex h-36 w-36 items-center justify-center overflow-hidden rounded-full border-2 transition-shadow duration-300 ${ring}`}>
       <img src={pose} alt={boss.name} className="h-full w-full object-cover" />
     </div>
   );
@@ -1427,13 +1435,19 @@ function GenericFoeAvatar({ size = 96 }: { size?: number }) {
   );
 }
 
-// Stacked cluster of small portraits for team-battle "my side".
-function PortraitCluster({ gladiators }: { gladiators: PortraitSubject[] }) {
+// Stacked cluster of small portraits for team-battle "my side" — also used
+// (at a larger size) for the boss-fight screens, so it scales in step with
+// BossPortrait rather than looking mismatched next to it.
+function PortraitCluster({ gladiators, size = 44 }: { gladiators: PortraitSubject[]; size?: number }) {
   return (
-    <div className="flex -space-x-3">
+    <div className="flex" style={{ marginLeft: Math.round(size * 0.27) }}>
       {gladiators.map((g, i) => (
-        <div key={g.id} className="rounded-full ring-2 ring-background" style={{ zIndex: gladiators.length - i }}>
-          <FaceAvatar g={g} size={44} />
+        <div
+          key={g.id}
+          className="rounded-full ring-2 ring-background"
+          style={{ zIndex: gladiators.length - i, marginLeft: -Math.round(size * 0.27) }}
+        >
+          <FaceAvatar g={g} size={size} />
         </div>
       ))}
     </div>
