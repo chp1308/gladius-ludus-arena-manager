@@ -239,6 +239,8 @@ export type Database = {
           boss_hp: number
           boss_key: string
           boss_max_hp: number
+          burst_index: number
+          burst_length: number
           created_at: string
           gladiator_ids: string[]
           gladiator_names: string[]
@@ -259,6 +261,8 @@ export type Database = {
           boss_hp: number
           boss_key: string
           boss_max_hp: number
+          burst_index?: number
+          burst_length?: number
           created_at?: string
           gladiator_ids: string[]
           gladiator_names?: string[]
@@ -279,6 +283,8 @@ export type Database = {
           boss_hp?: number
           boss_key?: string
           boss_max_hp?: number
+          burst_index?: number
+          burst_length?: number
           created_at?: string
           gladiator_ids?: string[]
           gladiator_names?: string[]

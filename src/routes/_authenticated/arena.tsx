@@ -16,7 +16,7 @@ import {
   BOSS_PLAYER_REVEAL_MS, BOSS_BOAR_REVEAL_MS,
 } from "@/lib/game.functions";
 import type { FightRound, BossRoundOutcome } from "@/lib/game.functions";
-import { BOSS_ENCOUNTERS, bossRequirementError, type BossDefinition } from "@/lib/boss-encounters";
+import { BOSS_ENCOUNTERS, bossRequirementError, type BossDefinition, type DogLungeVariant } from "@/lib/boss-encounters";
 import { FaceAvatar } from "./ludus";
 import type { PortraitSubject } from "./ludus";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, Users, Shield, Heart, Flame, Zap, Wind } from "lucide-react";
+import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, ArrowRight, ArrowDown, Users, Shield, Heart, Flame, Zap, Wind } from "lucide-react";
 
 function formatCountdown(iso: string): string {
   return formatMinutes(minutesUntil(iso));
@@ -881,8 +881,11 @@ function BossFights({ state }: { state: State }) {
 
   const boss = bossKey ? BOSS_ENCOUNTERS.find(b => b.key === bossKey) ?? null : null;
   const hasWonLocal = bossState?.hasWonLocal ?? false;
+  const defeatedBossKeys = new Set(Object.entries(bossState?.defeated ?? {}).filter(([, v]) => v).map(([k]) => k));
   const chosen = state.gladiators.filter(g => selectedIds.includes(g.id));
-  const reqErr = boss && selectedIds.length === boss.size ? bossRequirementError(boss, chosen, hasWonLocal) : null;
+  const reqErr = boss && selectedIds.length === boss.size
+    ? bossRequirementError(boss, chosen, { hasWonLocalGames: hasWonLocal, defeatedBossKeys })
+    : null;
   const cooldownAt = boss ? (bossState?.cooldowns?.[boss.key] ?? null) : null;
 
   const toggle = (id: string) => {
@@ -963,7 +966,8 @@ function BossFights({ state }: { state: State }) {
         <div className="space-y-2">
           {BOSS_ENCOUNTERS.map(b => {
             const selected = bossKey === b.key;
-            const locked = !hasWonLocal;
+            const locked = b.unlock.type === "local_games" ? !hasWonLocal : !defeatedBossKeys.has(b.unlock.bossKey);
+            const lockReason = b.unlock.type === "local_games" ? "Win a fight in Local Games first" : b.unlock.label;
             const cd = bossState?.cooldowns?.[b.key] ?? null;
             const defeated = bossState?.defeated?.[b.key] ?? false;
             const lootCounts = bossState?.lootCounts?.[b.key] ?? {};
@@ -985,7 +989,7 @@ function BossFights({ state }: { state: State }) {
                     </div>
                     <div className="mt-1 font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
                     <div className="mt-1 text-xs text-muted-foreground">Requires: {b.size} gladiators</div>
-                    {locked && <div className="mt-1 text-xs text-destructive">🔒 Win a fight in Local Games first</div>}
+                    {locked && <div className="mt-1 text-xs text-destructive">🔒 {lockReason}</div>}
                     {cd && <div className="mt-1 text-xs text-destructive">Recovering — next in {formatCountdown(cd)}</div>}
                   </div>
                 </button>
@@ -1112,12 +1116,14 @@ function BossFights({ state }: { state: State }) {
   );
 }
 
-type BossAction = { action?: "strike" | "hold"; defenses?: Record<string, "block" | "dodge"> };
+type BossAction = { action?: "strike" | "hold"; defenses?: Record<string, "block" | "dodge">; zone?: "left" | "center" | "right" };
 
 // One live round: a countdown against the server-issued deadline, a
 // telegraph banner for the current beat, and the choice — Strike/Hold on an
-// offensive beat, or a per-gladiator Block/Dodge call on a defensive one. If
-// the deadline lapses without a full response this auto-submits whatever's
+// offensive beat, a per-gladiator Block/Dodge call on a defensive one (the
+// boar's charge/howl, or Cerberus's snake bite), or — Cerberus only — a
+// single whole-cohort Left/Center/Right call on a head-lunge beat. If the
+// deadline lapses without a full response this auto-submits whatever's
 // chosen so far — matching the server, which treats any missing answer as
 // the worst case, so the two can never disagree about what happened.
 function BossFightScreen({
@@ -1140,7 +1146,9 @@ function BossFightScreen({
   }, [session.round, session.phase, session.round_deadline]);
 
   const beat = session.beat_type;
-  const isDefenseBeat = beat === "defensive" || beat === "howl";
+  const isDefenseBeat = beat === "defensive" || beat === "howl" || beat === "snake_bite";
+  const isLungeBeat = beat.startsWith("lunge:");
+  const lungeVariant = isLungeBeat ? (beat.slice("lunge:".length) as DogLungeVariant) : null;
   const allChosen = isDefenseBeat && party.every(g => defenses[g.id]);
   const expired = msLeft <= 0;
 
@@ -1148,14 +1156,14 @@ function BossFightScreen({
     if (pending || autoSubmittedRef.current) return;
     if (msLeft <= 0) {
       autoSubmittedRef.current = true;
-      onAction(isDefenseBeat ? { defenses } : { action: "hold" });
+      onAction(isDefenseBeat ? { defenses } : {});
     } else if (isDefenseBeat && allChosen) {
       autoSubmittedRef.current = true;
       onAction({ defenses });
     }
   }, [msLeft, pending, onAction, isDefenseBeat, allChosen, defenses]);
 
-  // B/D hotkeys during a defensive or howl beat — each press calls
+  // B/D hotkeys during a defensive/howl/snake-bite beat — each press calls
   // block/dodge for the next gladiator in the party who doesn't have a
   // choice locked in yet, so a player can clear the whole line from the
   // keyboard under the timer.
@@ -1177,7 +1185,7 @@ function BossFightScreen({
 
   // S/H hotkeys for the offensive beat's Strike/Hold call.
   useEffect(() => {
-    if (isDefenseBeat || pending || expired) return;
+    if (isDefenseBeat || isLungeBeat || pending || expired) return;
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if (key !== "s" && key !== "h") return;
@@ -1185,19 +1193,37 @@ function BossFightScreen({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isDefenseBeat, pending, expired, onAction]);
+  }, [isDefenseBeat, isLungeBeat, pending, expired, onAction]);
+
+  // ←/↓/→ hotkeys for Cerberus's head-lunge beat — a single whole-cohort
+  // call, not per-gladiator, so any press submits immediately.
+  useEffect(() => {
+    if (!isLungeBeat || pending || expired) return;
+    const handler = (e: KeyboardEvent) => {
+      const zone = e.key === "ArrowLeft" ? "left" : e.key === "ArrowDown" ? "center" : e.key === "ArrowRight" ? "right" : null;
+      if (!zone) return;
+      onAction({ zone });
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isLungeBeat, pending, expired, onAction]);
 
   const log = Array.isArray(session.log) ? (session.log as string[]) : [];
   const lastLine = log[log.length - 1];
   const beatLabel = beat === "net_bonus" ? "AN OPENING — Net it!"
     : beat === "vulnerable" ? "VULNERABLE — Strike!"
       : beat === "howl" ? "HOWL — Brace, block or dodge!"
-        : "CHARGING — Block or dodge!";
+        : beat === "snake_bite" ? "SNAKE BITE — Block or dodge!"
+          : lungeVariant === "all_three" ? "ALL THREE HEADS LUNGE — Brace!"
+            : lungeVariant === "middle_only" ? "MIDDLE HEAD LUNGES — Move clear!"
+              : isLungeBeat ? "HEADS LUNGE — Move clear!"
+                : "CHARGING — Block or dodge!";
+  const isHarsherBeat = beat === "howl" || beat === "snake_bite" || lungeVariant === "all_three";
   const beatColor = beat === "net_bonus"
     ? "border-sky-500/60 text-sky-400"
     : beat === "vulnerable"
       ? "border-amber-500/60 text-amber-400"
-      : beat === "howl"
+      : isHarsherBeat
         ? "border-red-600/70 text-red-500"
         : "border-destructive/60 text-destructive";
   const secondsLeft = Math.ceil(msLeft / 1000);
@@ -1261,6 +1287,21 @@ function BossFightScreen({
               </div>
             );
           })}
+        </div>
+      ) : isLungeBeat ? (
+        <div className="mx-auto flex max-w-sm justify-center gap-3">
+          <Button size="lg" variant="outline" className="relative flex-1 overflow-visible" disabled={pending || expired} onClick={() => onAction({ zone: "left" })}>
+            <ArrowLeft className="mr-2 h-5 w-5" /> Left
+            <kbd className="absolute -right-1.5 -top-1.5 rounded border border-border bg-background px-1 text-[10px] leading-tight text-foreground opacity-90">←</kbd>
+          </Button>
+          <Button size="lg" variant="outline" className="relative flex-1 overflow-visible" disabled={pending || expired} onClick={() => onAction({ zone: "center" })}>
+            <ArrowDown className="mr-2 h-5 w-5" /> Center
+            <kbd className="absolute -right-1.5 -top-1.5 rounded border border-border bg-background px-1 text-[10px] leading-tight text-foreground opacity-90">↓</kbd>
+          </Button>
+          <Button size="lg" variant="outline" className="relative flex-1 overflow-visible" disabled={pending || expired} onClick={() => onAction({ zone: "right" })}>
+            <ArrowRight className="mr-2 h-5 w-5" /> Right
+            <kbd className="absolute -right-1.5 -top-1.5 rounded border border-border bg-background px-1 text-[10px] leading-tight text-foreground opacity-90">→</kbd>
+          </Button>
         </div>
       ) : (
         <div className="flex justify-center gap-3">
@@ -1331,7 +1372,7 @@ function BossRoundReveal({
         </div>
       ) : (
         <div className="mx-auto max-w-sm rounded-lg border-2 border-red-900 bg-black p-6 text-center shadow-lg">
-          <div className="font-display text-lg tracking-wide text-red-500/80">The boar's mauling continues</div>
+          <div className="font-display text-lg tracking-wide text-red-500/80">The onslaught continues</div>
           <div className="mt-1 font-display text-4xl font-black tabular-nums text-red-500">
             {outcome.tickDamage > 0 ? `-${outcome.tickDamage}` : "—"}
           </div>
@@ -1344,12 +1385,18 @@ function BossRoundReveal({
 // Charge art for the "CHARGING" regular attack, howl art for the special
 // howl attack and for strike windows (vulnerable openings and the rare
 // net-bonus) — there's no dedicated "exposed" pose yet, see boss-encounters.ts.
+// Cerberus picks its pose from the specific head-lunge variant or the snake
+// bite instead, falling back to its select pose for strike windows.
 function BossPortrait({ boss, beat }: { boss: BossDefinition; beat: string }) {
+  const isSnake = beat === "snake_bite";
+  const lungeVariant = beat.startsWith("lunge:") ? (beat.slice("lunge:".length) as DogLungeVariant) : null;
   const ring = beat === "net_bonus" ? "border-sky-500/70 shadow-[0_0_22px_rgba(56,189,248,0.55)]"
     : beat === "vulnerable" ? "border-amber-500/70 shadow-[0_0_22px_rgba(251,191,36,0.55)]"
-      : beat === "howl" ? "border-red-600/70 shadow-[0_0_26px_rgba(220,38,38,0.7)]"
+      : (beat === "howl" || isSnake || lungeVariant === "all_three") ? "border-red-600/70 shadow-[0_0_26px_rgba(220,38,38,0.7)]"
         : "border-destructive/70 shadow-[0_0_22px_rgba(220,38,38,0.55)]";
-  const pose = beat === "defensive" ? boss.chargeImage : boss.howlImage;
+  const pose = boss.mechanic === "cerberus"
+    ? (isSnake ? boss.snakeAttackImage : lungeVariant ? boss.dogLungeImages?.[lungeVariant] : boss.image) ?? boss.image
+    : beat === "defensive" ? boss.chargeImage : boss.howlImage;
   return (
     <div className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 transition-shadow duration-300 ${ring}`}>
       <img src={pose} alt={boss.name} className="h-full w-full object-cover" />

@@ -16,6 +16,16 @@ import boarChargeImg from "@/assets/bosses/boar-charge.png";
 import boarHowlImg from "@/assets/bosses/boar-howl.png";
 import boarDefeatedImg from "@/assets/bosses/boar-defeated.png";
 import boarWinImg from "@/assets/bosses/boar-win.png";
+import cerberusSelectImg from "@/assets/bosses/cerberus_1_select.png";
+import cerberusArenaBgImg from "@/assets/bosses/cerberus_1_start.png";
+import cerberusLeftMiddleImg from "@/assets/bosses/cerberus_left_middle_lunge.png";
+import cerberusRightMiddleImg from "@/assets/bosses/cerberus_right_middle_lunge.png";
+import cerberusMiddleOnlyImg from "@/assets/bosses/cerberus_middle_only_lunge.png";
+import cerberusLeftRightImg from "@/assets/bosses/cerberus_lunge_right_left.png";
+import cerberusAllThreeImg from "@/assets/bosses/cerberus_all_three_lunge.png";
+import cerberusSnakeAttackImg from "@/assets/bosses/cerberus_snake_attack.png";
+import cerberusDefeatedImg from "@/assets/bosses/cerberus_defeated.png";
+import cerberusWonImg from "@/assets/bosses/cerberus_won.png";
 
 export type BossPhase = {
   // Phase HP = teamPower * hpScale.
@@ -53,6 +63,16 @@ export type BossPhase = {
   blurb: string;
 };
 
+// Cerberus doesn't use the boar's fixed 4-beat rotation (see mechanic
+// below). Its BossPhase entries are reused as three HP-fraction "zones" of
+// one continuous health bar instead of three separate reset-on-transition
+// pools: defensiveDamageScale doubles as the head-lunge miss penalty,
+// howlDamageScale as the snake-bite miss penalty, vulnerableDamageScale as
+// the strike-window payoff — see cerberusZoneIndex/rollCerberusBurstLength
+// in game.functions.ts. tickDamageScale and netBonus are unused (Cerberus
+// has no passive mauling and no net-bonus beat).
+export type DogLungeVariant = "left_middle" | "right_middle" | "middle_only" | "left_right" | "all_three";
+
 // One row of the boss's loot table. "denarii" rolls a random amount in
 // [min, max] and is granted automatically every win (chance 1) — still
 // modeled as a table row so the UI has one shared format. "gear" is rolled
@@ -65,6 +85,14 @@ export type LootItem =
   | { key: string; label: string; chance: number; effect: "gear" }
   | { key: string; label: string; chance: number; effect: "trinket"; relicKey: string };
 
+// What unlocks an encounter — checked in bossRequirementError below.
+// "local_games" mirrors the original single-boss gate (win a Local Games
+// pit fight); "defeat_boss" requires a prior win over a named earlier boss,
+// for encounters meant to come after it.
+export type BossUnlock =
+  | { type: "local_games" }
+  | { type: "defeat_boss"; bossKey: string; label: string };
+
 export type BossDefinition = {
   key: string;
   name: string;
@@ -73,19 +101,29 @@ export type BossDefinition = {
   // shown, unlike the droptable/stats which stay "???" until first kill.
   myth: string;
   size: number;
+  // "boar": the fixed vulnerable/defensive/vulnerable/howl rotation, phases
+  // are separate HP pools that reset on transition (bossBeatForRound).
+  // "cerberus": one continuous HP bar; phases are reused as attack-intensity
+  // zones keyed by remaining HP fraction (cerberusZoneIndex), each round is
+  // one attack in a variable-length burst before a single strike window.
+  mechanic: "boar" | "cerberus";
+  unlock: BossUnlock;
   phases: BossPhase[];
   lootTable: LootItem[];
   roundDeadlineMs: number;
   maxRoundsPerPhase: number;
   // Shieldwall: if every gladiator sent carries a shield (weapon_type
-  // "gladius") and all of them block correctly on a defensive beat, the
-  // party doesn't just take zero damage — they counter with a critical
-  // strike on the boss instead, at vulnerableDamageScale * this multiplier.
+  // "gladius") and all of them block correctly on a defensive/snake-bite
+  // beat, the party doesn't just take zero damage — they counter with a
+  // critical strike on the boss instead, at vulnerableDamageScale * this.
   shieldwallCritMult: number;
   image: string;
   arenaBg: string;
   chargeImage: string;
   howlImage: string;
+  // Cerberus only — one pose per head-lunge pattern, and the snake-bite pose.
+  dogLungeImages?: Record<DogLungeVariant, string>;
+  snakeAttackImage?: string;
   // Shown full-screen on the result dialog — defeatedImage on a win (the
   // beast felled), lossImage on a loss (the beast triumphant).
   defeatedImage: string;
@@ -99,6 +137,8 @@ export const BOSS_ENCOUNTERS: BossDefinition[] = [
     flavor: "A tusked terror driven from the mountain — Hercules himself once netted it in the snow.",
     myth: "The fourth labor of Hercules: a monstrous boar that terrorized the slopes of Mount Erymanthos, goring farms and travelers alike. Hercules ran it down through the deep snow until it exhausted itself, then bound it in nets and dragged it back to Mycenae alive — a feat no lesser hunter dared attempt.",
     size: 3,
+    mechanic: "boar",
+    unlock: { type: "local_games" },
     phases: [
       { name: "The Chase", blurb: "It charges past again and again — mostly about reading its rhythm, with the odd bellow to punish a slow line.",
         hpScale: 0.32, vulnerableChance: 0.6, vulnerableDamageScale: 0.075, defensiveDamageScale: 0.10, howlDamageScale: 0.17, tickDamageScale: 0.015 },
@@ -120,14 +160,59 @@ export const BOSS_ENCOUNTERS: BossDefinition[] = [
     defeatedImage: boarDefeatedImg,
     lossImage: boarWinImg,
   },
+  {
+    key: "cerberus",
+    name: "Cerberus, Hound of Hades",
+    flavor: "The three-headed hound of the underworld — chained at the gates of Hades, and still hungry.",
+    myth: "The final labor demanded of Heracles: descend into the underworld and drag Cerberus, guardian of its gates, into the daylight — bare-handed, no chains, no blades. Hades allowed it on that condition alone. Heracles wrestled the hound into submission by strength and will, hauled it before Eurystheus, then returned it to its post before it could take a bite out of the throne room.",
+    size: 3,
+    mechanic: "cerberus",
+    unlock: { type: "defeat_boss", bossKey: "erymanthian_boar", label: "Defeat the Erymanthian Boar first" },
+    // Reused as three attack-intensity zones of one continuous HP bar, not
+    // three separate pools — see the mechanic comment on BossDefinition.
+    // hpScale is only read from phases[0], at fight start.
+    phases: [
+      { name: "Three Heads Hunting", blurb: "All three heads circle and lunge in pairs — read the gap and step through it. Two attacks before it gives you an opening.",
+        hpScale: 0.95, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.09, howlDamageScale: 0.14, tickDamageScale: 0 },
+      { name: "Backed to the Gate", blurb: "Fewer safe reads and faster onslaughts — three or four attacks now, before it gives ground.",
+        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.13, howlDamageScale: 0.20, tickDamageScale: 0 },
+      { name: "Last Guardian of Hell", blurb: "Wounded and desperate, it keeps coming — three attacks at minimum, and it may not stop there.",
+        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.18, howlDamageScale: 0.27, tickDamageScale: 0 },
+    ],
+    lootTable: [
+      { key: "denarii", label: "Denarii Purse", chance: 1, effect: "denarii", min: 500, max: 900 },
+      { key: "gear", label: "Gear Upgrade (per gladiator)", chance: 0.35, effect: "gear" },
+    ],
+    roundDeadlineMs: 2400,
+    maxRoundsPerPhase: 90,
+    shieldwallCritMult: 1.5,
+    image: cerberusSelectImg,
+    arenaBg: cerberusArenaBgImg,
+    chargeImage: cerberusAllThreeImg,
+    howlImage: cerberusSnakeAttackImg,
+    dogLungeImages: {
+      left_middle: cerberusLeftMiddleImg,
+      right_middle: cerberusRightMiddleImg,
+      middle_only: cerberusMiddleOnlyImg,
+      left_right: cerberusLeftRightImg,
+      all_three: cerberusAllThreeImg,
+    },
+    snakeAttackImage: cerberusSnakeAttackImg,
+    defeatedImage: cerberusDefeatedImg,
+    lossImage: cerberusWonImg,
+  },
 ];
 
 export function bossRequirementError(
   boss: BossDefinition,
   gladiators: { injury_until: string | null; health: number }[],
-  hasWonLocalGames: boolean,
+  unlockState: { hasWonLocalGames: boolean; defeatedBossKeys: Set<string> },
 ): string | null {
-  if (!hasWonLocalGames) return "Win a fight in Local Games first to earn this encounter";
+  if (boss.unlock.type === "local_games") {
+    if (!unlockState.hasWonLocalGames) return "Win a fight in Local Games first to earn this encounter";
+  } else if (!unlockState.defeatedBossKeys.has(boss.unlock.bossKey)) {
+    return boss.unlock.label;
+  }
   if (gladiators.length !== boss.size) return `Choose exactly ${boss.size} gladiators`;
   if (gladiators.some(g => g.health < 30)) return "One gladiator is too wounded";
   if (gladiators.some(g => g.injury_until && new Date(g.injury_until) > new Date())) return "One gladiator is injured";

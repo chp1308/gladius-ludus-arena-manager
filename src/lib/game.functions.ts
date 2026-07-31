@@ -11,7 +11,7 @@ import capuaImg from "@/assets/arena/arena-grand-capua.jpg";
 import colosseumImg from "@/assets/arena/arena-colosseum.jpg";
 import emperorImg from "@/assets/arena/arena-emperor-spectacle.jpg";
 import { SOCIAL_EVENTS, type SocialEvent, type SocialTone } from "@/lib/social-events";
-import { BOSS_ENCOUNTERS, bossRequirementError, type LootItem, type BossDefinition } from "@/lib/boss-encounters";
+import { BOSS_ENCOUNTERS, bossRequirementError, type LootItem, type BossDefinition, type DogLungeVariant } from "@/lib/boss-encounters";
 import { RELICS, applyGoldBonus } from "@/lib/relics";
 
 // Structured per-round combat data for animated battle replays on the
@@ -1628,6 +1628,58 @@ function computeTeamPowerAndHp(
   return { teamPower, teamMaxHp };
 }
 
+// Boss keys with at least one recorded win — used to gate encounters that
+// unlock behind defeating an earlier boss (see BossUnlock in boss-encounters.ts).
+async function fetchDefeatedBossKeys(supabase: SupabaseClient<Database>, userId: string): Promise<Set<string>> {
+  const { data } = await supabase.from("boss_attempts").select("boss_key").eq("owner_id", userId).eq("won", true);
+  return new Set((data ?? []).map(r => r.boss_key));
+}
+
+// ---- Cerberus round logic — see the mechanic comment on BossDefinition ----
+// Each round is one attack in a burst; burst length is rolled once when the
+// burst starts, from the zone matching the boss's CURRENT hp fraction (not
+// fixed per-phase like the boar, since Cerberus has one continuous HP bar).
+function cerberusZoneIndex(hpFraction: number): number {
+  if (hpFraction > 0.67) return 0;
+  if (hpFraction > 0.33) return 1;
+  return 2;
+}
+
+function rollCerberusBurstLength(zoneIdx: number): number {
+  if (zoneIdx === 0) return 2;
+  if (zoneIdx === 1) return rand(3, 4);
+  // Zone 2: starts at 3, then a decreasing chance (75%/55%/35%) to add one
+  // more, up to 6.
+  let n = 3;
+  for (const chance of [0.75, 0.55, 0.35]) {
+    if (Math.random() < chance) n++; else break;
+  }
+  return n;
+}
+
+// Which zones are safe to stand in for each head-lunge pattern — empty for
+// "all_three" (unavoidable, matches the reference art of all three heads
+// lunging at once).
+const CERBERUS_LUNGE_SAFE_ZONES: Record<DogLungeVariant, ("left" | "center" | "right")[]> = {
+  left_middle: ["right"],
+  right_middle: ["left"],
+  left_right: ["center"],
+  middle_only: ["left", "right"],
+  all_three: [],
+};
+
+// 20% snake bite; of the remaining 80% dog-lunge, 5% is "all_three" and the
+// other 95% is split evenly across the four directional patterns — i.e.
+// snake 20%, all_three 4%, each directional pattern 19%.
+function rollCerberusAttack(): string {
+  const r = Math.random();
+  if (r < 0.20) return "snake_bite";
+  if (r < 0.24) return "lunge:all_three";
+  const variants: DogLungeVariant[] = ["left_middle", "right_middle", "middle_only", "left_right"];
+  const idx = Math.min(3, Math.floor((r - 0.24) / 0.19));
+  return `lunge:${variants[idx]}`;
+}
+
 export const getBossFightState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -1666,17 +1718,18 @@ export const getBossFightState = createServerFn({ method: "GET" })
 // version that rolled an independent random beat every round, which let
 // players just mash Strike whenever that round's label happened to say so.
 // `round` is 1-indexed and resets to 1 at the start of each phase.
-type BossBeat = "vulnerable" | "defensive" | "howl" | "net_bonus";
+type BossBeat = "vulnerable" | "defensive" | "howl" | "net_bonus" | "snake_bite" | `lunge:${DogLungeVariant}`;
 function bossBeatForRound(round: number): BossBeat {
   const pos = (round - 1) % 4;
   return pos === 1 ? "defensive" : pos === 3 ? "howl" : "vulnerable";
 }
 
 // The howl beat's reaction window is shorter than a normal round's, on top
-// of hitting harder — see BossPhase.howlDamageScale.
+// of hitting harder — see BossPhase.howlDamageScale. Cerberus's snake bite
+// gets the same tighter window.
 const HOWL_DEADLINE_MULT = 0.7;
 function bossRoundDeadlineMs(boss: BossDefinition, beat: BossBeat): number {
-  return beat === "howl" ? Math.round(boss.roundDeadlineMs * HOWL_DEADLINE_MULT) : boss.roundDeadlineMs;
+  return (beat === "howl" || beat === "snake_bite") ? Math.round(boss.roundDeadlineMs * HOWL_DEADLINE_MULT) : boss.roundDeadlineMs;
 }
 
 // After a round resolves, the client plays a two-stage reveal — the
@@ -1727,13 +1780,16 @@ export const startBossFight = createServerFn({ method: "POST" })
       }
     }
 
-    const { data: localWin } = await supabase.from("matches").select("id")
-      .eq("owner_id", userId).eq("difficulty", "local").eq("result", "win").limit(1);
+    const [{ data: localWin }, defeatedBossKeys] = await Promise.all([
+      supabase.from("matches").select("id")
+        .eq("owner_id", userId).eq("difficulty", "local").eq("result", "win").limit(1),
+      fetchDefeatedBossKeys(supabase, userId),
+    ]);
     const { data: gs } = await supabase.from("gladiators").select("*").in("id", data.gladiatorIds).eq("owner_id", userId);
     const team = gs ?? [];
     const currentHealthById = new Map(team.map(g => [g.id, effectiveHealth(g, profile.medicus_level, profile.training_level)]));
     const withCurrentHealth = team.map(g => ({ ...g, health: currentHealthById.get(g.id)! }));
-    const err = bossRequirementError(boss, withCurrentHealth, (localWin ?? []).length > 0);
+    const err = bossRequirementError(boss, withCurrentHealth, { hasWonLocalGames: (localWin ?? []).length > 0, defeatedBossKeys });
     if (err) throw new Error(err);
 
     const { data: skills } = await supabase.from("ludus_skills").select("weapon_type,level").eq("owner_id", userId);
@@ -1742,9 +1798,19 @@ export const startBossFight = createServerFn({ method: "POST" })
 
     const phase1 = boss.phases[0];
     const bossMaxHp = Math.max(1, Math.round(teamPower * phase1.hpScale));
-    const hasNet = team.some(g => g.weapon_type === "net");
-    const beatType: BossBeat = phase1.netBonus && hasNet ? "net_bonus" : bossBeatForRound(1);
     const log = [`${team.map(g => g.name).join(", ")} face ${boss.name}. ${boss.flavor}`];
+
+    let beatType: BossBeat;
+    let burstLength = 0;
+    let burstIndex = 0;
+    if (boss.mechanic === "cerberus") {
+      burstLength = rollCerberusBurstLength(0);
+      burstIndex = 1;
+      beatType = rollCerberusAttack() as BossBeat;
+    } else {
+      const hasNet = team.some(g => g.weapon_type === "net");
+      beatType = phase1.netBonus && hasNet ? "net_bonus" : bossBeatForRound(1);
+    }
 
     // Shield-bearers (weapon_type "gladius") must block a charge, everyone
     // else must dodge — frozen at fight start so a mid-fight gear change
@@ -1770,6 +1836,8 @@ export const startBossFight = createServerFn({ method: "POST" })
       party_hp: teamMaxHp,
       party_max_hp: teamMaxHp,
       round: 1,
+      burst_length: burstLength,
+      burst_index: burstIndex,
       beat_type: beatType,
       round_deadline: new Date(Date.now() + bossRoundDeadlineMs(boss, beatType)).toISOString(),
       log,
@@ -1783,6 +1851,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({
     action: z.enum(["strike", "hold"]).optional(),
     defenses: z.record(z.string(), z.enum(["block", "dodge"])).optional(),
+    zone: z.enum(["left", "center", "right"]).optional(),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -1793,7 +1862,15 @@ export const resolveBossRound = createServerFn({ method: "POST" })
 
     const boss = BOSS_ENCOUNTERS.find(b => b.key === session.boss_key);
     if (!boss) throw new Error("Unknown boss");
-    const phaseDef = boss.phases[session.phase - 1];
+    // Cerberus has one continuous HP bar — its "phase" is really an
+    // attack-intensity zone re-derived from the CURRENT hp fraction every
+    // round, not a slot that only advances when the boar-style phase-reset
+    // block below fires.
+    const isCerberus = boss.mechanic === "cerberus";
+    const zoneIdx = isCerberus
+      ? cerberusZoneIndex(session.boss_max_hp > 0 ? session.boss_hp / session.boss_max_hp : 0)
+      : session.phase - 1;
+    const phaseDef = boss.phases[zoneIdx];
 
     // The server owns the round's deadline — a request arriving after it
     // (slow client, dropped connection, tab left open) always resolves as
@@ -1834,16 +1911,36 @@ export const resolveBossRound = createServerFn({ method: "POST" })
         log.push(`Round ${session.round}: an opening comes and goes.`);
         playerLabel = "An opening comes and goes."; playerDamage = 0; playerTarget = "boss";
       }
+    } else if (typeof session.beat_type === "string" && session.beat_type.startsWith("lunge:")) {
+      // Cerberus head-lunge — the whole cohort moves together to one of
+      // three zones (no per-gladiator choice, unlike the block/dodge call
+      // below), so a single "the player" input decides it.
+      const variant = session.beat_type.slice("lunge:".length) as DogLungeVariant;
+      const safeZones = CERBERUS_LUNGE_SAFE_ZONES[variant] ?? [];
+      const picked = late ? undefined : data.zone;
+      const dodged = !!picked && safeZones.includes(picked);
+      const variantLabel = variant.replace(/_/g, " ");
+      if (dodged) {
+        log.push(`Round ${session.round}: the ${variantLabel} lunge misses — the cohort reads it clean.`);
+        playerLabel = "Clean read!"; playerDamage = 0; playerTarget = "party";
+      } else {
+        const dmg = Math.round(session.party_max_hp * phaseDef.defensiveDamageScale);
+        partyHp -= dmg;
+        const why = safeZones.length === 0 ? "all three heads lunge at once — nowhere to go"
+          : picked ? "the cohort moves the wrong way" : "the cohort hesitates";
+        log.push(`Round ${session.round}: ${why} — ${dmg} damage taken.`);
+        playerLabel = safeZones.length === 0 ? "No way to dodge!" : "Caught by the lunge!"; playerDamage = dmg; playerTarget = "party";
+      }
     } else {
-      // Defensive beat — the boar's regular attack ("defensive") or its
-      // harsher special ("howl") — every gladiator must individually block
-      // (if they carry a shield) or dodge (if they don't). A late/missing
-      // response counts as failed for that gladiator, same "worst case"
-      // rule as every other timeout in this fight. One gap in the line is
-      // enough for the boar through — a single failure costs the whole
-      // party, this isn't graduated by how many got it wrong.
+      // Defensive/howl beat (the boar) or snake_bite (Cerberus) — every
+      // gladiator must individually block (if they carry a shield) or dodge
+      // (if they don't). A late/missing response counts as failed for that
+      // gladiator, same "worst case" rule as every other timeout in this
+      // fight. One gap in the line is enough through — a single failure
+      // costs the whole party, this isn't graduated by how many got it wrong.
+      const isSnake = session.beat_type === "snake_bite";
       const isHowl = session.beat_type === "howl";
-      const failDamageScale = isHowl ? phaseDef.howlDamageScale : phaseDef.defensiveDamageScale;
+      const failDamageScale = (isHowl || isSnake) ? phaseDef.howlDamageScale : phaseDef.defensiveDamageScale;
       const shieldMap = (session.shield_map ?? {}) as Record<string, boolean>;
       const names = session.gladiator_names ?? [];
       const defenses: Record<string, string> = late ? {} : (data.defenses ?? {});
@@ -1864,8 +1961,9 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       if (failedCount > 0) {
         const dmg = Math.round(session.party_max_hp * failDamageScale);
         partyHp -= dmg;
-        log.push(`Round ${session.round}: ${beats.join("; ")} — ${isHowl ? "the howl shatters the line" : "the line breaks"}, ${dmg} damage taken.`);
-        playerLabel = isHowl ? "The howl shatters the line!" : "The line breaks!"; playerDamage = dmg; playerTarget = "party";
+        const breakText = isSnake ? "the serpent strikes true" : isHowl ? "the howl shatters the line" : "the line breaks";
+        log.push(`Round ${session.round}: ${beats.join("; ")} — ${breakText}, ${dmg} damage taken.`);
+        playerLabel = isSnake ? "The serpent strikes!" : isHowl ? "The howl shatters the line!" : "The line breaks!"; playerDamage = dmg; playerTarget = "party";
       } else if (allShieldParty) {
         // Shieldwall — a full line of shields, all blocking clean, punches
         // back with a critical counter instead of just weathering the hit.
@@ -1882,14 +1980,19 @@ export const resolveBossRound = createServerFn({ method: "POST" })
     // The boar keeps mauling passively every second, regardless of the
     // round's beat — reduced by the party's frozen average armor
     // mitigation, floored so armor can blunt it but never fully negate it.
-    const thisRoundMs = bossRoundDeadlineMs(boss, session.beat_type as BossBeat);
-    const roundStartedAt = new Date(session.round_deadline).getTime() - thisRoundMs;
-    const elapsedMs = Math.min(thisRoundMs, Math.max(0, Date.now() - roundStartedAt));
-    const tickPerSecond = Math.max(1, Math.round(session.party_max_hp * phaseDef.tickDamageScale) - session.armor_reduction);
-    const tickDamage = Math.round(tickPerSecond * (elapsedMs / 1000));
-    if (tickDamage > 0) {
-      partyHp -= tickDamage;
-      log.push(`The boar's constant mauling costs ${tickDamage} more.`);
+    // Cerberus has no passive tick — its difficulty comes purely from
+    // surviving longer attack bursts, not a mauling clock.
+    let tickDamage = 0;
+    if (!isCerberus) {
+      const thisRoundMs = bossRoundDeadlineMs(boss, session.beat_type as BossBeat);
+      const roundStartedAt = new Date(session.round_deadline).getTime() - thisRoundMs;
+      const elapsedMs = Math.min(thisRoundMs, Math.max(0, Date.now() - roundStartedAt));
+      const tickPerSecond = Math.max(1, Math.round(session.party_max_hp * phaseDef.tickDamageScale) - session.armor_reduction);
+      tickDamage = Math.round(tickPerSecond * (elapsedMs / 1000));
+      if (tickDamage > 0) {
+        partyHp -= tickDamage;
+        log.push(`${boss.name}'s constant mauling costs ${tickDamage} more.`);
+      }
     }
 
     const roundOutcome: BossRoundOutcome = {
@@ -2059,7 +2162,10 @@ export const resolveBossRound = createServerFn({ method: "POST" })
     };
 
     if (bossHp <= 0) {
-      if (session.phase < boss.phases.length) {
+      // Cerberus is one continuous HP bar — reaching 0 always ends the
+      // fight, regardless of which attack-intensity zone it happened in.
+      // Only the boar's separate reset-on-transition phase pools advance.
+      if (!isCerberus && session.phase < boss.phases.length) {
         const nextPhaseDef = boss.phases[session.phase];
         const nextBossMaxHp = Math.max(1, Math.round(session.team_power * nextPhaseDef.hpScale));
         const { data: gs } = await supabase.from("gladiators").select("weapon_type").in("id", session.gladiator_ids);
@@ -2086,11 +2192,40 @@ export const resolveBossRound = createServerFn({ method: "POST" })
 
     if (session.round >= boss.maxRoundsPerPhase) return { ...(await finish(false)), roundOutcome };
 
-    const nextBeat: BossBeat = bossBeatForRound(session.round + 1);
+    let nextBeat: BossBeat;
+    let nextPhase = session.phase;
+    let nextBurstLength = session.burst_length;
+    let nextBurstIndex = session.burst_index;
+    if (isCerberus) {
+      if (session.beat_type === "vulnerable") {
+        // Strike window just resolved (hit or miss) — start a fresh burst
+        // from whichever zone the boss's CURRENT hp now falls in.
+        const newZoneIdx = cerberusZoneIndex(bossHp / session.boss_max_hp);
+        nextPhase = newZoneIdx + 1;
+        nextBurstLength = rollCerberusBurstLength(newZoneIdx);
+        nextBurstIndex = 1;
+        nextBeat = rollCerberusAttack() as BossBeat;
+      } else if (session.burst_index >= session.burst_length) {
+        // Burst complete — open the strike window.
+        nextBeat = "vulnerable";
+      } else {
+        // Mid-burst — bossHp is untouched by lunge/snake beats, so the zone
+        // can't have shifted; roll the next attack in the same burst.
+        nextBurstIndex = session.burst_index + 1;
+        nextBeat = rollCerberusAttack() as BossBeat;
+        nextPhase = zoneIdx + 1;
+      }
+    } else {
+      nextBeat = bossBeatForRound(session.round + 1);
+    }
+
     const { data: updated, error } = await supabaseAdmin.from("boss_fight_sessions").update({
       boss_hp: bossHp,
       party_hp: partyHp,
       round: session.round + 1,
+      phase: nextPhase,
+      burst_length: nextBurstLength,
+      burst_index: nextBurstIndex,
       beat_type: nextBeat,
       round_deadline: new Date(Date.now() + BOSS_REVEAL_TOTAL_MS + bossRoundDeadlineMs(boss, nextBeat)).toISOString(),
       log,
