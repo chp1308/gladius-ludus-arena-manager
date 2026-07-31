@@ -859,7 +859,7 @@ function GladiatorGrid({ state }: { state: State }) {
         ))}
       </div>
       <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setOpenId(null); }}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           {selected && <GladiatorSheet g={selected} state={state} onClose={() => setOpenId(null)} />}
         </DialogContent>
       </Dialog>
