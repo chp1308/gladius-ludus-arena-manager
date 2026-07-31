@@ -217,6 +217,7 @@ function TierPicker({ g, state, availability }: { g: Gladiator; state: State; av
         oppLabel={battle.opponentName}
         oppPortrait={<GenericFoeAvatar size={96} />}
         myMaxHp={battle.myMaxHp}
+        myStartHp={battle.myStartHp}
         oppMaxHp={battle.oppMaxHp}
         rounds={battle.rounds}
         log={battle.log}
@@ -485,6 +486,7 @@ function RivalChallengesCard({ state }: { state: State }) {
         oppLabel={opponent?.name ?? "Rival champion"}
         oppPortrait={opponent ? <FaceAvatar g={opponent.portrait} size={96} /> : <GenericFoeAvatar size={96} />}
         myMaxHp={battle.myMaxHp}
+        myStartHp={battle.myStartHp}
         oppMaxHp={battle.oppMaxHp}
         rounds={battle.rounds}
         log={battle.log}
@@ -707,6 +709,7 @@ function TeamFights({ state }: { state: State }) {
         oppLabel={battle.label}
         oppPortrait={<GenericFoeAvatar size={96} />}
         myMaxHp={outcome.myMaxHp}
+        myStartHp={outcome.myStartHp}
         oppMaxHp={outcome.oppMaxHp}
         rounds={outcome.rounds}
         log={outcome.log}
@@ -1470,13 +1473,14 @@ function FighterPanel({ label, portrait, hp, maxHp, hit }: { label: string; port
 }
 
 function BattleAnimation({
-  myLabel, myPortrait, oppLabel, oppPortrait, myMaxHp, oppMaxHp, rounds, log, onComplete,
+  myLabel, myPortrait, oppLabel, oppPortrait, myMaxHp, myStartHp, oppMaxHp, rounds, log, onComplete,
 }: {
   myLabel: string;
   myPortrait: ReactNode;
   oppLabel: string;
   oppPortrait: ReactNode;
   myMaxHp: number;
+  myStartHp?: number;
   oppMaxHp: number;
   rounds: FightRound[];
   log: string[];
@@ -1505,7 +1509,7 @@ function BattleAnimation({
   }, [step, skipped, rounds, onComplete]);
 
   const currentRound = step > 0 && step <= rounds.length ? rounds[step - 1] : null;
-  const myHp = currentRound ? currentRound.myHp : myMaxHp;
+  const myHp = currentRound ? currentRound.myHp : (myStartHp ?? myMaxHp);
   const oppHp = currentRound ? currentRound.oppHp : oppMaxHp;
   const visibleLines = [
     ...introLines,

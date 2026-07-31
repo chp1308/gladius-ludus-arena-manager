@@ -768,7 +768,9 @@ export const fightMatch = createServerFn({ method: "POST" })
 
     const myMaxHp = maxHealth(g.strength);
     const oppMaxHp = tier.hp;
-    let myHp = myMaxHp, oppHp = oppMaxHp;
+    // Start from the gladiator's actual current health, not a fresh full
+    // bar — a wounded fighter genuinely risks going down faster here.
+    let myHp = currentHealth, oppHp = oppMaxHp;
     // Round cap must comfortably outlast the HP pools involved (now up to
     // ~440 for tanky/high-tier matchups) or fights get cut short by this
     // ceiling before anyone's health actually runs out.
@@ -802,7 +804,7 @@ export const fightMatch = createServerFn({ method: "POST" })
     const xpGained = won ? tier.xp : Math.floor(tier.xp * 0.4);
     const repGained = won ? tier.rep : 0;
 
-    const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
+    const damageTaken = Math.max(5, currentHealth - Math.max(0, myHp));
     // Pit fights never kill — the loser is left at 1 HP, badly hurt but alive.
     let newHealth = Math.max(1, currentHealth - damageTaken);
 
@@ -868,7 +870,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       log,
     });
 
-    return { won, log, denariiGained, xpGained, repGained, rounds: fightRounds, myMaxHp, oppMaxHp, opponentName };
+    return { won, log, denariiGained, xpGained, repGained, rounds: fightRounds, myMaxHp, myStartHp: currentHealth, oppMaxHp, opponentName };
   });
 
 // Per-gladiator pit-fight charge status, so the UI can show cooldowns
@@ -1159,7 +1161,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     if (oppDefenseLevel > 0) log.push(`${opp.name} adopts defensive stance — rank ${oppDefenseLevel}.`);
     const myMaxHp = maxHealth(g.strength);
     const oppMaxHp = maxHealth(opp.strength);
-    let myHp = myMaxHp, oHp = oppMaxHp;
+    // Start from each fighter's actual current health, not a fresh full bar.
+    let myHp = myCurrentHealth, oHp = oppCurrentHealth;
     const fightRounds: FightRound[] = [];
     // Same reasoning as fightMatch — cap must outlast the real HP pools.
     for (let i = 1; i <= 20 && myHp > 0 && oHp > 0; i++) {
@@ -1187,7 +1190,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     const xpGained = won ? 140 * rewardMult : 50;
     const repGained = won ? 8 * rewardMult : -2;
 
-    const damageTaken = Math.max(5, myMaxHp - Math.max(0, myHp));
+    const damageTaken = Math.max(5, myCurrentHealth - Math.max(0, myHp));
     const myDied = toDeath && !won;
     const myNewXp = g.experience + xpGained;
     const myXpForNext = g.level * 100;
@@ -1232,7 +1235,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     }).eq("id", userId);
 
     // Update opposing (challenger) gladiator via admin (medicus/training/health already resolved above, before the fight sim)
-    const oppDamage = Math.max(5, oppMaxHp - Math.max(0, oHp));
+    const oppDamage = Math.max(5, oppCurrentHealth - Math.max(0, oHp));
     const oppDied = toDeath && won;
     const oppXp = won ? 40 : 100;
     const oppNewXp = opp.experience + oppXp;
@@ -1304,6 +1307,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       } : null,
       rounds: fightRounds,
       myMaxHp,
+      myStartHp: myCurrentHealth,
       oppMaxHp,
     };
   });
@@ -1516,8 +1520,10 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     log.push(`Cohort win chance per exchange: ${Math.round(teamChance * 100)}%.`);
 
     const teamMaxHp = team.reduce((sum, gl) => sum + maxHealth(gl.strength), 0);
+    const teamCurrentHp = team.reduce((sum, gl) => sum + currentHealthById.get(gl.id)!, 0);
     const enemyMaxHp = battle.hp;
-    let teamHp = teamMaxHp;
+    // Start from the cohort's actual current pooled health, not a fresh full bar.
+    let teamHp = teamCurrentHp;
     let enemyHp = enemyMaxHp;
     const fightRounds: FightRound[] = [];
     // Pooled team HP can run well past 1000 for large, high-strength
@@ -1554,7 +1560,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
 
     // Distribute damage across team members
     for (const g of team) {
-      const shareDamage = Math.floor((teamMaxHp - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
+      const shareDamage = Math.floor((teamCurrentHp - Math.max(0, teamHp)) / team.length) + rand(-5, 10);
       const dmg = Math.max(5, shareDamage);
       const newXp = g.experience + xpEach;
       const xpNext = g.level * 100;
@@ -1600,7 +1606,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       reputation: profile.reputation + repGained,
     }).eq("id", userId);
 
-    return { won, log, denariiGained, repGained, rounds: fightRounds, myMaxHp: teamMaxHp, oppMaxHp: enemyMaxHp };
+    return { won, log, denariiGained, repGained, rounds: fightRounds, myMaxHp: teamMaxHp, myStartHp: teamCurrentHp, oppMaxHp: enemyMaxHp };
   });
 
 
