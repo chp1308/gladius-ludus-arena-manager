@@ -669,21 +669,22 @@ export function tierUnlockReason(
 
 const TIER_KEYS = ARENA_TIERS.map(t => t.key) as [string, ...string[]];
 
-// Pit-fight pacing: 3 charges per gladiator, each on its own cooldown. Stamina
-// shortens the cooldown, scaled relative to the CURRENT stat cap (not a fixed
-// number) so it stays correct if the cap ever changes — halved at max stamina.
+// Reflex-fight pacing (pit fights and team battles both use this): 3
+// charges per gladiator, each on its own cooldown. Stamina shortens the
+// cooldown, scaled relative to the CURRENT stat cap (not a fixed number) so
+// it stays correct if the cap ever changes — halved at max stamina.
 export const PIT_MAX_CHARGES = 3;
 export const PIT_BASE_COOLDOWN_HOURS = 24;
-export function pitFightCooldownHours(stamina: number, trainingLevel: number): number {
+export function reflexCooldownHours(stamina: number, trainingLevel: number): number {
   const cap = statCap(trainingLevel);
   const reduction = cap > 0 ? 0.5 * Math.min(1, stamina / cap) : 0;
   return PIT_BASE_COOLDOWN_HOURS * (1 - reduction);
 }
-// recentDesc: this gladiator's pit-fight timestamps, most recent first.
-function pitFightAvailability(recentDesc: string[], cooldownHours: number) {
+// recentDesc: this gladiator's timestamps for this charge pool, most recent first.
+function chargeAvailability(recentDesc: string[], cooldownHours: number, maxCharges: number) {
   const cutoff = Date.now() - cooldownHours * 3600_000;
-  const active = recentDesc.filter(ts => new Date(ts).getTime() > cutoff).slice(0, PIT_MAX_CHARGES);
-  const chargesAvailable = PIT_MAX_CHARGES - active.length;
+  const active = recentDesc.filter(ts => new Date(ts).getTime() > cutoff).slice(0, maxCharges);
+  const chargesAvailable = maxCharges - active.length;
   const nextAvailableAt = chargesAvailable > 0
     ? null
     : new Date(new Date(active[active.length - 1]).getTime() + cooldownHours * 3600_000).toISOString();
@@ -713,7 +714,7 @@ export const fightMatch = createServerFn({ method: "POST" })
     const lock = tierUnlockReason(tier, profile.reputation, g.level, g.wins);
     if (lock) throw new Error(lock);
 
-    const cooldownHours = pitFightCooldownHours(g.stamina, profile.training_level);
+    const cooldownHours = reflexCooldownHours(g.stamina, profile.training_level);
     const { data: recentPitFights } = await supabase
       .from("matches")
       .select("created_at")
@@ -722,9 +723,10 @@ export const fightMatch = createServerFn({ method: "POST" })
       .eq("refunded_charge", false)
       .order("created_at", { ascending: false })
       .limit(PIT_MAX_CHARGES);
-    const { chargesAvailable, nextAvailableAt } = pitFightAvailability(
+    const { chargesAvailable, nextAvailableAt } = chargeAvailability(
       (recentPitFights ?? []).map(m => m.created_at),
       cooldownHours,
+      PIT_MAX_CHARGES,
     );
     if (chargesAvailable <= 0 && nextAvailableAt) {
       const mins = Math.max(1, Math.ceil((new Date(nextAvailableAt).getTime() - Date.now()) / 60000));
@@ -898,8 +900,8 @@ export const getPitFightAvailability = createServerFn({ method: "GET" })
 
     const availability: Record<string, { chargesAvailable: number; nextAvailableAt: string | null; cooldownHours: number }> = {};
     for (const g of gladiators ?? []) {
-      const cooldownHours = pitFightCooldownHours(g.stamina, trainingLevel);
-      const { chargesAvailable, nextAvailableAt } = pitFightAvailability(byGladiator.get(g.id) ?? [], cooldownHours);
+      const cooldownHours = reflexCooldownHours(g.stamina, trainingLevel);
+      const { chargesAvailable, nextAvailableAt } = chargeAvailability(byGladiator.get(g.id) ?? [], cooldownHours, PIT_MAX_CHARGES);
       availability[g.id] = { chargesAvailable, nextAvailableAt, cooldownHours };
     }
     return { availability };
@@ -1361,18 +1363,23 @@ export type TeamBattle = {
   requireClass?: string;         // every gladiator must be this class
   requireBeast?: number;         // exact number of beasts required
   reqFame: number;
-  powerScale: number;
+  // Fixed opponent power band and HP pool — like the pit tiers, NOT scaled
+  // to the sent cohort's own power. A weak cohort should be able to lose
+  // here; only the boss fights self-scale (that's their whole point).
+  powerMin: number;
+  powerMax: number;
+  hp: number;
   reward: number;
   xp: number;
   rep: number;
 };
 
 export const TEAM_BATTLES: TeamBattle[] = [
-  { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerScale: 1.0, reward: 400, xp: 120, rep: 6 },
-  { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerScale: 1.1, reward: 900, xp: 200, rep: 14 },
-  { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerScale: 1.2, reward: 1100, xp: 220, rep: 16 },
-  { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerScale: 1.35, reward: 1800, xp: 320, rep: 26 },
-  { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerScale: 1.6, reward: 3600, xp: 550, rep: 55 },
+  { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerMin: 150, powerMax: 400, hp: 150, reward: 400, xp: 120, rep: 6 },
+  { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerMin: 400, powerMax: 800, hp: 220, reward: 900, xp: 200, rep: 14 },
+  { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerMin: 500, powerMax: 950, hp: 260, reward: 1100, xp: 220, rep: 16 },
+  { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerMin: 1000, powerMax: 1700, hp: 340, reward: 1800, xp: 320, rep: 26 },
+  { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerMin: 2200, powerMax: 3400, hp: 480, reward: 3600, xp: 550, rep: 55 },
 ];
 
 export function teamBattleRequirementError(
@@ -1395,6 +1402,48 @@ export function teamBattleRequirementError(
 }
 
 const TEAM_KEYS = TEAM_BATTLES.map(t => t.key) as [string, ...string[]];
+const TEAM_DIFFICULTY_KEYS = TEAM_BATTLES.map(t => `team:${t.key}`);
+
+// Same charge system as pit fights (3 per gladiator, stamina-shortened 24h
+// cooldown) but its own pool — a gladiator's team-battle charges are
+// independent of their pit-fight charges. Every gladiator sent into a team
+// battle spends one of their own, regardless of which battle size/type.
+export const TEAM_MAX_CHARGES = 3;
+export const TEAM_BASE_COOLDOWN_HOURS = 24;
+
+export const getTeamBattleAvailability = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("training_level").eq("id", userId).maybeSingle();
+    const trainingLevel = profile?.training_level ?? 1;
+    const { data: gladiators } = await supabase.from("gladiators").select("id,stamina").eq("owner_id", userId);
+
+    const windowStart = new Date(Date.now() - TEAM_BASE_COOLDOWN_HOURS * 3600_000).toISOString();
+    const { data: recentFights } = await supabase
+      .from("matches")
+      .select("gladiator_id,created_at")
+      .eq("owner_id", userId)
+      .in("difficulty", TEAM_DIFFICULTY_KEYS)
+      .eq("refunded_charge", false)
+      .gte("created_at", windowStart)
+      .order("created_at", { ascending: false });
+
+    const byGladiator = new Map<string, string[]>();
+    for (const m of recentFights ?? []) {
+      const list = byGladiator.get(m.gladiator_id) ?? [];
+      list.push(m.created_at);
+      byGladiator.set(m.gladiator_id, list);
+    }
+
+    const availability: Record<string, { chargesAvailable: number; nextAvailableAt: string | null; cooldownHours: number }> = {};
+    for (const g of gladiators ?? []) {
+      const cooldownHours = reflexCooldownHours(g.stamina, trainingLevel);
+      const { chargesAvailable, nextAvailableAt } = chargeAvailability(byGladiator.get(g.id) ?? [], cooldownHours, TEAM_MAX_CHARGES);
+      availability[g.id] = { chargesAvailable, nextAvailableAt, cooldownHours };
+    }
+    return { availability };
+  });
 
 export const fightTeamBattle = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1421,11 +1470,39 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     );
     if (err) throw new Error(err);
 
+    // Every gladiator sent spends one of their own team-battle charges —
+    // checked per gladiator since a cohort can mix rested and cooling-down
+    // fighters (fails on the first one found without a charge, mirroring
+    // the pit fight's single-gladiator error message).
+    const { data: recentTeamFights } = await supabase
+      .from("matches")
+      .select("gladiator_id,created_at")
+      .in("gladiator_id", data.gladiatorIds)
+      .in("difficulty", TEAM_DIFFICULTY_KEYS)
+      .eq("refunded_charge", false)
+      .gte("created_at", new Date(Date.now() - TEAM_BASE_COOLDOWN_HOURS * 3600_000).toISOString())
+      .order("created_at", { ascending: false });
+    const recentByGladiator = new Map<string, string[]>();
+    for (const m of recentTeamFights ?? []) {
+      const list = recentByGladiator.get(m.gladiator_id) ?? [];
+      list.push(m.created_at);
+      recentByGladiator.set(m.gladiator_id, list);
+    }
+    for (const g of team) {
+      const cooldownHours = reflexCooldownHours(g.stamina, profile.training_level);
+      const { chargesAvailable, nextAvailableAt } = chargeAvailability(recentByGladiator.get(g.id) ?? [], cooldownHours, TEAM_MAX_CHARGES);
+      if (chargesAvailable <= 0 && nextAvailableAt) {
+        const mins = Math.max(1, Math.ceil((new Date(nextAvailableAt).getTime() - Date.now()) / 60000));
+        const hrs = Math.floor(mins / 60), rem = mins % 60;
+        throw new Error(`${g.name} is resting — next team battle in ${hrs}h ${rem}m`);
+      }
+    }
+
     const { data: skills } = await supabase.from("ludus_skills").select("weapon_type,level").eq("owner_id", userId);
     const skillMap = new Map((skills ?? []).map(s => [s.weapon_type, s.level]));
 
     const teamPower = team.reduce((sum, g) => sum + gladiatorPower({ ...g, health: currentHealthById.get(g.id)! }, skillMap.get(g.weapon_type) ?? 0), 0);
-    const enemyPower = Math.floor(teamPower * battle.powerScale + rand(-30, 30));
+    const enemyPower = rand(battle.powerMin, battle.powerMax);
 
     const defenseLevel = skillMap.get("defense") ?? 0;
     const defenseReduction = 1 - defenseLevel * 0.05;
@@ -1439,7 +1516,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     log.push(`Cohort win chance per exchange: ${Math.round(teamChance * 100)}%.`);
 
     const teamMaxHp = team.reduce((sum, gl) => sum + maxHealth(gl.strength), 0);
-    const enemyMaxHp = Math.round(teamMaxHp * battle.powerScale);
+    const enemyMaxHp = battle.hp;
     let teamHp = teamMaxHp;
     let enemyHp = enemyMaxHp;
     const fightRounds: FightRound[] = [];

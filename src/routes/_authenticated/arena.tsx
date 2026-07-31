@@ -11,6 +11,7 @@ import {
   TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator, healCost,
   getPitFightAvailability, PIT_MAX_CHARGES,
+  getTeamBattleAvailability, TEAM_MAX_CHARGES,
   getBossFightState, startBossFight, resolveBossRound,
   BOSS_PLAYER_REVEAL_MS, BOSS_BOAR_REVEAL_MS,
 } from "@/lib/game.functions";
@@ -648,6 +649,14 @@ function TeamFights({ state }: { state: State }) {
   const [animating, setAnimating] = useState(false);
   const [fightingTeam, setFightingTeam] = useState<Gladiator[]>([]);
 
+  const fetchTeamAvailability = useServerFn(getTeamBattleAvailability);
+  const { data: teamAvailabilityData } = useQuery({
+    queryKey: ["team-battle-availability"],
+    queryFn: () => fetchTeamAvailability({}),
+    refetchInterval: 60_000,
+  });
+  const teamAvailability = teamAvailabilityData?.availability ?? {};
+
   const battle = TEAM_BATTLES.find(b => b.key === battleKey)!;
   const fame = state.profile?.reputation ?? 0;
   const chosen = state.gladiators.filter(g => selectedIds.includes(g.id));
@@ -671,6 +680,7 @@ function TeamFights({ state }: { state: State }) {
       setAnimating(true);
       setSelectedIds([]);
       qc.invalidateQueries({ queryKey: ["ludus"] });
+      qc.invalidateQueries({ queryKey: ["team-battle-availability"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -718,6 +728,7 @@ function TeamFights({ state }: { state: State }) {
                 </div>
                 <div className="mt-1 font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
                 <div className="mt-1 text-xs text-muted-foreground">Requires: {requirement}</div>
+                <div className="mt-1 text-xs text-muted-foreground">Foe power {b.powerMin}–{b.powerMax}</div>
                 {locked && <div className="mt-1 text-xs text-destructive">🔒 Ludus needs {b.reqFame} fame</div>}
               </button>
             );
@@ -732,7 +743,9 @@ function TeamFights({ state }: { state: State }) {
         <div className="space-y-2">
           {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
-            const disabled = injured || gl.health < 30;
+            const charges = teamAvailability[gl.id];
+            const onCooldown = !!charges && charges.chargesAvailable <= 0;
+            const disabled = injured || gl.health < 30 || onCooldown;
             const selected = selectedIds.includes(gl.id);
             const classOk = !battle.requireClass || (!gl.is_beast && gl.class === battle.requireClass);
             const dim = !selected && !classOk;
@@ -752,7 +765,17 @@ function TeamFights({ state }: { state: State }) {
                     </span>
                     <Badge variant="outline">Lv {gl.level}</Badge>
                   </div>
-                  <div className="text-xs text-muted-foreground">{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</div>
+                  <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</span>
+                    {charges && (
+                      <span className={charges.chargesAvailable > 0 ? "text-accent" : "text-destructive"}>
+                        {charges.chargesAvailable}/{TEAM_MAX_CHARGES} team
+                      </span>
+                    )}
+                  </div>
+                  {onCooldown && charges?.nextAvailableAt && (
+                    <div className="mt-0.5 text-xs text-destructive">Resting — next in {formatCountdown(charges.nextAvailableAt)}</div>
+                  )}
                 </button>
                 <HealButton g={gl} medicusLevel={state.profile?.medicus_level ?? 1} />
               </div>
