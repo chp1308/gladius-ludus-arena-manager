@@ -22,7 +22,10 @@ import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem, Zap, Brain } from "lucide-react";
+import { STAT_INFO, STAT_SCALING_NOTE } from "@/lib/stat-info";
+
+const STAT_INFO_ICONS = { strength: Dumbbell, agility: Zap, stamina: Heart, technique: Brain } as const;
 import cityBg from "@/assets/ludus/city-bg.jpg";
 import bLudus from "@/assets/ludus/b-ludus.png";
 import bMarket from "@/assets/ludus/b-market.png";
@@ -483,6 +486,8 @@ function BuildingPanel({
           );
         })()}
 
+        {buildingKey === "training" && <StatTypesPanel />}
+
         {buildingKey === "social" && <SocialEventPanel state={state} />}
 
         {buildingKey === "pantry" && (
@@ -798,6 +803,43 @@ function FacilityCard({
         >
           {atMax ? "Maxed" : `Upgrade · ${cost} denarii`}
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// What each stat trained here actually does — same copy as the Combat
+// Codex (/info), shown inline so a player doesn't have to leave the
+// Training Yard to know what they're spending denarii on.
+function StatTypesPanel() {
+  return (
+    <Card className="inscribed ornate-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="font-display text-base">What Each Stat Does</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {STAT_INFO.map((s) => {
+            const Icon = STAT_INFO_ICONS[s.key];
+            return (
+              <div key={s.key} className="rounded-lg border border-border bg-card/50 p-3">
+                <div className="flex items-center gap-2 font-display text-sm">
+                  <Icon className="h-4 w-4 text-primary" /> {s.label}
+                </div>
+                <p className="mt-1 font-serif text-xs italic text-muted-foreground">{s.blurb}</p>
+                <div className="mt-2 space-y-1">
+                  {s.bonuses.map((b) => (
+                    <div key={b.label} className="flex justify-between gap-2 border-t border-border/40 pt-1 text-xs">
+                      <span className="text-foreground">{b.label}</span>
+                      <span className="text-right text-muted-foreground">{b.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-xs italic text-muted-foreground">{STAT_SCALING_NOTE}</p>
       </CardContent>
     </Card>
   );

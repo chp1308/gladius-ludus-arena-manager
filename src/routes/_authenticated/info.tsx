@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Swords, Shield, Heart, Zap, Brain, Dumbbell, Award, Scale } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { AppHeader } from "@/components/app-header";
+import { STAT_INFO, STAT_SCALING_NOTE } from "@/lib/stat-info";
+
+const STAT_ICONS = { strength: Dumbbell, agility: Zap, stamina: Heart, technique: Brain } as const;
 
 export const Route = createFileRoute("/_authenticated/info")({
   head: () => ({
@@ -123,23 +126,21 @@ function InfoPage() {
             <p>Beasts have their own weightings too — lions and tigers lean Strength/Agility, rhinos and elephants lean pure Strength and Stamina.</p>
           </Section>
 
-          <Section title="Strength" icon={<Dumbbell className="h-5 w-5" />}>
-            <p>Raw muscle. Weighted per weapon style (see Weapon Styles) — worth the most to Gladius & Shield fighters — AND separately sets maximum Health.</p>
-            <div className="rounded-md bg-background/60 p-3 font-mono text-xs text-foreground">Max HP = 100 + Strength × 5</div>
-            <p>Wounded gladiators fight at reduced Power (Health % applies) — keep your champions healed, or let the Valetudinarium's passive regeneration do its work.</p>
-          </Section>
-
-          <Section title="Agility" icon={<Zap className="h-5 w-5" />}>
-            <p>Speed and footwork. Weighted per weapon style — Dual Blades leans on it hardest, followed by Net & Trident.</p>
-          </Section>
-
-          <Section title="Stamina" icon={<Heart className="h-5 w-5" />}>
-            <p>Endurance and grit. Weighted per weapon style — heaviest for Gladius & Shield fighters, moderate for Spear and Dual Blades.</p>
-          </Section>
-
-          <Section title="Technique" icon={<Brain className="h-5 w-5" />}>
-            <p>Skill of arms. Weighted per weapon style — Spear and Net & Trident fighters lean on it most.</p>
-          </Section>
+          {STAT_INFO.map((s) => {
+            const Icon = STAT_ICONS[s.key];
+            return (
+              <Section key={s.key} title={s.label} icon={<Icon className="h-5 w-5" />}>
+                <p>{s.blurb}</p>
+                {s.bonuses.map((b) => <Row key={b.label} label={b.label} value={b.value} />)}
+                {s.key === "strength" && (
+                  <>
+                    <div className="rounded-md bg-background/60 p-3 font-mono text-xs text-foreground">Max HP = 100 + Strength × 5</div>
+                    <p>Wounded gladiators fight at reduced Power (Health % applies) — keep your champions healed, or let the Valetudinarium's passive regeneration do its work.</p>
+                  </>
+                )}
+              </Section>
+            );
+          })}
 
           <Section title="Skills & Style Mastery" icon={<Award className="h-5 w-5" />}>
             <p>Trained at the Study of Arms:</p>
@@ -155,6 +156,8 @@ function InfoPage() {
             <p>Pit fights and standard PvP never kill — the loser is left at 1 HP. Only <span className="text-foreground">Sine Missione</span> death matches can end in the loser being lost forever.</p>
           </Section>
         </div>
+
+        <p className="text-center text-xs italic text-muted-foreground">{STAT_SCALING_NOTE}</p>
       </main>
     </div>
   );
