@@ -70,6 +70,14 @@ export const MAX_GEAR_TIER = 8;
 const FACILITY_COST = (curr: number) => 500 * (curr + 1); // 1->2 costs 1000
 const SKILL_COST = (curr: number) => 200 * (curr + 1);
 
+// Training Yard alone goes past the shared facility cap — extra levels let
+// stats reach a hard 100 cap. Cost per step also steepens above level 5
+// (+1000/step instead of the shared +500/step), continuous at the level-5
+// boundary (curr=4 gives 2500 under both formulas).
+export const TRAINING_MAX_LEVEL = 10;
+export const trainingFacilityCost = (curr: number) =>
+  curr < 5 ? FACILITY_COST(curr) : 2500 + 1000 * (curr - 4);
+
 // Armory level required to CRAFT gear of a given tier.
 // Basic gear needs a village smith; masterwork needs the Master Forge.
 const ARMORY_REQ_FOR_TIER = [0, 1, 1, 2, 2, 3, 3, 4, 5];
@@ -86,14 +94,23 @@ export function maxCraftableTier(armoryLevel: number): number {
   return max;
 }
 
-// Stat cap grows with training facility (+10 per training-yard level)
-export const statCap = (trainingLevel: number) => 15 + trainingLevel * 10; // lvl1=25, lvl5=65
+// Stat cap grows with training facility (+10 per level through 5, then a
+// shallower +7/level from 6-10 so it lands exactly on 100 at the new max).
+export const statCap = (trainingLevel: number) =>
+  trainingLevel <= 5 ? 15 + trainingLevel * 10 : 65 + (trainingLevel - 5) * 7; // lvl1=25, lvl5=65, lvl10=100
 // Max health scales with strength: +5 HP per point
 export const maxHealth = (strength: number) => 100 + strength * 5;
-// Training cost falls with training facility level
-export const trainCost = (trainingLevel: number) => Math.max(20, 50 - (trainingLevel - 1) * 6);
-// Chance a training session grants +2 instead of +1
-const TRAIN_BIG_CHANCE: Record<number, number> = { 1: 0.05, 2: 0.10, 3: 0.15, 4: 0.20, 5: 0.30 };
+// Training cost falls with training facility level — rescaled to span all
+// 10 levels (was 50 -> 26 over levels 1-5, floored at 20); now spans
+// 50 -> 20 over levels 1-10, landing exactly on the 20-denarii floor at max.
+export const trainCost = (trainingLevel: number) => Math.max(20, Math.round(50 - (trainingLevel - 1) * (10 / 3)));
+// Chance a training session grants +2 instead of +1 — rescaled to span all
+// 10 levels (was 5%->30% over levels 1-5); now the same 5 values step every
+// other level, still topping out at 30% at the new max level.
+const TRAIN_BIG_CHANCE: Record<number, number> = {
+  1: 0.05, 2: 0.05, 3: 0.10, 4: 0.10, 5: 0.15,
+  6: 0.15, 7: 0.20, 8: 0.20, 9: 0.30, 10: 0.30,
+};
 export const trainBigChance = (trainingLevel: number) => TRAIN_BIG_CHANCE[trainingLevel] ?? 0;
 // Recruiting cost falls with the Scouting Network level
 export const recruitCost = (scoutingLevel: number) => Math.max(60, 100 - (scoutingLevel - 1) * 10);
@@ -348,8 +365,9 @@ export const upgradeFacility = createServerFn({ method: "POST" })
     if (!profile) throw new Error("No profile");
     const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level" | "social_level";
     const curr = (profile as unknown as Record<string, number>)[col];
-    if (curr >= MAX_FACILITY) throw new Error("Facility already at max level");
-    const cost = FACILITY_COST(curr);
+    const maxLevel = data.facility === "training" ? TRAINING_MAX_LEVEL : MAX_FACILITY;
+    if (curr >= maxLevel) throw new Error("Facility already at max level");
+    const cost = data.facility === "training" ? trainingFacilityCost(curr) : FACILITY_COST(curr);
     const next = curr + 1;
 
     await spendDenarii(supabaseAdmin, userId, cost, `Need ${cost} denarii`);
@@ -2458,8 +2476,8 @@ export const ACHIEVEMENTS: AchievementCategory[] = [
   },
   {
     key: "facilities", label: "Master of the Ludus",
-    description: "Raise the combined level of all five facilities to this total (25 is every facility maxed).",
-    tiers: [5, 10, 15, 20, 25],
+    description: "Raise the combined level of all five facilities to this total (30 is every facility maxed, including a fully-trained Training Yard).",
+    tiers: [5, 10, 15, 20, 30],
   },
   {
     key: "reputation", label: "Renown of Rome",

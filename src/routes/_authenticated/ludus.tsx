@@ -8,6 +8,7 @@ import {
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, healRegenPerHour, pantryCapacity, gladiatorPower,
+  TRAINING_MAX_LEVEL, trainingFacilityCost,
   trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier,
   runSocialEvent, socialDelegationSize, socialToneWeights, SOCIAL_COOLDOWN_MINUTES,
 } from "@/lib/game.functions";
@@ -154,7 +155,7 @@ type State = Awaited<ReturnType<typeof getLudusState>>;
 type Gladiator = State["gladiators"][number];
 
 const FACILITIES = [
-  { key: "training", label: "Training Yard", desc: "Cheaper drills, bigger stat gains, higher stat cap", icon: Dumbbell },
+  { key: "training", label: "Training Yard", desc: "Cheaper drills, bigger stat gains, higher stat cap — up to 100 at level 10", icon: Dumbbell },
   { key: "scouting", label: "Scouting Network", desc: "Better recruits, higher chance of beasts", icon: Search },
   { key: "medicus", label: "Valetudinarium", desc: "Cheaper healing, shorter injuries", icon: Cross },
   { key: "armory", label: "Armory", desc: "Cheaper weapon & armor upgrades", icon: Hammer },
@@ -175,7 +176,12 @@ const SKILL_TREE = [
 ] as const;
 
 
-function facilityCost(curr: number) { return 500 * (curr + 1); }
+function facilityCost(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social", curr: number) {
+  return facility === "training" ? trainingFacilityCost(curr) : 500 * (curr + 1);
+}
+function facilityMaxLevel(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social") {
+  return facility === "training" ? TRAINING_MAX_LEVEL : 5;
+}
 function skillCost(curr: number) { return 200 * (curr + 1); }
 
 // Plain-language summary of what a facility's current level actually does,
@@ -773,8 +779,9 @@ function FacilityCard({
     onSuccess: (r) => { toast.success(`${label} → Lv ${r.newLevel}`); qc.invalidateQueries({ queryKey: ["ludus"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
-  const atMax = level >= 5;
-  const cost = facilityCost(level);
+  const maxLevel = facilityMaxLevel(facility);
+  const atMax = level >= maxLevel;
+  const cost = facilityCost(facility, level);
   const onUpgrade = async () => {
     const ok = await confirm({
       title: "Upgrade facility?",
@@ -789,7 +796,7 @@ function FacilityCard({
           <CardTitle className="flex items-center gap-2 font-display text-lg">
             <Icon className="h-5 w-5 text-primary" /> {label}
           </CardTitle>
-          <Badge className="bg-accent text-accent-foreground">Lv {level}/5</Badge>
+          <Badge className="bg-accent text-accent-foreground">Lv {level}/{maxLevel}</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
