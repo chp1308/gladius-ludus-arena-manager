@@ -529,6 +529,7 @@ export type Database = {
           scouting_level: number
           showcase_gladiator_ids: string[]
           showcase_limit: number
+          social_level: number
           training_level: number
         }[]
       }

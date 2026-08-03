@@ -70,12 +70,13 @@ function VisitLudusPage() {
                 )}
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 <FacilityStat label="Training" level={data.profile.training_level} />
                 <FacilityStat label="Scouting" level={data.profile.scouting_level} />
                 <FacilityStat label="Valetudinarium" level={data.profile.medicus_level} />
                 <FacilityStat label="Forge" level={data.profile.armory_level} />
                 <FacilityStat label="Pantry" level={data.profile.pantry_level} />
+                <FacilityStat label="Cursus Honorum" level={data.profile.social_level} />
               </div>
 
               {data.profile.bio?.trim() && (
@@ -84,14 +85,6 @@ function VisitLudusPage() {
                   <p className="whitespace-pre-wrap font-serif text-sm text-foreground/90">{data.profile.bio}</p>
                 </div>
               )}
-
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <FacilityStat label="Training" level={data.profile.training_level} />
-                <FacilityStat label="Scouting" level={data.profile.scouting_level} />
-                <FacilityStat label="Valetudinarium" level={data.profile.medicus_level} />
-                <FacilityStat label="Forge" level={data.profile.armory_level} />
-                <FacilityStat label="Pantry" level={data.profile.pantry_level} />
-              </div>
             </Card>
 
             <div className="mt-6">
