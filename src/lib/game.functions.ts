@@ -1380,9 +1380,15 @@ export type TeamBattle = {
 
 export const TEAM_BATTLES: TeamBattle[] = [
   { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerMin: 150, powerMax: 400, hp: 150, reward: 400, xp: 120, rep: 6 },
+  // All-beast encounters — requireBeast === size, so every slot must be a
+  // beast. Beasts are rarer to come by than human recruits (see beastChance
+  // in recruitGladiator), so these pay a real premium over the equivalent
+  // human-only battle at a comparable power band.
+  { key: "beast_duo", label: "Paired Beasts", flavor: "Two beasts of your ludus, loosed together against a chained bear.", size: 2, requireBeast: 2, reqFame: 8, powerMin: 150, powerMax: 400, hp: 150, reward: 600, xp: 150, rep: 8 },
   { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerMin: 400, powerMax: 800, hp: 220, reward: 900, xp: 200, rep: 14 },
   { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerMin: 500, powerMax: 950, hp: 260, reward: 1100, xp: 220, rep: 16 },
   { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerMin: 1000, powerMax: 1700, hp: 340, reward: 1800, xp: 320, rep: 26 },
+  { key: "grand_venatio", label: "The Emperor's Venatio", flavor: "Five beasts unleashed at once — a full venatio, the crowd's favorite spectacle.", size: 5, requireBeast: 5, reqFame: 150, powerMin: 1800, powerMax: 2600, hp: 400, reward: 2500, xp: 420, rep: 40 },
   { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerMin: 2200, powerMax: 3400, hp: 480, reward: 3600, xp: 550, rep: 55 },
 ];
 
@@ -1400,7 +1406,7 @@ export function teamBattleRequirementError(
   }
   if (battle.requireBeast !== undefined) {
     const beasts = gladiators.filter(g => g.is_beast).length;
-    if (beasts !== battle.requireBeast) return `Must include exactly ${battle.requireBeast} beast`;
+    if (beasts !== battle.requireBeast) return `Must include exactly ${battle.requireBeast} beast${battle.requireBeast === 1 ? "" : "s"}`;
   }
   return null;
 }

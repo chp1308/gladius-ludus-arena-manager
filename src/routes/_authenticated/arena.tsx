@@ -727,9 +727,9 @@ function TeamFights({ state }: { state: State }) {
           {TEAM_BATTLES.map(b => {
             const selected = battleKey === b.key;
             const locked = fame < b.reqFame;
-            let requirement = `${b.size} gladiators`;
+            let requirement = b.requireBeast === b.size ? `${b.size} beasts` : `${b.size} gladiators`;
             if (b.requireClass) requirement += ` · all ${b.requireClass}`;
-            if (b.requireBeast) requirement += ` · ${b.requireBeast} beast`;
+            if (b.requireBeast && b.requireBeast !== b.size) requirement += ` · ${b.requireBeast} beast${b.requireBeast === 1 ? "" : "s"}`;
             return (
               <button
                 key={b.key}
