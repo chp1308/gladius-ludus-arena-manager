@@ -8,7 +8,7 @@ import {
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, healRegenPerHour, pantryCapacity, gladiatorPower,
-  TRAINING_MAX_LEVEL, trainingFacilityCost,
+  TRAINING_MAX_LEVEL, trainingFacilityCost, keyDropChance,
   trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier,
   runSocialEvent, socialDelegationSize, socialToneWeights, SOCIAL_COOLDOWN_MINUTES,
 } from "@/lib/game.functions";
@@ -23,7 +23,7 @@ import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem, Zap, Brain } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem, Zap, Brain, KeyRound } from "lucide-react";
 import { STAT_INFO, STAT_SCALING_NOTE } from "@/lib/stat-info";
 
 const STAT_INFO_ICONS = { strength: Dumbbell, agility: Zap, stamina: Heart, technique: Brain } as const;
@@ -161,6 +161,7 @@ const FACILITIES = [
   { key: "armory", label: "Armory", desc: "Cheaper weapon & armor upgrades", icon: Hammer },
   { key: "pantry", label: "Pantry", desc: "Stores grain, meat, and amphorae — houses more gladiators and beasts", icon: Wheat },
   { key: "social", label: "Cursus Honorum", desc: "Send gladiators to court Rome's high society for coin and renown", icon: Landmark },
+  { key: "relics", label: "Temple of Relics", desc: "Improves the odds of rare boss loot, including the Key to Hades", icon: Gem },
 ] as const;
 
 const SKILL_TREE = [
@@ -176,17 +177,17 @@ const SKILL_TREE = [
 ] as const;
 
 
-function facilityCost(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social", curr: number) {
+function facilityCost(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics", curr: number) {
   return facility === "training" ? trainingFacilityCost(curr) : 500 * (curr + 1);
 }
-function facilityMaxLevel(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social") {
+function facilityMaxLevel(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics") {
   return facility === "training" ? TRAINING_MAX_LEVEL : 5;
 }
 function skillCost(curr: number) { return 200 * (curr + 1); }
 
 // Plain-language summary of what a facility's current level actually does,
 // shown under its description so the numbers aren't buried in the Codex.
-function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social", level: number): string {
+function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics", level: number): string {
   switch (facility) {
     case "training": {
       const cap = statCap(level);
@@ -217,6 +218,10 @@ function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armo
       const size = socialDelegationSize(level);
       const odds = socialToneWeights(level);
       return `Active now: send up to ${size} gladiator${size === 1 ? "" : "s"} · ${Math.round(odds.positive * 100)}% favorable odds`;
+    }
+    case "relics": {
+      const denom = Math.round(1 / keyDropChance(level));
+      return `Active now: 1-in-${denom} chance of a Key to Hades per boss kill`;
     }
   }
 }
@@ -354,6 +359,7 @@ function VillageView({
     pantry:   `${humans}/${cap.humans} · ${beasts}/${cap.beasts}`,
     temple:   dead > 0 ? `${dead} fallen` : undefined,
     chronicle: state.matches.length ? `${state.matches.length}` : undefined,
+    relics:   `Lv ${state.profile?.relics_level ?? 1}`,
   };
 
   return (
@@ -477,7 +483,7 @@ function BuildingPanel({
           </Card>
         )}
 
-        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory" || buildingKey === "pantry" || buildingKey === "social") && (() => {
+        {(buildingKey === "training" || buildingKey === "scouting" || buildingKey === "medicus" || buildingKey === "armory" || buildingKey === "pantry" || buildingKey === "social" || buildingKey === "relics") && (() => {
           const f = FACILITIES.find(x => x.key === buildingKey)!;
           const level = (state.profile as unknown as Record<string, number>)?.[`${f.key}_level`] ?? 1;
           return (
@@ -766,7 +772,7 @@ function SocialEventPanel({ state }: { state: State }) {
 function FacilityCard({
   facility, label, desc, Icon, level, denarii,
 }: {
-  facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social";
+  facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics";
   label: string; desc: string;
   Icon: React.ComponentType<{ className?: string }>;
   level: number; denarii: number;
@@ -1708,6 +1714,7 @@ function HallOfFame({ state }: { state: State }) {
 function RelicsPanel({ state }: { state: State }) {
   const owned = state.profile?.relics ?? [];
   const bossKills = (state.profile as unknown as { boss_kills?: Record<string, number> })?.boss_kills ?? {};
+  const hadesKeys = state.profile?.hades_keys ?? 0;
   return (
     <Card className="inscribed ornate-border">
       <CardHeader>
@@ -1717,6 +1724,17 @@ function RelicsPanel({ state }: { state: State }) {
         <p className="font-serif text-sm italic text-muted-foreground">
           Rare treasures won from mythic beasts — permanent, account-wide boons found in boss loot tables.
         </p>
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/50 p-3">
+          <KeyRound className="h-5 w-5 shrink-0 text-accent" />
+          <div>
+            <div className="font-display text-sm">
+              <span className="text-accent">{hadesKeys}</span> Key{hadesKeys === 1 ? "" : "s"} to Hades
+            </div>
+            <p className="font-serif text-xs italic text-muted-foreground">
+              A consumable dropped by Cerberus. Hold onto these — they'll unlock something more, in time.
+            </p>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <ul className="divide-y divide-border">

@@ -388,12 +388,14 @@ export type Database = {
           created_at: string
           denarii: number
           description: string
+          hades_keys: number
           id: string
           is_bot: boolean
           ludus_name: string
           medicus_level: number
           pantry_level: number
           relics: string[]
+          relics_level: number
           reputation: number
           scouting_level: number
           showcase_gladiator_ids: string[]
@@ -410,12 +412,14 @@ export type Database = {
           created_at?: string
           denarii?: number
           description?: string
+          hades_keys?: number
           id: string
           is_bot?: boolean
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number
           relics?: string[]
+          relics_level?: number
           reputation?: number
           scouting_level?: number
           showcase_gladiator_ids?: string[]
@@ -432,12 +436,14 @@ export type Database = {
           created_at?: string
           denarii?: number
           description?: string
+          hades_keys?: number
           id?: string
           is_bot?: boolean
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number
           relics?: string[]
+          relics_level?: number
           reputation?: number
           scouting_level?: number
           showcase_gladiator_ids?: string[]

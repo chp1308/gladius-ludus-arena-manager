@@ -14,6 +14,7 @@ import {
   getTeamBattleAvailability, TEAM_MAX_CHARGES,
   getBossFightState, startBossFight, resolveBossRound,
   BOSS_PLAYER_REVEAL_MS, BOSS_BOAR_REVEAL_MS,
+  keyDropChance,
 } from "@/lib/game.functions";
 import type { FightRound, BossRoundOutcome } from "@/lib/game.functions";
 import { BOSS_ENCOUNTERS, bossRequirementError, type BossDefinition, type DogLungeVariant } from "@/lib/boss-encounters";
@@ -1030,10 +1031,13 @@ function BossFights({ state }: { state: State }) {
                                 const count = lootCounts[item.key] ?? 0;
                                 const found = count > 0;
                                 const itemLabel = item.effect === "denarii" ? `${item.label} (${item.min}–${item.max})` : item.label;
+                                const odds = item.effect === "key"
+                                  ? Math.round(keyDropChance(state.profile?.relics_level ?? 1) * 100)
+                                  : Math.round(item.chance * 100);
                                 return (
                                   <tr key={item.key} className={`border-b border-border/60 ${found ? "text-green-600 dark:text-green-400" : ""}`}>
                                     <td className={`py-1.5 ${found ? "font-semibold" : ""}`}>{itemLabel}</td>
-                                    <td className="py-1.5">{Math.round(item.chance * 100)}%</td>
+                                    <td className="py-1.5">{odds}%</td>
                                     <td className={`py-1.5 text-right font-display ${found ? "font-semibold" : "text-muted-foreground"}`}>
                                       {item.effect === "trinket" ? (found ? "✓ Owned" : "—") : (found ? `×${count}` : "—")}
                                     </td>

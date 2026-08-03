@@ -80,10 +80,13 @@ export type DogLungeVariant = "left_middle" | "right_middle" | "middle_only" | "
 // chance is "per gladiator," and a single fight can record it more than
 // once in loot_drops. "trinket" grants a permanent account-wide relic (see
 // relics.ts) — unique, the roll is skipped once the ludus already owns it.
+// "key" grants a stackable consumable (e.g. Key to Hades) — no fixed chance
+// here, it's rolled against the Temple of Relics' keyDropChance(level).
 export type LootItem =
   | { key: string; label: string; chance: number; effect: "denarii"; min: number; max: number }
   | { key: string; label: string; chance: number; effect: "gear" }
-  | { key: string; label: string; chance: number; effect: "trinket"; relicKey: string };
+  | { key: string; label: string; chance: number; effect: "trinket"; relicKey: string }
+  | { key: string; label: string; effect: "key" };
 
 // What unlocks an encounter — checked in bossRequirementError below.
 // "local_games" mirrors the original single-boss gate (win a Local Games
@@ -182,6 +185,7 @@ export const BOSS_ENCOUNTERS: BossDefinition[] = [
     lootTable: [
       { key: "denarii", label: "Denarii Purse", chance: 1, effect: "denarii", min: 500, max: 900 },
       { key: "gear", label: "Gear Upgrade (per gladiator)", chance: 0.35, effect: "gear" },
+      { key: "hades_key", label: "Key to Hades", effect: "key" },
     ],
     roundDeadlineMs: 2400,
     maxRoundsPerPhase: 90,

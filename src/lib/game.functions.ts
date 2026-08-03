@@ -78,6 +78,10 @@ export const TRAINING_MAX_LEVEL = 10;
 export const trainingFacilityCost = (curr: number) =>
   curr < 5 ? FACILITY_COST(curr) : 2500 + 1000 * (curr - 4);
 
+// Temple of Relics — governs the odds of "key" loot drops (e.g. Key to
+// Hades). Denominator shrinks by 5 per level: 1/25, 1/20, 1/15, 1/10, 1/5.
+export const keyDropChance = (relicsLevel: number) => 1 / (30 - 5 * relicsLevel);
+
 // Armory level required to CRAFT gear of a given tier.
 // Basic gear needs a village smith; masterwork needs the Master Forge.
 const ARMORY_REQ_FOR_TIER = [0, 1, 1, 2, 2, 3, 3, 4, 5];
@@ -356,14 +360,14 @@ export const getLudusState = createServerFn({ method: "GET" })
 export const upgradeFacility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({
-    facility: z.enum(["training", "scouting", "medicus", "armory", "pantry", "social"]),
+    facility: z.enum(["training", "scouting", "medicus", "armory", "pantry", "social", "relics"]),
   }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
-    const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level" | "social_level";
+    const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level" | "social_level" | "relics_level";
     const curr = (profile as unknown as Record<string, number>)[col];
     const maxLevel = data.facility === "training" ? TRAINING_MAX_LEVEL : MAX_FACILITY;
     if (curr >= maxLevel) throw new Error("Facility already at max level");
@@ -378,6 +382,7 @@ export const upgradeFacility = createServerFn({ method: "POST" })
       data.facility === "medicus" ? { medicus_level: next } :
       data.facility === "pantry" ? { pantry_level: next } :
       data.facility === "social" ? { social_level: next } :
+      data.facility === "relics" ? { relics_level: next } :
       { armory_level: next };
     const { error } = await supabaseAdmin.from("profiles").update(levelPatch as never).eq("id", userId);
     if (error) throw new Error(error.message);
@@ -2044,21 +2049,25 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       const medicusLevel = profile?.medicus_level ?? 1;
       const trainingLevel = profile?.training_level ?? 1;
       const ownedRelics = profile?.relics ?? [];
+      const relicsLevel = profile?.relics_level ?? 1;
       const bossKills = { ...(profile?.boss_kills as Record<string, number> ?? {}) };
       if (won) bossKills[boss.key] = (bossKills[boss.key] ?? 0) + 1;
 
       const damageTaken = session.party_max_hp - partyHp;
       let denariiGained = 0;
+      let hadesKeysGained = 0;
       const gearNotes: string[] = [];
       const lootDrops: string[] = [];
       const newRelics: string[] = [];
       const denariiItem = boss.lootTable.find((i): i is Extract<LootItem, { effect: "denarii" }> => i.effect === "denarii");
       const gearItem = boss.lootTable.find((i): i is Extract<LootItem, { effect: "gear" }> => i.effect === "gear");
       const trinketItems = boss.lootTable.filter((i): i is Extract<LootItem, { effect: "trinket" }> => i.effect === "trinket");
+      const keyItems = boss.lootTable.filter((i): i is Extract<LootItem, { effect: "key" }> => i.effect === "key");
 
       // Group-level rewards roll once per fight, not per gladiator — only
       // "gear" is an individual roll, below. Trinkets are unique: the roll
-      // is skipped once the ludus already owns that relic.
+      // is skipped once the ludus already owns that relic. Keys are a
+      // stackable consumable, rolled against the Temple of Relics' level.
       if (won) {
         if (denariiItem && Math.random() < denariiItem.chance) {
           lootDrops.push(denariiItem.key);
@@ -2069,6 +2078,12 @@ export const resolveBossRound = createServerFn({ method: "POST" })
           if (Math.random() < item.chance) {
             lootDrops.push(item.key);
             newRelics.push(item.relicKey);
+          }
+        }
+        for (const item of keyItems) {
+          if (Math.random() < keyDropChance(relicsLevel)) {
+            lootDrops.push(item.key);
+            hadesKeysGained += 1;
           }
         }
       }
@@ -2148,8 +2163,9 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       const totalXpGained = [...xpByGladiator.values()].reduce((a, b) => a + b, 0);
 
       const relicNotes = newRelics.map(k => RELICS.find(r => r.key === k)?.label ?? k);
+      const keyNote = hadesKeysGained > 0 ? "the cohort recovers a Key to Hades!" : "";
       log.push(won
-        ? `${boss.name} falls. +${denariiGained} denarii.${totalXpGained > 0 ? ` +${XP_PER_GLADIATOR} XP each.` : ""}${gearNotes.length ? " " + gearNotes.join(", ") : ""}${xpNotes.length ? " " + xpNotes.join(" ") : ""}${relicNotes.length ? ` The cohort discovers ${relicNotes.join(", ")}!` : ""}`
+        ? `${boss.name} falls. +${denariiGained} denarii.${totalXpGained > 0 ? ` +${XP_PER_GLADIATOR} XP each.` : ""}${gearNotes.length ? " " + gearNotes.join(", ") : ""}${xpNotes.length ? " " + xpNotes.join(" ") : ""}${relicNotes.length ? ` The cohort discovers ${relicNotes.join(", ")}!` : ""}${keyNote ? ` ${keyNote}` : ""}`
         : `The cohort is broken and falls back. A small purse of ${denariiGained} denarii for their courage.`);
 
       if (profile) {
@@ -2157,6 +2173,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
           denarii: profile.denarii + denariiGained,
           relics: allRelics,
           boss_kills: bossKills,
+          hades_keys: (profile.hades_keys ?? 0) + hadesKeysGained,
         }).eq("id", userId);
       }
 
