@@ -7,6 +7,9 @@
 // Reward scaling (enforced by the caller in game.functions.ts, not here):
 //  - positive denarii/reputation/xp amounts below are PER ATTENDING GLADIATOR
 //  - negative denarii/reputation amounts are FLAT regardless of party size
+//  - the amounts below are further multiplied by SOCIAL_DENARII_SCALE (0.8)
+//    and SOCIAL_REPUTATION_SCALE (0.5) — tune the payout curve there, not
+//    by hand-editing all ~100 entries here
 //  - "injury" always lands on exactly one random attendee, never the whole party
 //  - "gear" grants one free gear-tier upgrade to each attending gladiator
 export type SocialTone = "positive" | "negative" | "neutral";

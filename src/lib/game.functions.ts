@@ -2548,6 +2548,12 @@ function pickSocialEvent(socialLevel: number): SocialEvent {
   return pick(pool);
 }
 
+// Rescales the SOCIAL_EVENTS pool's hand-authored denarii/reputation amounts
+// (applied to both positive and negative outcomes, before jitter/party-size
+// scaling) without having to touch all ~100 entries individually.
+const SOCIAL_DENARII_SCALE = 0.8;
+const SOCIAL_REPUTATION_SCALE = 0.5;
+
 // "Marcus" / "Marcus and Quintus" / "Marcus, Quintus, and Titus"
 function joinNames(names: string[]): string {
   if (names.length === 1) return names[0];
@@ -2604,11 +2610,11 @@ export const runSocialEvent = createServerFn({ method: "POST" })
 
     if (event.outcome === "denarii") {
       const jitter = 0.85 + Math.random() * 0.3;
-      const base = Math.max(1, Math.round((event.amount ?? 0) * jitter));
+      const base = Math.max(1, Math.round((event.amount ?? 0) * SOCIAL_DENARII_SCALE * jitter));
       denariiDelta = event.tone === "positive" ? applyGoldBonus(base * party.length, profile.relics, profile.boss_kills as Record<string, number>) : -base;
       summary = `${denariiDelta > 0 ? "+" : ""}${denariiDelta} denarii`;
     } else if (event.outcome === "reputation") {
-      const base = event.amount ?? 0;
+      const base = Math.max(1, Math.round((event.amount ?? 0) * SOCIAL_REPUTATION_SCALE));
       reputationDelta = event.tone === "positive" ? base * party.length : -base;
       summary = `${reputationDelta > 0 ? "+" : ""}${reputationDelta} fame`;
     } else if (event.outcome === "xp") {
@@ -2636,7 +2642,7 @@ export const runSocialEvent = createServerFn({ method: "POST" })
         const options = slotKeys.filter(k => (row[k] ?? 0) < MAX_GEAR_TIER);
         if (options.length === 0) {
           // Already mastercrafted everywhere — a small consolation purse instead.
-          const consolation = applyGoldBonus(Math.max(1, Math.round(100 * (0.85 + Math.random() * 0.3))), profile.relics, profile.boss_kills as Record<string, number>);
+          const consolation = applyGoldBonus(Math.max(1, Math.round(100 * SOCIAL_DENARII_SCALE * (0.85 + Math.random() * 0.3))), profile.relics, profile.boss_kills as Record<string, number>);
           denariiDelta += consolation;
           perGladiator.push(`${g.name}: already mastercrafted — +${consolation} denarii instead`);
           continue;
