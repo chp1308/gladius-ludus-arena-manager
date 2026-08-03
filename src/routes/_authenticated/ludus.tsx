@@ -274,7 +274,7 @@ function LudusPage() {
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1"><Coins className="h-4 w-4 text-accent" /> {denarii} denarii</span>
             <span className="flex items-center gap-1"><Award className="h-4 w-4 text-accent" /> {data.profile?.reputation ?? 0} fame</span>
-            <span>{data.gladiators.length} gladiators</span>
+            <span>{data.gladiators.filter(g => g.status !== "dead" && !g.is_beast).length} gladiators</span>
           </div>
         }
         actions={headerActions}
