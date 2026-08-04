@@ -75,7 +75,7 @@ export const SOCIAL_EVENTS: SocialEvent[] = [
   { id: "pos-48", tone: "positive", text: "A magistrate settles a dispute in your ludus's favor after meeting {g} personally.", outcome: "reputation", amount: 10 },
   { id: "pos-49", tone: "positive", text: "{g} helps a lost child find her family in the Forum crowds — the grateful parents pay well.", outcome: "denarii", amount: 80 },
   { id: "pos-50", tone: "positive", text: "A wine merchant, celebrating a good harvest, toasts {g} generously.", outcome: "denarii", amount: 75 },
-  { id: "pos-51", tone: "positive", text: "{g} sparks a bidding war between two patrons eager to sponsor your ludus.", outcome: "denarii", amount: 215 },
+  { id: "pos-51", tone: "positive", text: "{g} sparks a bidding war between two patrons eager to sponsor your ludus.", outcome: "denarii", amount: 188 },
   { id: "pos-52", tone: "positive", text: "The crowd at a minor festival mistakes {g} for a famous champion — and pays like it.", outcome: "denarii", amount: 85 },
   { id: "pos-53", tone: "positive", text: "{g} is gifted a fine cloak and boots by an admiring textile merchant.", outcome: "gear" },
   { id: "pos-54", tone: "positive", text: "A retired gladiator, now a trainer, shares hard-won wisdom with {g}.", outcome: "xp", amount: 65 },
