@@ -31,7 +31,7 @@ function LeaderboardPage() {
         title={<span className="flex items-center gap-2"><Trophy className="h-5 w-5" /> Hall of Champions</span>}
       />
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-6 py-8 md:grid-cols-2">
+      <main className="mx-auto grid max-w-6xl gap-6 px-6 py-8 md:grid-cols-2 lg:grid-cols-3">
         <Card className="p-6">
           <div className="mb-4 flex items-center gap-2 font-display text-lg tracking-wider text-primary">
             <Crown className="h-5 w-5" /> Most Famous Ludi
@@ -83,7 +83,7 @@ function LeaderboardPage() {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Lv {g.level} · {g.is_beast ? WEAPON_LABELS[g.weapon_type] ?? g.class : `${g.class} · ${WEAPON_LABELS[g.weapon_type] ?? g.weapon_type}`} ·{" "}
+                      Lv {g.level} · {g.is_beast ? WEAPON_LABELS[g.weapon_type] ?? g.class : WEAPON_LABELS[g.weapon_type] ?? g.weapon_type} ·{" "}
                       <Link to="/ludi/$id" params={{ id: g.owner_id }} className="underline-offset-4 hover:text-primary hover:underline">
                         {g.ludus_name}
                       </Link>
@@ -99,21 +99,21 @@ function LeaderboardPage() {
           </div>
         </Card>
 
-        <Card className="p-6 md:col-span-2">
+        <Card className="p-6">
           <div className="mb-4 flex items-center gap-2 font-display text-lg tracking-wider text-primary">
             <Skull className="h-5 w-5" /> Boss Slayers
           </div>
           {isLoading && <p className="text-sm text-muted-foreground">Consulting the myths…</p>}
           <div className="space-y-1">
             {(data?.bosses ?? []).map((b) => (
-              <div key={b.key} className="flex items-center justify-between border-b border-border/40 py-2 text-sm">
-                <span className="font-serif text-foreground">{b.name}</span>
+              <div key={b.key} className="border-b border-border/40 py-2 text-sm">
+                <div className="font-serif text-foreground">{b.name}</div>
                 {b.champion ? (
-                  <div className="flex items-center gap-3">
+                  <div className="mt-0.5 flex items-center justify-between">
                     <Link
                       to="/ludi/$id"
                       params={{ id: b.champion.owner_id }}
-                      className="text-foreground underline-offset-4 hover:text-primary hover:underline"
+                      className="text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
                     >
                       {b.champion.ludus_name}
                     </Link>
