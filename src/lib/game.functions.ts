@@ -1580,7 +1580,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       profile.relics,
       profile.boss_kills as Record<string, number>,
     );
-    const xpEach = Math.floor((won ? battle.xp : Math.floor(battle.xp * 0.4)) / 1);
+    const xpEach = Math.floor((won ? battle.xp : Math.floor(battle.xp * 0.4)) / team.length);
     const repGained = won ? battle.rep : 0;
 
     log.push(won
