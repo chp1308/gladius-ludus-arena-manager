@@ -474,7 +474,7 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
-    const COST = Math.max(20, 50 - (profile.training_level - 1) * 6);
+    const COST = trainCost(profile.training_level);
 
     const { data: g } = await supabase.from("gladiators")
       .select("id,status,injury_until,strength,agility,stamina,technique,health,health_updated_at,total_invested")
