@@ -79,7 +79,7 @@ export const trainingFacilityCost = (curr: number) =>
   curr < 5 ? FACILITY_COST(curr) : 2500 + 1000 * (curr - 4);
 
 // Temple of Relics — governs the odds of "key" loot drops (e.g. Key to
-// Hades). Denominator shrinks by 5 per level: 1/25, 1/20, 1/15, 1/10, 1/5.
+// the Underworld). Denominator shrinks by 5 per level: 1/25, 1/20, 1/15, 1/10, 1/5.
 export const keyDropChance = (relicsLevel: number) => 1 / (30 - 5 * relicsLevel);
 
 // Armory level required to CRAFT gear of a given tier.
@@ -2168,7 +2168,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       const totalXpGained = [...xpByGladiator.values()].reduce((a, b) => a + b, 0);
 
       const relicNotes = newRelics.map(k => RELICS.find(r => r.key === k)?.label ?? k);
-      const keyNote = hadesKeysGained > 0 ? "the cohort recovers a Key to Hades!" : "";
+      const keyNote = hadesKeysGained > 0 ? "the cohort recovers a Key to the Underworld!" : "";
       log.push(won
         ? `${boss.name} falls. +${denariiGained} denarii.${totalXpGained > 0 ? ` +${XP_PER_GLADIATOR} XP each.` : ""}${gearNotes.length ? " " + gearNotes.join(", ") : ""}${xpNotes.length ? " " + xpNotes.join(" ") : ""}${relicNotes.length ? ` The cohort discovers ${relicNotes.join(", ")}!` : ""}${keyNote ? ` ${keyNote}` : ""}`
         : `The cohort is broken and falls back. A small purse of ${denariiGained} denarii for their courage.`);

@@ -161,7 +161,7 @@ const FACILITIES = [
   { key: "armory", label: "Armory", desc: "Cheaper weapon & armor upgrades", icon: Hammer },
   { key: "pantry", label: "Pantry", desc: "Stores grain, meat, and amphorae — houses more gladiators and beasts", icon: Wheat },
   { key: "social", label: "Cursus Honorum", desc: "Send gladiators to court Rome's high society for coin and renown", icon: Landmark },
-  { key: "relics", label: "Temple of Relics", desc: "Improves the odds of rare boss loot, including the Key to Hades", icon: Gem },
+  { key: "relics", label: "Temple of Relics", desc: "Improves the odds of rare boss loot, including the Key to the Underworld", icon: Gem },
 ] as const;
 
 const SKILL_TREE = [
@@ -221,7 +221,7 @@ function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armo
     }
     case "relics": {
       const denom = Math.round(1 / keyDropChance(level));
-      return `Active now: 1-in-${denom} chance of a Key to Hades per boss kill`;
+      return `Active now: 1-in-${denom} chance of a Key to the Underworld per boss kill`;
     }
   }
 }
@@ -1728,7 +1728,7 @@ function RelicsPanel({ state }: { state: State }) {
           <KeyRound className="h-5 w-5 shrink-0 text-accent" />
           <div>
             <div className="font-display text-sm">
-              <span className="text-accent">{hadesKeys}</span> Key{hadesKeys === 1 ? "" : "s"} to Hades
+              <span className="text-accent">{hadesKeys}</span> Key{hadesKeys === 1 ? "" : "s"} to the Underworld
             </div>
             <p className="font-serif text-xs italic text-muted-foreground">
               A consumable dropped by Cerberus. Hold onto these — they'll unlock something more, in time.
