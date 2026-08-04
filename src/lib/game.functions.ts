@@ -1401,6 +1401,11 @@ export type TeamBattle = {
   rep: number;
 };
 
+// Denarii from team battles scaled to 75% of the raw TeamBattle.reward
+// values below (xp/rep untouched) — central multiplier so the per-battle
+// numbers don't need hand-editing.
+export const TEAM_DENARII_SCALE = 0.75;
+
 export const TEAM_BATTLES: TeamBattle[] = [
   { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerMin: 150, powerMax: 400, hp: 150, reward: 400, xp: 120, rep: 6 },
   // All-beast encounters — requireBeast === size, so every slot must be a
@@ -1576,7 +1581,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     const won = enemyHp <= teamHp;
 
     const denariiGained = applyGoldBonus(
-      won ? battle.reward + rand(0, Math.floor(battle.reward * 0.2)) : Math.floor(battle.reward * 0.15),
+      Math.round((won ? battle.reward + rand(0, Math.floor(battle.reward * 0.2)) : Math.floor(battle.reward * 0.15)) * TEAM_DENARII_SCALE),
       profile.relics,
       profile.boss_kills as Record<string, number>,
     );

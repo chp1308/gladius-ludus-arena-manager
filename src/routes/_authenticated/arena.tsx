@@ -8,7 +8,7 @@ import {
   postPvpChallenge, cancelPvpChallenge, listOpenPvpChallenges, acceptPvpChallenge,
   matchRating,
   ARENA_TIERS, tierUnlockReason,
-  TEAM_BATTLES, teamBattleRequirementError, WEAPON_LABELS,
+  TEAM_BATTLES, teamBattleRequirementError, TEAM_DENARII_SCALE, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator, healCost,
   getPitFightAvailability, PIT_MAX_CHARGES,
   getTeamBattleAvailability, TEAM_MAX_CHARGES,
@@ -742,7 +742,7 @@ function TeamFights({ state }: { state: State }) {
               >
                 <div className="flex items-center justify-between">
                   <div className="font-display text-base">{b.label}</div>
-                  <div className="text-xs text-accent">~{b.reward}d · +{b.rep} fame</div>
+                  <div className="text-xs text-accent">~{Math.round(b.reward * TEAM_DENARII_SCALE)}d · +{b.rep} fame</div>
                 </div>
                 <div className="mt-1 font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
                 <div className="mt-1 text-xs text-muted-foreground">Requires: {requirement}</div>
