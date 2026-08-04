@@ -522,6 +522,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_boss_kill_leaderboard: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          boss_key: string
+          kills: number
+          ludus_name: string
+          owner_id: string
+        }[]
+      }
       get_pvp_profiles: {
         Args: { p_ids: string[] }
         Returns: {

@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Trophy, Crown, Swords } from "lucide-react";
+import { Trophy, Crown, Swords, Skull } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AppHeader } from "@/components/app-header";
@@ -96,6 +96,34 @@ function LeaderboardPage() {
             {!isLoading && (data?.gladiators ?? []).length === 0 && (
               <p className="text-sm italic text-muted-foreground">No living gladiators yet.</p>
             )}
+          </div>
+        </Card>
+
+        <Card className="p-6 md:col-span-2">
+          <div className="mb-4 flex items-center gap-2 font-display text-lg tracking-wider text-primary">
+            <Skull className="h-5 w-5" /> Boss Slayers
+          </div>
+          {isLoading && <p className="text-sm text-muted-foreground">Consulting the myths…</p>}
+          <div className="space-y-1">
+            {(data?.bosses ?? []).map((b) => (
+              <div key={b.key} className="flex items-center justify-between border-b border-border/40 py-2 text-sm">
+                <span className="font-serif text-foreground">{b.name}</span>
+                {b.champion ? (
+                  <div className="flex items-center gap-3">
+                    <Link
+                      to="/ludi/$id"
+                      params={{ id: b.champion.owner_id }}
+                      className="text-foreground underline-offset-4 hover:text-primary hover:underline"
+                    >
+                      {b.champion.ludus_name}
+                    </Link>
+                    <Badge variant="secondary" className="font-mono">{b.champion.kills} kill{b.champion.kills === 1 ? "" : "s"}</Badge>
+                  </div>
+                ) : (
+                  <span className="text-xs italic text-muted-foreground">No confirmed kills yet</span>
+                )}
+              </div>
+            ))}
           </div>
         </Card>
       </main>

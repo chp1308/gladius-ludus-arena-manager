@@ -2302,7 +2302,7 @@ export const getLeaderboards = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [ludi, glads] = await Promise.all([
+    const [ludi, glads, bossKills] = await Promise.all([
       supabase.rpc("get_reputation_leaderboard", { p_limit: 25 }),
       supabase.from("gladiators")
         .select("id,owner_id,name,class,weapon_type,is_beast,level,wins,losses,status,best_rank")
@@ -2310,6 +2310,7 @@ export const getLeaderboards = createServerFn({ method: "GET" })
         .order("wins", { ascending: false })
         .order("level", { ascending: false })
         .limit(25),
+      supabase.rpc("get_boss_kill_leaderboard"),
     ]);
 
     // Persist best_rank (lower is better) for anyone whose current rank beats their stored best.
@@ -2337,6 +2338,17 @@ export const getLeaderboards = createServerFn({ method: "GET" })
       ? await supabase.rpc("get_pvp_profiles", { p_ids: ownerIds })
       : { data: [] as { id: string; ludus_name: string }[] };
     const ownerMap = new Map((owners ?? []).map(o => [o.id, o.ludus_name]));
+
+    const championByBoss = new Map((bossKills.data ?? []).map(row => [row.boss_key, row]));
+    const bosses = BOSS_ENCOUNTERS.map(b => {
+      const champ = championByBoss.get(b.key);
+      return {
+        key: b.key,
+        name: b.name,
+        champion: champ ? { owner_id: champ.owner_id, ludus_name: champ.ludus_name, kills: champ.kills } : null,
+      };
+    });
+
     return {
       ludi: ludiRows.map((p, i) => ({ rank: i + 1, ...p, best_rank: Math.min(i + 1, p.best_rank ?? i + 1) })),
       gladiators: gladRows.map((g, i) => ({
@@ -2345,6 +2357,7 @@ export const getLeaderboards = createServerFn({ method: "GET" })
         best_rank: Math.min(i + 1, g.best_rank ?? i + 1),
         ludus_name: ownerMap.get(g.owner_id) ?? "Unknown Ludus",
       })),
+      bosses,
     };
   });
 
