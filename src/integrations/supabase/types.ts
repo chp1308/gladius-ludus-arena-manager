@@ -381,6 +381,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          achievement_tiers_claimed: Json
           armory_level: number
           best_rank: number | null
           bio: string
@@ -405,6 +406,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          achievement_tiers_claimed?: Json
           armory_level?: number
           best_rank?: number | null
           bio?: string
@@ -429,6 +431,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          achievement_tiers_claimed?: Json
           armory_level?: number
           best_rank?: number | null
           bio?: string

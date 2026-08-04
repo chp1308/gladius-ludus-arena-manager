@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useEffect } from "react";
+import { toast } from "sonner";
 import { Medal, Lock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -18,12 +20,21 @@ export const Route = createFileRoute("/_authenticated/achievements")({
 });
 
 function AchievementsPage() {
+  const qc = useQueryClient();
   const fetchProgress = useServerFn(getAchievementProgress);
   const { data, isLoading } = useQuery({
     queryKey: ["achievements"],
     queryFn: () => fetchProgress({}),
   });
   const progress: Record<string, number> = data?.progress ?? {};
+
+  useEffect(() => {
+    if (!data?.unlocked?.length) return;
+    for (const u of data.unlocked) {
+      toast.success(`${u.label} — Tier ${u.tier} unlocked! +${u.reward} denarii`);
+    }
+    qc.invalidateQueries({ queryKey: ["ludus"] });
+  }, [data, qc]);
 
   const totalBadges = ACHIEVEMENTS.length * 5;
   const earnedBadges = ACHIEVEMENTS.reduce((sum, cat) => {

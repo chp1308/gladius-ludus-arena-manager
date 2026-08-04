@@ -2523,13 +2523,18 @@ export const ACHIEVEMENTS: AchievementCategory[] = [
   },
 ];
 
+// Denarii paid the first time a tier is reached: 100 for tier 1, 200 for
+// tier 2, etc. Just a flat confirmation bump for the player, not a serious
+// income source — may change later.
+const ACHIEVEMENT_TIER_REWARD = (tier: number) => tier * 100;
+
 export const getAchievementProgress = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
     const [profileRes, gladRes, hofRes, winsRes, pvpWinsRes, deathWinsRes] = await Promise.all([
       supabase.from("profiles")
-        .select("denarii,reputation,training_level,scouting_level,medicus_level,armory_level,pantry_level")
+        .select("denarii,reputation,training_level,scouting_level,medicus_level,armory_level,pantry_level,achievement_tiers_claimed")
         .eq("id", userId).maybeSingle(),
       supabase.from("gladiators").select("level,is_beast").eq("owner_id", userId),
       supabase.from("hall_of_fame").select("level").eq("owner_id", userId),
@@ -2555,7 +2560,41 @@ export const getAchievementProgress = createServerFn({ method: "GET" })
       recruits: glads.length + hof.length,
       beasts: glads.filter(g => g.is_beast).length,
     };
-    return { progress };
+
+    // Grant a one-time denarii reward for each tier newly crossed since the
+    // last check. Claimed counts only ever ratchet upward, so a category
+    // whose underlying stat can fall back down (denarii held, beasts owned)
+    // never gets re-paid, and — since every profile starts with an empty
+    // claimed map — already-earned tiers pay out the first time this runs
+    // for existing players too.
+    const unlocked: { key: string; label: string; tier: number; reward: number }[] = [];
+    if (profile) {
+      const claimed = { ...(profile.achievement_tiers_claimed as Record<string, number> ?? {}) };
+      let rewardTotal = 0;
+      for (const cat of ACHIEVEMENTS) {
+        const value = progress[cat.key] ?? 0;
+        const achieved = cat.tiers.filter(t => value >= t).length;
+        const already = claimed[cat.key] ?? 0;
+        if (achieved > already) {
+          for (let tier = already + 1; tier <= achieved; tier++) {
+            const reward = ACHIEVEMENT_TIER_REWARD(tier);
+            rewardTotal += reward;
+            unlocked.push({ key: cat.key, label: cat.label, tier, reward });
+          }
+          claimed[cat.key] = achieved;
+        }
+      }
+      if (rewardTotal > 0) {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        await supabaseAdmin.from("profiles").update({
+          denarii: profile.denarii + rewardTotal,
+          achievement_tiers_claimed: claimed,
+        }).eq("id", userId);
+        progress.denarii = profile.denarii + rewardTotal;
+      }
+    }
+
+    return { progress, unlocked };
   });
 
 // ============================================================
