@@ -1915,8 +1915,15 @@ export const resolveBossRound = createServerFn({ method: "POST" })
     // The server owns the round's deadline — a request arriving after it
     // (slow client, dropped connection, tab left open) always resolves as
     // the worst case for whatever beat is live, regardless of what the
-    // client actually submitted.
-    const late = Date.now() > new Date(session.round_deadline).getTime();
+    // client actually submitted. A small grace period absorbs ordinary
+    // request round-trip time: the deadline is a server timestamp, but the
+    // client's local reveal timer starts on receipt of the *previous*
+    // response and its submission has to travel back — neither hop is
+    // budgeted into the raw deadline, so a genuinely on-time player can
+    // still lose the whole (short, ~1.4-2s) window to normal latency
+    // without this.
+    const BOSS_LATE_GRACE_MS = 500;
+    const late = Date.now() > new Date(session.round_deadline).getTime() + BOSS_LATE_GRACE_MS;
     const action: "strike" | "hold" = late ? "hold" : (data.action ?? "hold");
 
     const log: string[] = Array.isArray(session.log) ? [...(session.log as string[])] : [];
