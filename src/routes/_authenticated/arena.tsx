@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   getLudusState, fightMatch, fightTeamBattle,
@@ -35,6 +35,18 @@ import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, ArrowRight, ArrowD
 
 function formatCountdown(iso: string): string {
   return formatMinutes(minutesUntil(iso));
+}
+
+// Fisher-Yates — used to re-order the block/dodge cards each round so a
+// fixed keystroke pattern (e.g. "B-D-D") can't be memorized once and
+// replayed blind for the rest of the boar fight.
+function shuffled<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 function HealButton({ g, medicusLevel }: { g: Gladiator; medicusLevel: number }) {
@@ -1164,6 +1176,12 @@ function BossFightScreen({
   const allChosen = isDefenseBeat && party.every(g => defenses[g.id]);
   const expired = msLeft <= 0;
 
+  // Re-shuffled fresh every round so the card order (and therefore which
+  // gladiator each B/D keypress lands on) can't be memorized as a fixed
+  // pattern — a player has to actually read each card's weapon every time.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const defenseOrder = useMemo(() => shuffled(party), [session.round]);
+
   useEffect(() => {
     if (pending || autoSubmittedRef.current) return;
     if (msLeft <= 0) {
@@ -1186,14 +1204,14 @@ function BossFightScreen({
       if (key !== "b" && key !== "d") return;
       const choice = key === "b" ? "block" : "dodge";
       setDefenses(prev => {
-        const next = party.find(g => !prev[g.id]);
+        const next = defenseOrder.find(g => !prev[g.id]);
         if (!next) return prev;
         return { ...prev, [next.id]: choice };
       });
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isDefenseBeat, pending, party]);
+  }, [isDefenseBeat, pending, defenseOrder]);
 
   // S/H hotkeys for the offensive beat's Strike/Hold call.
   useEffect(() => {
@@ -1269,7 +1287,7 @@ function BossFightScreen({
 
       {isDefenseBeat ? (
         <div className="mx-auto grid max-w-xl gap-2 sm:grid-cols-3">
-          {party.map(g => {
+          {defenseOrder.map(g => {
             const picked = defenses[g.id];
             return (
               <div key={g.id} className="rounded-lg border border-border p-2 text-center">
