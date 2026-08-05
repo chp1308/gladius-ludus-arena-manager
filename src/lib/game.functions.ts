@@ -2528,7 +2528,7 @@ export const ACHIEVEMENTS: AchievementCategory[] = [
   },
   {
     key: "denarii", label: "Coffers of the Ludus",
-    description: "Hold this many denarii at once.",
+    description: "Hold this many denarii.",
     tiers: [1000, 2000, 3000, 4000, 10000],
   },
   {
@@ -2582,14 +2582,16 @@ export const getAchievementProgress = createServerFn({ method: "GET" })
     };
 
     // Grant a one-time denarii reward for each tier newly crossed since the
-    // last check. Claimed counts only ever ratchet upward, so a category
+    // last check, and track the highest tier ever reached per category —
+    // both use the same ratchet-only-up "claimed" record, so a category
     // whose underlying stat can fall back down (denarii held, beasts owned)
-    // never gets re-paid, and — since every profile starts with an empty
-    // claimed map — already-earned tiers pay out the first time this runs
+    // never gets re-paid, and never re-locks in the UI either, once earned.
+    // Every profile starts with an empty claimed map, so already-earned
+    // tiers pay out — and unlock permanently — the first time this runs
     // for existing players too.
     const unlocked: { key: string; label: string; tier: number; reward: number }[] = [];
+    const claimed: Record<string, number> = profile ? { ...(profile.achievement_tiers_claimed as Record<string, number> ?? {}) } : {};
     if (profile) {
-      const claimed = { ...(profile.achievement_tiers_claimed as Record<string, number> ?? {}) };
       let rewardTotal = 0;
       for (const cat of ACHIEVEMENTS) {
         const value = progress[cat.key] ?? 0;
@@ -2614,7 +2616,7 @@ export const getAchievementProgress = createServerFn({ method: "GET" })
       }
     }
 
-    return { progress, unlocked };
+    return { progress, unlocked, claimedTiers: claimed };
   });
 
 // ============================================================

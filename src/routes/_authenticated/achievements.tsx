@@ -27,6 +27,7 @@ function AchievementsPage() {
     queryFn: () => fetchProgress({}),
   });
   const progress: Record<string, number> = data?.progress ?? {};
+  const claimedTiers: Record<string, number> = data?.claimedTiers ?? {};
 
   useEffect(() => {
     if (!data?.unlocked?.length) return;
@@ -39,7 +40,8 @@ function AchievementsPage() {
   const totalBadges = ACHIEVEMENTS.length * 5;
   const earnedBadges = ACHIEVEMENTS.reduce((sum, cat) => {
     const val = progress[cat.key] ?? 0;
-    return sum + cat.tiers.filter(t => val >= t).length;
+    const fromValue = cat.tiers.filter(t => val >= t).length;
+    return sum + Math.max(fromValue, claimedTiers[cat.key] ?? 0);
   }, 0);
 
   return (
@@ -57,18 +59,23 @@ function AchievementsPage() {
         </p>
         {isLoading && <p className="font-serif italic text-muted-foreground">Consulting the ludus's chronicles…</p>}
         {ACHIEVEMENTS.map(cat => (
-          <AchievementCard key={cat.key} category={cat} value={progress[cat.key] ?? 0} />
+          <AchievementCard key={cat.key} category={cat} value={progress[cat.key] ?? 0} claimedTier={claimedTiers[cat.key] ?? 0} />
         ))}
       </main>
     </div>
   );
 }
 
-function AchievementCard({ category, value }: { category: AchievementCategory; value: number }) {
-  const highestUnlocked = category.tiers.filter(t => value >= t).length; // 0-5
+function AchievementCard({ category, value, claimedTier }: { category: AchievementCategory; value: number; claimedTier: number }) {
+  // A tier stays unlocked forever once reached, even if the underlying
+  // stat (denarii held, beasts owned) later drops back down — claimedTier
+  // is the ratchet-only-up record from the server, live value can only
+  // push it further, never below.
+  const fromValue = category.tiers.filter(t => value >= t).length;
+  const highestUnlocked = Math.max(fromValue, claimedTier); // 0-5
   const nextTier = highestUnlocked < 5 ? category.tiers[highestUnlocked] : null;
   const prevTier = highestUnlocked > 0 ? category.tiers[highestUnlocked - 1] : 0;
-  const pct = nextTier ? Math.min(100, ((value - prevTier) / (nextTier - prevTier)) * 100) : 100;
+  const pct = nextTier ? Math.min(100, ((Math.max(value, prevTier) - prevTier) / (nextTier - prevTier)) * 100) : 100;
 
   return (
     <Card className="p-5">
@@ -84,7 +91,7 @@ function AchievementCard({ category, value }: { category: AchievementCategory; v
 
       <div className="flex items-center gap-3">
         {category.tiers.map((t, i) => {
-          const unlocked = value >= t;
+          const unlocked = i < highestUnlocked;
           return (
             <div key={t} className="flex flex-col items-center gap-1">
               <div
