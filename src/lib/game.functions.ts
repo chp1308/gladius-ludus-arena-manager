@@ -44,8 +44,24 @@ async function spendDenarii(
 
 const ORIGINS = ["Thrace", "Gaul", "Nubia", "Britannia", "Germania", "Hispania", "Syria", "Numidia"];
 const CLASSES = ["Murmillo", "Retiarius", "Thraex", "Secutor", "Hoplomachus", "Dimachaerus"];
-const PRAENOMEN = ["Marcus", "Quintus", "Lucius", "Titus", "Gaius", "Aulus", "Decimus", "Publius", "Spurius", "Crixus", "Priscus", "Verus", "Flamma", "Spartacus", "Hermes", "Tetraites"];
-const COGNOMEN = ["the Bull", "the Wolf", "the Swift", "the Iron", "of Capua", "the Younger", "Ferrus", "Magnus", "the Silent", "the Grim", "the Fair", "Invictus", ""];
+// Both lists deliberately mix standard Roman praenomina with historical/
+// thematic gladiator names — matches the flavor already established by
+// Crixus, Spartacus, Flamma, and Tetraites below. No trailing "" entry in
+// COGNOMEN — the no-cognomen case is already handled by the 50% coin flip
+// in generateGladiator, so keeping it here would just double-count the
+// bare-praenomen collision chance.
+const PRAENOMEN = [
+  "Marcus", "Quintus", "Lucius", "Titus", "Gaius", "Aulus", "Decimus", "Publius", "Spurius", "Crixus",
+  "Priscus", "Verus", "Flamma", "Spartacus", "Hermes", "Tetraites", "Gnaeus", "Servius", "Tiberius", "Appius",
+  "Manius", "Numerius", "Vibius", "Sextus", "Cassius", "Oenomaus", "Bato", "Pugnax", "Celadus", "Astyanax",
+  "Nepimus", "Columbus", "Rutilus", "Draco", "Silvanus", "Barca", "Nemesius", "Thallus", "Corvus", "Ursus",
+];
+const COGNOMEN = [
+  "the Bull", "the Wolf", "the Swift", "the Iron", "of Capua", "the Younger", "Ferrus", "Magnus", "the Silent", "the Grim",
+  "the Fair", "Invictus", "the Lion", "the Hammer", "the Serpent", "the Shadow", "of Rome", "the Elder", "Ferox", "the Bold",
+  "the Cruel", "the Just", "Victor", "the Relentless", "the Unbroken", "of Gaul", "the Savage", "Rex", "the Merciless", "the Brave",
+  "of Thrace", "the Stone", "the Storm", "the Reaper", "the Undefeated", "the Fierce", "the Patient", "of Numidia", "the Vengeful", "the Steadfast",
+];
 
 // Human weapon styles — like Domina's fighting styles
 const WEAPON_TYPES = ["gladius", "spear", "net", "dual"] as const;
