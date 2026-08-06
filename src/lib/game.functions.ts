@@ -2244,10 +2244,21 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       const totalXpGained = [...xpByGladiator.values()].reduce((a, b) => a + b, 0);
 
       const relicNotes = newRelics.map(k => RELICS.find(r => r.key === k)?.label ?? k);
-      const keyNote = hadesKeysGained > 0 ? "the cohort recovers a Key to the Underworld!" : "";
-      log.push(won
-        ? `${boss.name} falls. +${denariiGained} denarii.${totalXpGained > 0 ? ` +${XP_PER_GLADIATOR} XP each.` : ""}${gearNotes.length ? " " + gearNotes.join(", ") : ""}${xpNotes.length ? " " + xpNotes.join(" ") : ""}${relicNotes.length ? ` The cohort discovers ${relicNotes.join(", ")}!` : ""}${keyNote ? ` ${keyNote}` : ""}`
-        : `The cohort is broken and falls back. A small purse of ${denariiGained} denarii for their courage.`);
+      // One reward per log line (matching the round-by-round lines above)
+      // instead of one run-on sentence — so a win screen with gear, XP
+      // exemptions, a relic, and a key drop all in the same fight reads as
+      // a clear itemized list, not a paragraph to parse.
+      if (won) {
+        log.push(`${boss.name} falls!`);
+        log.push(`+${denariiGained} denarii`);
+        if (totalXpGained > 0) log.push(`+${XP_PER_GLADIATOR} XP each`);
+        for (const note of gearNotes) log.push(note);
+        for (const note of xpNotes) log.push(note);
+        if (relicNotes.length) log.push(`The cohort discovers ${relicNotes.join(", ")}!`);
+        if (hadesKeysGained > 0) log.push("The cohort recovers a Key to the Underworld!");
+      } else {
+        log.push(`The cohort is broken and falls back. A small purse of ${denariiGained} denarii for their courage.`);
+      }
 
       if (profile) {
         await supabaseAdmin.from("profiles").update({
