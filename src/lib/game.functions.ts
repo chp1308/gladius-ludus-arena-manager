@@ -86,17 +86,28 @@ export const MAX_GEAR_TIER = 8;
 const FACILITY_COST = (curr: number) => 500 * (curr + 1); // 1->2 costs 1000
 const SKILL_COST = (curr: number) => 200 * (curr + 1);
 
-// Training Yard alone goes past the shared facility cap — extra levels let
-// stats reach a hard 100 cap. Cost per step also steepens above level 5
-// (+1000/step instead of the shared +500/step), continuous at the level-5
-// boundary (curr=4 gives 2500 under both formulas).
-export const TRAINING_MAX_LEVEL = 10;
-export const trainingFacilityCost = (curr: number) =>
+// Shared cost curve for the two facilities that go past the normal 1-5
+// cap (Training Yard, Temple of Relics): unchanged for levels 1-5, then
+// steepens to +1000/step for 6-10 — continuous at the level-5 boundary
+// (curr=4 gives 2500 under both branches).
+export const EXTENDED_MAX_LEVEL = 10;
+export const extendedFacilityCost = (curr: number) =>
   curr < 5 ? FACILITY_COST(curr) : 2500 + 1000 * (curr - 4);
+export const TRAINING_MAX_LEVEL = EXTENDED_MAX_LEVEL;
+export const trainingFacilityCost = extendedFacilityCost;
 
-// Temple of Relics — governs the odds of "key" loot drops (e.g. Key to
-// the Underworld). Denominator shrinks by 5 per level: 1/25, 1/20, 1/15, 1/10, 1/5.
-export const keyDropChance = (relicsLevel: number) => 1 / (30 - 5 * relicsLevel);
+// Temple of Relics — alternates which of its two effects each level
+// improves: odd levels (1,3,5,7,9) cut the boss-fight cooldown, even
+// levels (2,4,6,8,10) raise the "key" loot-drop chance (e.g. Key to the
+// Underworld). Each stat holds at its last-reached tier between its own
+// upgrades, so the two visibly take turns rather than both quietly
+// climbing together. Values only defined 1-10; RELICS_MAX_LEVEL caps it.
+export const RELICS_MAX_LEVEL = EXTENDED_MAX_LEVEL;
+export const relicsFacilityCost = extendedFacilityCost;
+const RELICS_COOLDOWN_HOURS: Record<number, number> = { 1: 20, 2: 20, 3: 17, 4: 17, 5: 14, 6: 14, 7: 11, 8: 11, 9: 8, 10: 8 };
+const RELICS_KEY_DROP_CHANCE: Record<number, number> = { 1: 0, 2: 0.04, 3: 0.04, 4: 0.05, 5: 0.05, 6: 1 / 15, 7: 1 / 15, 8: 0.10, 9: 0.10, 10: 0.20 };
+export const relicsCooldownHours = (relicsLevel: number) => RELICS_COOLDOWN_HOURS[relicsLevel] ?? 24;
+export const keyDropChance = (relicsLevel: number) => RELICS_KEY_DROP_CHANCE[relicsLevel] ?? 0;
 
 // Armory level required to CRAFT gear of a given tier.
 // Basic gear needs a village smith; masterwork needs the Master Forge.
@@ -400,9 +411,9 @@ export const upgradeFacility = createServerFn({ method: "POST" })
     if (!profile) throw new Error("No profile");
     const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level" | "social_level" | "relics_level";
     const curr = (profile as unknown as Record<string, number>)[col];
-    const maxLevel = data.facility === "training" ? TRAINING_MAX_LEVEL : MAX_FACILITY;
+    const maxLevel = data.facility === "training" || data.facility === "relics" ? EXTENDED_MAX_LEVEL : MAX_FACILITY;
     if (curr >= maxLevel) throw new Error("Facility already at max level");
-    const cost = data.facility === "training" ? trainingFacilityCost(curr) : FACILITY_COST(curr);
+    const cost = data.facility === "training" || data.facility === "relics" ? extendedFacilityCost(curr) : FACILITY_COST(curr);
     const next = curr + 1;
 
     await spendDenarii(supabaseAdmin, userId, cost, `Need ${cost} denarii`);
@@ -1758,13 +1769,15 @@ export const getBossFightState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [sessionRes, attemptsRes, localWinRes] = await Promise.all([
+    const [sessionRes, attemptsRes, localWinRes, profileRes] = await Promise.all([
       supabase.from("boss_fight_sessions").select("*").eq("owner_id", userId).maybeSingle(),
       supabase.from("boss_attempts").select("boss_key,created_at,won,loot_drops").eq("owner_id", userId).order("created_at", { ascending: false }),
       // Unbounded by the 20-row recent-matches list used elsewhere — a Local
       // Games win from long ago still counts, it just needs to have happened.
       supabase.from("matches").select("id").eq("owner_id", userId).eq("difficulty", "local").eq("result", "win").limit(1),
+      supabase.from("profiles").select("relics_level").eq("id", userId).maybeSingle(),
     ]);
+    const cooldownHours = relicsCooldownHours(profileRes.data?.relics_level ?? 1);
     const latestByBoss = new Map<string, string>();
     const defeatedBosses = new Set<string>();
     const lootCounts: Record<string, Record<string, number>> = {};
@@ -1779,7 +1792,7 @@ export const getBossFightState = createServerFn({ method: "GET" })
     for (const boss of BOSS_ENCOUNTERS) {
       const last = latestByBoss.get(boss.key);
       if (!last) { cooldowns[boss.key] = null; } else {
-        const availableAt = new Date(new Date(last).getTime() + 24 * 3600_000);
+        const availableAt = new Date(new Date(last).getTime() + cooldownHours * 3600_000);
         cooldowns[boss.key] = availableAt > new Date() ? availableAt.toISOString() : null;
       }
       defeated[boss.key] = defeatedBosses.has(boss.key);
@@ -1867,7 +1880,7 @@ export const startBossFight = createServerFn({ method: "POST" })
       .select("created_at").eq("owner_id", userId).eq("boss_key", boss.key)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (lastAttempt) {
-      const availableAt = new Date(lastAttempt.created_at).getTime() + 24 * 3600_000;
+      const availableAt = new Date(lastAttempt.created_at).getTime() + relicsCooldownHours(profile.relics_level) * 3600_000;
       if (Date.now() < availableAt) {
         throw new Error(`${boss.name} is not ready — recovers in ${Math.ceil((availableAt - Date.now()) / 3_600_000)}h`);
       }

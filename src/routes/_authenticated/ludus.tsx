@@ -8,7 +8,7 @@ import {
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, healRegenPerHour, pantryCapacity, gladiatorPower,
-  TRAINING_MAX_LEVEL, trainingFacilityCost, keyDropChance,
+  keyDropChance, EXTENDED_MAX_LEVEL, extendedFacilityCost, relicsCooldownHours,
   trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier,
   runSocialEvent, socialDelegationSize, socialToneWeights, SOCIAL_COOLDOWN_MINUTES,
 } from "@/lib/game.functions";
@@ -161,7 +161,7 @@ const FACILITIES = [
   { key: "armory", label: "Armory", desc: "Cheaper weapon & armor upgrades", icon: Hammer },
   { key: "pantry", label: "Pantry", desc: "Stores grain, meat, and amphorae — houses more gladiators and beasts", icon: Wheat },
   { key: "social", label: "Cursus Honorum", desc: "Send gladiators to court Rome's high society for coin and renown", icon: Landmark },
-  { key: "relics", label: "Temple of Relics", desc: "Improves the odds of rare boss loot, including the Key to the Underworld", icon: Gem },
+  { key: "relics", label: "Temple of Relics", desc: "Alternates between shortening the boss-fight cooldown and improving the odds of the Key to the Underworld", icon: Gem },
 ] as const;
 
 const SKILL_TREE = [
@@ -178,10 +178,10 @@ const SKILL_TREE = [
 
 
 function facilityCost(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics", curr: number) {
-  return facility === "training" ? trainingFacilityCost(curr) : 500 * (curr + 1);
+  return facility === "training" || facility === "relics" ? extendedFacilityCost(curr) : 500 * (curr + 1);
 }
 function facilityMaxLevel(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics") {
-  return facility === "training" ? TRAINING_MAX_LEVEL : 5;
+  return facility === "training" || facility === "relics" ? EXTENDED_MAX_LEVEL : 5;
 }
 function skillCost(curr: number) { return 200 * (curr + 1); }
 
@@ -220,8 +220,10 @@ function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armo
       return `Active now: send up to ${size} gladiator${size === 1 ? "" : "s"} · ${Math.round(odds.positive * 100)}% favorable odds`;
     }
     case "relics": {
-      const denom = Math.round(1 / keyDropChance(level));
-      return `Active now: 1-in-${denom} chance of a Key to the Underworld per boss kill`;
+      const hours = relicsCooldownHours(level);
+      const chance = keyDropChance(level);
+      const chanceText = chance > 0 ? `1-in-${Math.round(1 / chance)} chance of a Key to the Underworld per boss kill` : "no Key to the Underworld chance yet";
+      return `Active now: boss cooldown ${hours}h · ${chanceText}`;
     }
   }
 }
