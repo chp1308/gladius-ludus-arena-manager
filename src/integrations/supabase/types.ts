@@ -242,6 +242,7 @@ export type Database = {
           burst_index: number
           burst_length: number
           created_at: string
+          deadline_mult: number
           gladiator_ids: string[]
           gladiator_names: string[]
           id: string
@@ -264,6 +265,7 @@ export type Database = {
           burst_index?: number
           burst_length?: number
           created_at?: string
+          deadline_mult?: number
           gladiator_ids: string[]
           gladiator_names?: string[]
           id?: string
@@ -286,6 +288,7 @@ export type Database = {
           burst_index?: number
           burst_length?: number
           created_at?: string
+          deadline_mult?: number
           gladiator_ids?: string[]
           gladiator_names?: string[]
           id?: string

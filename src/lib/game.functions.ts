@@ -214,6 +214,21 @@ export function pitInjuryChance(startHealthPct: number): number {
   return Math.min(0.6, 0.1 + 0.5 * (1 - Math.max(0, Math.min(1, startHealthPct))));
 }
 
+// Technique cuts injury risk by up to 75% at full development — scaled
+// toward the CURRENT stat cap (not a hardcoded 100) so it keeps working
+// correctly as the Training Yard levels up further. Applied everywhere a
+// gladiator can be injured: multiplies the pit's existing pitInjuryChance,
+// and gates the PvP/team/boss "hit crossed the injury threshold" trigger
+// with its own roll (those fight types had no probability at all before —
+// a qualifying hit always injured — so this is purely additive value from
+// training technique, not a nerf to untrained gladiators).
+const TECHNIQUE_INJURY_REDUCTION_MAX = 0.75;
+export function techniqueInjuryReduction(technique: number, trainingLevel: number): number {
+  const cap = statCap(trainingLevel);
+  const pct = cap > 0 ? Math.min(1, technique / cap) : 0;
+  return TECHNIQUE_INJURY_REDUCTION_MAX * pct;
+}
+
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
@@ -859,12 +874,12 @@ export const fightMatch = createServerFn({ method: "POST" })
       // same fight would otherwise have inflicted, and this match doesn't
       // burn a pit-fight charge — see refunded_charge below.
       newHealth = myMaxHp;
-    } else if (Math.random() < pitInjuryChance(currentHealth / myMaxHp)) {
+    } else if (Math.random() < pitInjuryChance(currentHealth / myMaxHp) * (1 - techniqueInjuryReduction(g.technique, profile.training_level))) {
       // Injury risk scales with how wounded the gladiator was *entering*
       // this fight (10% baseline at full health, up to 60% near death) —
       // not with how rough this particular fight was, since pit fights
       // running the full HP pool now regularly push a fighter toward the
-      // 1 HP floor regardless.
+      // 1 HP floor regardless. Technique cuts that chance by up to 75%.
       const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
       injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
       log.push(`${g.name} picks up a nasty wound — ${hours}h to recover.`);
@@ -1247,7 +1262,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       // Leveling up fully heals the gladiator and shakes off any wound this
       // same fight would otherwise have inflicted.
       newHealth = myMaxHp;
-    } else if ((newHealth <= 1 || damageTaken > myMaxHp * 0.6) && newHealth > 0) {
+    } else if ((newHealth <= 1 || damageTaken > myMaxHp * 0.6) && newHealth > 0
+      && Math.random() < 1 - techniqueInjuryReduction(g.technique, profile.training_level)) {
       const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
       injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
       log.push(`${g.name} is injured for ${hours}h.`);
@@ -1289,7 +1305,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       oppNewHealth = 0;
     } else if (oppLeveledUp) {
       oppNewHealth = oppMaxHp;
-    } else if ((oppNewHealth <= 1 || oppDamage > oppMaxHp * 0.6) && oppNewHealth > 0) {
+    } else if ((oppNewHealth <= 1 || oppDamage > oppMaxHp * 0.6) && oppNewHealth > 0
+      && Math.random() < 1 - techniqueInjuryReduction(opp.technique, oppTrainingLevel)) {
       const oppHours = injuryHours(rand(12, 24), opp.agility, oppMedicusLevel, oppTrainingLevel);
       oppInjury = new Date(Date.now() + oppHours * 3600_000).toISOString();
     }
@@ -1624,7 +1641,8 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
       if (leveledUp) {
         newHealth = maxHealth(g.strength);
         log.push(`⚔ ${g.name} advances to level ${newLevel} — fully healed!`);
-      } else if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
+      } else if ((newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55)
+        && Math.random() < 1 - techniqueInjuryReduction(g.technique, profile.training_level)) {
         const hours = injuryHours(rand(12, 24), g.agility, profile.medicus_level, profile.training_level);
         injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
       }
@@ -1784,8 +1802,27 @@ function bossBeatForRound(round: number): BossBeat {
 // of hitting harder — see BossPhase.howlDamageScale. Cerberus's snake bite
 // gets the same tighter window.
 const HOWL_DEADLINE_MULT = 0.7;
-function bossRoundDeadlineMs(boss: BossDefinition, beat: BossBeat): number {
-  return (beat === "howl" || beat === "snake_bite") ? Math.round(boss.roundDeadlineMs * HOWL_DEADLINE_MULT) : boss.roundDeadlineMs;
+// Technique widens every round's reaction window, up to 2x at full stat-cap
+// development — frozen at fight start as session.deadline_mult (see
+// TECHNIQUE_DEADLINE_BONUS_MAX below), so this always gets that multiplier
+// explicitly rather than defaulting silently.
+function bossRoundDeadlineMs(boss: BossDefinition, beat: BossBeat, deadlineMult: number): number {
+  const base = (beat === "howl" || beat === "snake_bite") ? Math.round(boss.roundDeadlineMs * HOWL_DEADLINE_MULT) : boss.roundDeadlineMs;
+  return Math.round(base * deadlineMult);
+}
+
+// Average party Technique -> reaction-window multiplier, scaled toward the
+// CURRENT stat cap (not a hardcoded 100) so it keeps working correctly as
+// the Training Yard levels up further — 1x at zero development, up to 2x
+// (TECHNIQUE_DEADLINE_BONUS_MAX) once the party's average technique matches
+// the cap.
+const TECHNIQUE_DEADLINE_BONUS_MAX = 1;
+function bossDeadlineMult(team: { technique: number }[], trainingLevel: number): number {
+  if (team.length === 0) return 1;
+  const avgTechnique = team.reduce((sum, g) => sum + g.technique, 0) / team.length;
+  const cap = statCap(trainingLevel);
+  const pct = cap > 0 ? Math.min(1, avgTechnique / cap) : 0;
+  return 1 + TECHNIQUE_DEADLINE_BONUS_MAX * pct;
 }
 
 // After a round resolves, the client plays a two-stage reveal — the
@@ -1877,6 +1914,7 @@ export const startBossFight = createServerFn({ method: "POST" })
     const armorReduction = team.length
       ? Math.round(team.reduce((sum, g) => sum + armorMitigation(g, defenseLevel).min, 0) / team.length)
       : 0;
+    const deadlineMult = bossDeadlineMult(team, profile.training_level);
 
     const { data: session, error } = await supabaseAdmin.from("boss_fight_sessions").insert({
       owner_id: userId,
@@ -1885,6 +1923,7 @@ export const startBossFight = createServerFn({ method: "POST" })
       gladiator_names: team.map(g => g.name),
       shield_map: shieldMap,
       armor_reduction: armorReduction,
+      deadline_mult: deadlineMult,
       phase: 1,
       team_power: teamPower,
       boss_hp: bossMaxHp,
@@ -1895,7 +1934,7 @@ export const startBossFight = createServerFn({ method: "POST" })
       burst_length: burstLength,
       burst_index: burstIndex,
       beat_type: beatType,
-      round_deadline: new Date(Date.now() + bossRoundDeadlineMs(boss, beatType)).toISOString(),
+      round_deadline: new Date(Date.now() + bossRoundDeadlineMs(boss, beatType, deadlineMult)).toISOString(),
       log,
     }).select("*").single();
     if (error) throw new Error(error.message);
@@ -2047,7 +2086,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
     // surviving longer attack bursts, not a mauling clock.
     let tickDamage = 0;
     if (!isCerberus) {
-      const thisRoundMs = bossRoundDeadlineMs(boss, session.beat_type as BossBeat);
+      const thisRoundMs = bossRoundDeadlineMs(boss, session.beat_type as BossBeat, session.deadline_mult);
       const roundStartedAt = new Date(session.round_deadline).getTime() - thisRoundMs;
       const elapsedMs = Math.min(thisRoundMs, Math.max(0, Date.now() - roundStartedAt));
       const tickPerSecond = Math.max(1, Math.round(session.party_max_hp * phaseDef.tickDamageScale) - session.armor_reduction);
@@ -2149,7 +2188,8 @@ export const resolveBossRound = createServerFn({ method: "POST" })
         if (leveledUp) {
           newHealth = maxHealth(g.strength);
           xpNotes.push(`${g.name} advances to level ${newLevel} — fully healed!`);
-        } else if (newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55) {
+        } else if ((newHealth <= 1 || dmg > maxHealth(g.strength) * 0.55)
+          && Math.random() < 1 - techniqueInjuryReduction(g.technique, trainingLevel)) {
           const hours = injuryHours(rand(12, 24), g.agility, medicusLevel, trainingLevel);
           injuryUntil = new Date(Date.now() + hours * 3600_000).toISOString();
         }
@@ -2254,7 +2294,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
           party_hp: partyHp,
           round: 1,
           beat_type: nextBeat,
-          round_deadline: new Date(Date.now() + BOSS_REVEAL_TOTAL_MS + bossRoundDeadlineMs(boss, nextBeat)).toISOString(),
+          round_deadline: new Date(Date.now() + BOSS_REVEAL_TOTAL_MS + bossRoundDeadlineMs(boss, nextBeat, session.deadline_mult)).toISOString(),
           log,
         }).eq("owner_id", userId).select("*").single();
         if (error) throw new Error(error.message);
@@ -2302,7 +2342,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       burst_length: nextBurstLength,
       burst_index: nextBurstIndex,
       beat_type: nextBeat,
-      round_deadline: new Date(Date.now() + BOSS_REVEAL_TOTAL_MS + bossRoundDeadlineMs(boss, nextBeat)).toISOString(),
+      round_deadline: new Date(Date.now() + BOSS_REVEAL_TOTAL_MS + bossRoundDeadlineMs(boss, nextBeat, session.deadline_mult)).toISOString(),
       log,
     }).eq("owner_id", userId).select("*").single();
     if (error) throw new Error(error.message);

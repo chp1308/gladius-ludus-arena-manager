@@ -44,13 +44,15 @@ export const STAT_INFO: StatInfo[] = [
     blurb: "Skill of arms — precision and timing over brute force.",
     bonuses: [
       { label: "Power", value: "weighted by weapon style — heaviest for Spear & Net and Trident" },
+      { label: "Injury risk", value: "up to 75% less likely to be injured on a qualifying hit, in every fight type (scales toward the current stat cap)" },
+      { label: "Boss fight reaction time", value: "up to 2x longer to block/dodge/strike, based on the party's average technique (same scaling)" },
     ],
   },
 ];
 
-// Agility/Stamina's secondary bonuses scale relative to the CURRENT stat
-// cap (15 + Training Yard level × 10), not a fixed number — so upgrading
-// the Training Yard both raises the cap and quietly strengthens what every
-// point of Agility/Stamina a gladiator already has is worth.
+// Agility/Stamina/Technique's secondary bonuses scale relative to the
+// CURRENT stat cap (15 + Training Yard level × 10), not a fixed number —
+// so upgrading the Training Yard both raises the cap and quietly
+// strengthens what every point already trained in those stats is worth.
 export const STAT_SCALING_NOTE =
-  "Agility and Stamina's bonuses above scale toward the ludus's current stat cap, not a fixed number — upgrading the Training Yard raises that cap, which makes every point already trained in those two stats worth more.";
+  "Agility, Stamina, and Technique's bonuses above scale toward the ludus's current stat cap, not a fixed number — upgrading the Training Yard raises that cap, which makes every point already trained in those stats worth more.";
