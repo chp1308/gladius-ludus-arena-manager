@@ -9,7 +9,7 @@ import {
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, healRegenPerHour, pantryCapacity, gladiatorPower,
   keyDropChance, EXTENDED_MAX_LEVEL, extendedFacilityCost, relicsCooldownHours,
-  trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier,
+  trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier, armoryDiscountPct,
   runSocialEvent, socialDelegationSize, socialToneWeights, SOCIAL_COOLDOWN_MINUTES,
 } from "@/lib/game.functions";
 import { Button } from "@/components/ui/button";
@@ -139,11 +139,15 @@ function gearCategory(slotKey: SlotKey, weaponType: string, isBeast = false): ke
   return null;
 }
 
+// Art only exists through tier 8 (4 grades, 2 tiers each) so far — tiers
+// 9-20 clamp to the highest available grade and reuse its art until more
+// is painted. Extending GEAR_ART's tuples later needs no code change here.
 function gearImage(slotKey: SlotKey, weaponType: string, tier: number, isBeast = false): string | null {
   const cat = gearCategory(slotKey, weaponType, isBeast);
   if (!cat) return null;
-  const grade = Math.min(4, Math.max(1, Math.ceil(tier / 2))); // 1-2→1, 3-4→2, 5-6→3, 7-8→4
-  return GEAR_ART[cat][grade - 1] ?? null;
+  const arts = GEAR_ART[cat];
+  const grade = Math.min(arts.length, Math.max(1, Math.ceil(tier / 2)));
+  return arts[grade - 1] ?? null;
 }
 
 
@@ -177,11 +181,14 @@ const SKILL_TREE = [
 ] as const;
 
 
+function isExtendedFacility(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics") {
+  return facility === "training" || facility === "relics" || facility === "armory";
+}
 function facilityCost(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics", curr: number) {
-  return facility === "training" || facility === "relics" ? extendedFacilityCost(curr) : 500 * (curr + 1);
+  return isExtendedFacility(facility) ? extendedFacilityCost(curr) : 500 * (curr + 1);
 }
 function facilityMaxLevel(facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics") {
-  return facility === "training" || facility === "relics" ? EXTENDED_MAX_LEVEL : 5;
+  return isExtendedFacility(facility) ? EXTENDED_MAX_LEVEL : 5;
 }
 function skillCost(curr: number) { return 200 * (curr + 1); }
 
@@ -206,7 +213,7 @@ function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armo
       return `Active now: healing ${priceCut}% cheaper · ${speedCut}% faster recovery and shorter injuries`;
     }
     case "armory": {
-      const cut = Math.round((level - 1) * 10);
+      const cut = Math.round(armoryDiscountPct(level) * 100);
       const tier = maxCraftableTier(level);
       return `Active now: gear upgrades ${cut}% cheaper · can craft up to tier ${ROMAN[tier - 1] ?? tier}`;
     }
@@ -592,10 +599,10 @@ function BuildingPanel({
   );
 }
 
-const ROMAN = ["I","II","III","IV","V","VI","VII","VIII"];
+const ROMAN = ["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII","XIII","XIV","XV","XVI","XVII","XVIII","XIX","XX"];
 function ArmoryTierTable({ armoryLevel }: { armoryLevel: number }) {
   return (
-    <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+    <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
       {Array.from({ length: MAX_GEAR_TIER }, (_, i) => i + 1).map((tier) => {
         const req = requiredArmoryLevel(tier);
         const unlocked = armoryLevel >= req;
@@ -1533,10 +1540,9 @@ function SlotButton({
     }
     onClick();
   };
-  const emptyStars = Math.max(0, MAX_GEAR_TIER - tier);
   const img = isBeast ? gearImage(slot.key, weaponType ?? "", tier, true) : (weaponType ? gearImage(slot.key, weaponType, tier) : null);
   const title = atMax
-    ? `${label} — mastercraft (VIII)`
+    ? `${label} — mastercraft (${ROMAN[MAX_GEAR_TIER - 1] ?? MAX_GEAR_TIER})`
     : forgeLocked
     ? `Requires The Forge Lv ${reqArmory} to craft tier ${nextTier}`
     : unaffordable
@@ -1563,7 +1569,7 @@ function SlotButton({
       )}
       {tier === 0 && <div className="relative z-10 rounded bg-background/70 px-1 text-[9px] uppercase tracking-wider text-muted-foreground backdrop-blur-sm">{label}</div>}
       <div className="relative z-10 rounded bg-background/70 px-1 text-[9px] leading-none text-accent">
-        {"★".repeat(tier)}<span className="text-muted-foreground">{"☆".repeat(emptyStars)}</span>
+        Tier {tier}<span className="text-muted-foreground">/{MAX_GEAR_TIER}</span>
       </div>
       {forgeLocked ? (
         <div className="relative z-10 mt-0.5 flex items-center gap-0.5 rounded bg-background/70 px-1 text-[9px] text-muted-foreground backdrop-blur-sm">

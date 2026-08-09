@@ -82,7 +82,7 @@ export const WEAPON_LABELS: Record<string, string> = {
 // Facility caps and effects
 const MAX_FACILITY = 5;
 const MAX_SKILL = 5;
-export const MAX_GEAR_TIER = 8;
+export const MAX_GEAR_TIER = 20;
 const FACILITY_COST = (curr: number) => 500 * (curr + 1); // 1->2 costs 1000
 const SKILL_COST = (curr: number) => 200 * (curr + 1);
 
@@ -109,12 +109,12 @@ const RELICS_KEY_DROP_CHANCE: Record<number, number> = { 1: 0, 2: 0.04, 3: 0.04,
 export const relicsCooldownHours = (relicsLevel: number) => RELICS_COOLDOWN_HOURS[relicsLevel] ?? 24;
 export const keyDropChance = (relicsLevel: number) => RELICS_KEY_DROP_CHANCE[relicsLevel] ?? 0;
 
-// Armory level required to CRAFT gear of a given tier.
-// Basic gear needs a village smith; masterwork needs the Master Forge.
-const ARMORY_REQ_FOR_TIER = [0, 1, 1, 2, 2, 3, 3, 4, 5];
+// Armory level required to CRAFT gear of a given tier — 2 tiers unlock
+// per Foundry level (village smith for the first tiers, up through the
+// Master Forge at level 10), spread evenly across the full 20-tier range.
 export function requiredArmoryLevel(tier: number): number {
   const t = Math.max(1, Math.min(MAX_GEAR_TIER, tier));
-  return ARMORY_REQ_FOR_TIER[t] ?? 5;
+  return Math.min(EXTENDED_MAX_LEVEL, Math.ceil(t / 2));
 }
 // Highest gear tier craftable at a given Forge (armory) level.
 export function maxCraftableTier(armoryLevel: number): number {
@@ -151,9 +151,13 @@ export const beastChance = (scoutingLevel: number) => Math.min(0.02 + scoutingLe
 const SLOT_COST_MULT: Record<string, number> = {
   weapon: 1.0, armor: 0.85, helmet: 0.55, legs: 0.55, offhand: 0.7,
 };
+// Foundry discount on gear costs — same 40% ceiling as the old 5-level
+// Armory, now reached at level 10 instead of level 5 (was 10%/level,
+// rescaled to 5%/level to span the extended range).
+export const armoryDiscountPct = (armoryLevel: number) => Math.min(0.4, (armoryLevel - 1) * 0.05);
 export const gearCost = (slot: "weapon" | "armor" | "helmet" | "legs" | "offhand", currentTier: number, armoryLevel: number) => {
   const base = 150 * (currentTier + 1) * (SLOT_COST_MULT[slot] ?? 1);
-  return Math.max(40, Math.floor(base * (1 - (armoryLevel - 1) * 0.1)));
+  return Math.max(40, Math.floor(base * (1 - armoryDiscountPct(armoryLevel))));
 };
 // Healing cost falls with the Valetudinarium (medicus) facility level
 // Weak/new gladiators are capped so a full heal never costs more than 100
@@ -298,6 +302,20 @@ export const STAT_WEIGHTS: Record<string, { strength: number; agility: number; s
 
 const DEFAULT_WEIGHTS = { strength: 3, agility: 3, stamina: 3, technique: 3 };
 
+// gladiatorPower's gear term, armorMitigation, and weaponDamageRange below
+// were all originally tuned for an 8-tier gear ceiling. Now that gear runs
+// to MAX_GEAR_TIER (20), each formula's per-tier weight/slope is rescaled
+// so tier 20 lands at the same power the old tier 8 did — same balance
+// ceiling, just spread over more, smaller steps.
+const OLD_MAX_GEAR_TIER = 8;
+// For formulas that scale linearly from zero (gladiatorPower's gear term,
+// armorMitigation): weight * (OLD_MAX_GEAR_TIER / MAX_GEAR_TIER).
+const GEAR_WEIGHT_RESCALE = OLD_MAX_GEAR_TIER / MAX_GEAR_TIER;
+// For formulas with a tier-1 baseline plus a per-step slope
+// (weaponDamageRange): slope * (oldSteps / newSteps), steps counted from
+// tier 1.
+const GEAR_SLOPE_RESCALE = (OLD_MAX_GEAR_TIER - 1) / (MAX_GEAR_TIER - 1);
+
 export function gladiatorPower(
   g: {
     strength: number; agility: number; stamina: number; technique: number;
@@ -310,9 +328,10 @@ export function gladiatorPower(
 ) {
   const w = STAT_WEIGHTS[g.weapon_type] ?? DEFAULT_WEIGHTS;
   const base = w.strength * g.strength + w.agility * g.agility + w.stamina * g.stamina + w.technique * g.technique;
-  const gear =
+  const gear = GEAR_WEIGHT_RESCALE * (
     g.weapon_tier * 12 + g.armor_tier * 9 +
-    (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5;
+    (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5
+  );
   // Level: small flat bonus + modest multiplicative per level.
   const lvl = g.level * 6;
   const levelMult = 1 + (g.level - 1) * 0.02;
@@ -332,10 +351,14 @@ export function winChance(powerA: number, powerB: number): number {
   return 0.05 + 0.90 * ratio;
 }
 
-// Weapon tier increases hit range. Tier 1: 15–30, Tier 8: 36–65.
+// Weapon tier increases hit range. Tier 1: 15–30, Tier 20: 36–65 (same
+// ceiling the old tier-8 cap reached — see GEAR_SLOPE_RESCALE above).
 export function weaponDamageRange(weaponTier: number) {
   const t = Math.max(1, weaponTier || 1);
-  return { min: 15 + (t - 1) * 3, max: 30 + (t - 1) * 5 };
+  return {
+    min: Math.round(15 + (t - 1) * 3 * GEAR_SLOPE_RESCALE),
+    max: Math.round(30 + (t - 1) * 5 * GEAR_SLOPE_RESCALE),
+  };
 }
 
 // Armor tiers reduce incoming damage. Averages helmet/cuirass/greaves/offhand.
@@ -346,7 +369,7 @@ export function armorMitigation(g: {
   const a = g.armor_tier ?? 1, h = g.helmet_tier ?? 1;
   const l = g.legs_tier ?? 1, o = g.offhand_tier ?? 1;
   // Cuirass weighted highest; offhand (shield) contributes if worn.
-  const score = a * 1.5 + h * 1.0 + l * 1.0 + o * 0.8;
+  const score = GEAR_WEIGHT_RESCALE * (a * 1.5 + h * 1.0 + l * 1.0 + o * 0.8);
   // Defensive Doctrine: each rank hardens armor effectiveness.
   const defenseMod = 1 + defenseLevel * 0.15;
   return { min: Math.floor(score * 0.35 * defenseMod), max: Math.floor(score * 0.7 * defenseMod) };
@@ -411,9 +434,10 @@ export const upgradeFacility = createServerFn({ method: "POST" })
     if (!profile) throw new Error("No profile");
     const col = `${data.facility}_level` as "training_level" | "scouting_level" | "medicus_level" | "armory_level" | "pantry_level" | "social_level" | "relics_level";
     const curr = (profile as unknown as Record<string, number>)[col];
-    const maxLevel = data.facility === "training" || data.facility === "relics" ? EXTENDED_MAX_LEVEL : MAX_FACILITY;
+    const isExtended = data.facility === "training" || data.facility === "relics" || data.facility === "armory";
+    const maxLevel = isExtended ? EXTENDED_MAX_LEVEL : MAX_FACILITY;
     if (curr >= maxLevel) throw new Error("Facility already at max level");
-    const cost = data.facility === "training" || data.facility === "relics" ? extendedFacilityCost(curr) : FACILITY_COST(curr);
+    const cost = isExtended ? extendedFacilityCost(curr) : FACILITY_COST(curr);
     const next = curr + 1;
 
     await spendDenarii(supabaseAdmin, userId, cost, `Need ${cost} denarii`);
@@ -2598,8 +2622,8 @@ export const ACHIEVEMENTS: AchievementCategory[] = [
   },
   {
     key: "facilities", label: "Master of the Ludus",
-    description: "Raise the combined level of all five facilities to this total (30 is every facility maxed, including a fully-trained Training Yard).",
-    tiers: [5, 10, 15, 20, 30],
+    description: "Raise the combined level of all five facilities to this total (35 is every facility maxed, including a fully-trained Training Yard and Foundry).",
+    tiers: [5, 10, 15, 20, 35],
   },
   {
     key: "reputation", label: "Renown of Rome",
@@ -2823,6 +2847,7 @@ export const runSocialEvent = createServerFn({ method: "POST" })
       const slotLabels: Record<string, string> = {
         weapon_tier: "weapon", armor_tier: "cuirass", helmet_tier: "helmet", legs_tier: "greaves", offhand_tier: "off-hand",
       };
+      const foundryMaxTier = maxCraftableTier(profile.armory_level);
       const perGladiator: string[] = [];
       for (const g of party) {
         const row = g as unknown as Record<string, number>;
@@ -2835,7 +2860,15 @@ export const runSocialEvent = createServerFn({ method: "POST" })
           continue;
         }
         const slot = options[Math.floor(Math.random() * options.length)];
-        gladiatorUpdates.push({ id: g.id, patch: { [slot]: row[slot] + 1 } });
+        const nextTier = row[slot] + 1;
+        if (nextTier > foundryMaxTier) {
+          // The Foundry can't craft this tier yet — pay the gift's value in
+          // denarii instead of handing out gear the ludus can't back.
+          denariiDelta += 100;
+          perGladiator.push(`${g.name}: ${slotLabels[slot]} upgrade beyond the Foundry's reach — +100 denarii instead`);
+          continue;
+        }
+        gladiatorUpdates.push({ id: g.id, patch: { [slot]: nextTier } });
         perGladiator.push(`${g.name}: +1 ${slotLabels[slot]}`);
       }
       summary = perGladiator.join(", ");

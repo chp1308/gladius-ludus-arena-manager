@@ -97,8 +97,8 @@ function InfoPage() {
           <Section title="Weapons" icon={<Swords className="h-5 w-5" />}>
             <p>The weapon tier sets the damage window of every strike, from rough iron to gilded mastercraft.</p>
             <Row label="Tier I (Iron)" value="15–30 dmg" />
-            <Row label="Tier IV (Bronze)" value="24–45 dmg" />
-            <Row label="Tier VIII (Gold)" value="36–65 dmg" />
+            <Row label="Tier X (Bronze)" value="25–47 dmg" />
+            <Row label="Tier XX (Gold)" value="36–65 dmg" />
             <p>Weapon tier also contributes +12 Power per tier. Higher tiers are gated by your Forge (Armory) level.</p>
           </Section>
 
