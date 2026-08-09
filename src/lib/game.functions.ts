@@ -1825,16 +1825,16 @@ function bossRoundDeadlineMs(boss: BossDefinition, beat: BossBeat, deadlineMult:
 }
 
 // Average party Technique -> reaction-window multiplier, scaled toward the
-// CURRENT stat cap (not a hardcoded 100) so it keeps working correctly as
-// the Training Yard levels up further — 1x at zero development, up to 2x
-// (TECHNIQUE_DEADLINE_BONUS_MAX) once the party's average technique matches
-// the cap.
+// hard stat cap of 100 (not the current Training Yard cap) so the full 2x
+// bonus requires genuinely maxed-out technique, not just matching whatever
+// cap the party's training level happens to allow — 1x at zero technique,
+// up to 2x (TECHNIQUE_DEADLINE_BONUS_MAX) at 100 average technique.
 const TECHNIQUE_DEADLINE_BONUS_MAX = 1;
-function bossDeadlineMult(team: { technique: number }[], trainingLevel: number): number {
+const TECHNIQUE_DEADLINE_CAP = 100;
+function bossDeadlineMult(team: { technique: number }[]): number {
   if (team.length === 0) return 1;
   const avgTechnique = team.reduce((sum, g) => sum + g.technique, 0) / team.length;
-  const cap = statCap(trainingLevel);
-  const pct = cap > 0 ? Math.min(1, avgTechnique / cap) : 0;
+  const pct = Math.min(1, avgTechnique / TECHNIQUE_DEADLINE_CAP);
   return 1 + TECHNIQUE_DEADLINE_BONUS_MAX * pct;
 }
 
@@ -1927,7 +1927,7 @@ export const startBossFight = createServerFn({ method: "POST" })
     const armorReduction = team.length
       ? Math.round(team.reduce((sum, g) => sum + armorMitigation(g, defenseLevel).min, 0) / team.length)
       : 0;
-    const deadlineMult = bossDeadlineMult(team, profile.training_level);
+    const deadlineMult = bossDeadlineMult(team);
 
     const { data: session, error } = await supabaseAdmin.from("boss_fight_sessions").insert({
       owner_id: userId,
