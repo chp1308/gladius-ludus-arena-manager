@@ -72,7 +72,7 @@ export function AchievementWatcher() {
       const current = tierReached(cat, progress[cat.key] ?? 0);
       const prev = seen[cat.key] ?? 0;
       for (let t = prev + 1; t <= current; t++) newly.push({ category: cat, tier: t });
-      updated[cat.key] = current;
+      updated[cat.key] = Math.max(prev, current);
     }
     if (newly.length > 0) {
       saveSeen(updated);
