@@ -709,7 +709,7 @@ export type ArenaTier = {
 // progression (roughly tier 3 at Local up to tier 20 — full mastercraft —
 // at Emperor's Spectacle), so a "typically-geared" gladiator at each stage
 // still faces the same relative challenge it always did.
-export const EMPEROR_POWER_CEILING = 3472; // Emperor's new powerMax — see oppGearTier below
+export const EMPEROR_POWER_CEILING = 3480; // Emperor's new powerMax — see oppGearTier below
 export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "backwater", label: "Backwater Pits",
@@ -732,7 +732,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "Small town munera — a wooden stand and a modest crowd.",
     imageUrl: localImg,
     reqFame: 5, reqLevel: 2, reqWins: 1,
-    powerMin: 291, powerMax: 691, hp: 160, reward: 160, xp: 75, rep: 3,
+    powerMin: 290, powerMax: 700, hp: 160, reward: 160, xp: 75, rep: 3,
     opponents: ["Provincial Auctoratus", "Retired Legionary", "Pit Veteran", "Ostian Bruiser"],
   },
   {
@@ -740,7 +740,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "A magistrate's games — proper editors, painted programs, real steel.",
     imageUrl: provincialImg,
     reqFame: 25, reqLevel: 3, reqWins: 3,
-    powerMin: 941, powerMax: 1341, hp: 230, reward: 320, xp: 130, rep: 6,
+    powerMin: 940, powerMax: 1350, hp: 230, reward: 320, xp: 130, rep: 6,
     opponents: ["Praetorian Washout", "Iberian Veteran", "Champion of Ostia", "Nubian Slayer"],
   },
   {
@@ -748,7 +748,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "Capua's arena, where fortunes are made and legions bet their pay.",
     imageUrl: capuaImg,
     reqFame: 75, reqLevel: 5, reqWins: 8,
-    powerMin: 1408, powerMax: 1808, hp: 280, reward: 500, xp: 240, rep: 14,
+    powerMin: 1400, powerMax: 1810, hp: 280, reward: 500, xp: 240, rep: 14,
     opponents: ["Champion of Capua", "The Bloody Bull", "Marcus Ferrus", "The Thracian Wolf"],
   },
   {
@@ -756,7 +756,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "The Flavian Amphitheatre. Fifty thousand voices thirsting for blood.",
     imageUrl: colosseumImg,
     reqFame: 200, reqLevel: 8, reqWins: 20,
-    powerMin: 1886, powerMax: 2386, hp: 330, reward: 650, xp: 420, rep: 30,
+    powerMin: 1880, powerMax: 2390, hp: 330, reward: 650, xp: 420, rep: 30,
     opponents: ["Priscus the Undefeated", "Verus of the Palatine", "Flamma Redivivus", "The Iron Senator"],
   },
   {
@@ -764,7 +764,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "The Emperor himself watches. Death here becomes legend.",
     imageUrl: emperorImg,
     reqFame: 500, reqLevel: 12, reqWins: 40,
-    powerMin: 2672, powerMax: EMPEROR_POWER_CEILING, hp: 440, reward: 750, xp: 800, rep: 70,
+    powerMin: 2670, powerMax: EMPEROR_POWER_CEILING, hp: 440, reward: 750, xp: 800, rep: 70,
     opponents: ["Spartacus Reborn", "Hermes of Thrace", "The Emperor's Champion", "Tetraites the Immortal"],
   },
 ];
