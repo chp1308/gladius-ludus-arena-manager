@@ -543,6 +543,7 @@ export type Database = {
           created_at: string
           description: string
           id: string
+          is_bot: boolean
           ludus_name: string
           medicus_level: number
           pantry_level: number

@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import {
   getLudusState, fightMatch, fightTeamBattle,
   postPvpChallenge, cancelPvpChallenge, listOpenPvpChallenges, acceptPvpChallenge,
-  matchRating,
+  matchRating, gladiatorPower,
   ARENA_TIERS, tierUnlockReason,
   TEAM_BATTLES, teamBattleRequirementError, TEAM_DENARII_SCALE, WEAPON_LABELS,
   healGladiator, maxHealth, honorGladiator, healCost,
@@ -91,6 +91,16 @@ type State = Awaited<ReturnType<typeof getLudusState>>;
 type Gladiator = State["gladiators"][number];
 type BossSessionRow = NonNullable<Awaited<ReturnType<typeof getBossFightState>>["session"]>;
 
+// Same power score shown on the Ludus Grounds gladiator sheet — lets a
+// player eyeball a matchup against an arena/battle's posted opponent power
+// band before committing a charge.
+function skillMapFor(state: State): Map<string, number> {
+  return new Map(state.skills.map(s => [s.weapon_type, s.level]));
+}
+function powerOf(gl: Gladiator, skillMap: Map<string, number>): number {
+  return gladiatorPower(gl, skillMap.get(gl.weapon_type) ?? 0);
+}
+
 function ArenaPage() {
   const fetchState = useServerFn(getLudusState);
   const { data } = useSuspenseQuery({ queryKey: ["ludus"], queryFn: () => fetchState() });
@@ -141,6 +151,7 @@ function PitFights({ state }: { state: State }) {
   const eligible = state.gladiators.filter(g => g.health >= 30 && (!g.injury_until || new Date(g.injury_until) < new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(eligible[0]?.id ?? null);
   const g = state.gladiators.find(x => x.id === selectedId) ?? null;
+  const skillMap = skillMapFor(state);
 
   const fetchAvailability = useServerFn(getPitFightAvailability);
   const { data: availabilityData } = useQuery({
@@ -174,7 +185,7 @@ function PitFights({ state }: { state: State }) {
                     <Badge variant="outline">Lv {gl.level}</Badge>
                   </div>
                   <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{gl.wins}W/{gl.losses}L · HP {gl.health}</span>
+                    <span>{gl.wins}W/{gl.losses}L · Power {powerOf(gl, skillMap)} · HP {gl.health}</span>
                     {charges && (
                       <span className={charges.chargesAvailable > 0 ? "text-accent" : "text-destructive"}>
                         {charges.chargesAvailable}/{PIT_MAX_CHARGES} pits
@@ -471,6 +482,7 @@ function RivalChallengesCard({ state }: { state: State }) {
   const [battle, setBattle] = useState<Awaited<ReturnType<typeof acceptFn>> | null>(null);
   const [animating, setAnimating] = useState(false);
   const [opponent, setOpponent] = useState<{ name: string; portrait: PortraitSubject } | null>(null);
+  const [opponentFilter, setOpponentFilter] = useState<"all" | "players" | "bots">("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["pvp-open", myId],
@@ -540,11 +552,34 @@ function RivalChallengesCard({ state }: { state: State }) {
           </div>
         </div>
 
+        {data && data.openChallenges.length > 0 && (
+          <div className="flex items-center gap-1">
+            {(["all", "players", "bots"] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setOpponentFilter(f)}
+                className={`rounded-full border px-2.5 py-1 text-xs capitalize transition ${
+                  opponentFilter === f ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-primary/60"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        )}
+
         {isLoading && <p className="font-serif italic text-muted-foreground">Scouts scan the provinces...</p>}
         {data && data.openChallenges.length === 0 && (
           <p className="font-serif italic text-muted-foreground">No rival ludi have open challenges. Return later.</p>
         )}
-        {data && data.openChallenges.map(c => {
+        {data && data.openChallenges.length > 0 && data.openChallenges.filter(c =>
+          opponentFilter === "all" || (opponentFilter === "bots" ? c.is_bot : !c.is_bot)
+        ).length === 0 && (
+          <p className="font-serif italic text-muted-foreground">No {opponentFilter} challenges open right now.</p>
+        )}
+        {data && data.openChallenges.filter(c =>
+          opponentFilter === "all" || (opponentFilter === "bots" ? c.is_bot : !c.is_bot)
+        ).map(c => {
           const g = c.gladiator;
           const disabled = !myId || !c.similar || accept.isPending;
           return (
@@ -556,6 +591,7 @@ function RivalChallengesCard({ state }: { state: State }) {
                     {g?.name ?? "Unknown"}
                     <Badge variant="outline">Lv {g?.level ?? "?"}</Badge>
                     <Badge variant="secondary">{g ? (WEAPON_LABELS[g.weapon_type] ?? g.weapon_type) : ""}</Badge>
+                    <Badge variant="outline" className="text-xs">{c.is_bot ? "Bot" : "Player"}</Badge>
                     {c.to_death && <Badge variant="destructive" className="text-xs">Sine missione</Badge>}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
@@ -671,6 +707,7 @@ function PvpResultView({ result, onClose }: { result: { won: boolean; log: strin
 function TeamFights({ state }: { state: State }) {
   const [battleKey, setBattleKey] = useState<string>(TEAM_BATTLES[0].key);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const skillMap = skillMapFor(state);
   const qc = useQueryClient();
   const confirm = useConfirm();
   const fightFn = useServerFn(fightTeamBattle);
@@ -796,7 +833,7 @@ function TeamFights({ state }: { state: State }) {
                     <Badge variant="outline">Lv {gl.level}</Badge>
                   </div>
                   <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{gl.is_beast ? "Beast" : gl.class} · HP {gl.health}</span>
+                    <span>{gl.is_beast ? "Beast" : gl.class} · Power {powerOf(gl, skillMap)} · HP {gl.health}</span>
                     {charges && (
                       <span className={charges.chargesAvailable > 0 ? "text-accent" : "text-destructive"}>
                         {charges.chargesAvailable}/{TEAM_MAX_CHARGES} team
@@ -848,6 +885,7 @@ type ResolveResult =
 function BossFights({ state }: { state: State }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
+  const skillMap = skillMapFor(state);
   const fetchBossState = useServerFn(getBossFightState);
   const { data: bossState } = useQuery({
     queryKey: ["boss-fight-state"],
@@ -1112,7 +1150,7 @@ function BossFights({ state }: { state: State }) {
                         <Badge variant="outline">Lv {gl.level}</Badge>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {gl.is_beast ? "Beast" : gl.class} · {WEAPON_LABELS[gl.weapon_type] ?? gl.weapon_type} · HP {gl.health}
+                        {gl.is_beast ? "Beast" : gl.class} · {WEAPON_LABELS[gl.weapon_type] ?? gl.weapon_type} · Power {powerOf(gl, skillMap)} · HP {gl.health}
                       </div>
                     </button>
                     <HealButton g={gl} medicusLevel={state.profile?.medicus_level ?? 1} />

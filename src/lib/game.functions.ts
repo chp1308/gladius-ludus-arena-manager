@@ -302,19 +302,37 @@ export const STAT_WEIGHTS: Record<string, { strength: number; agility: number; s
 
 const DEFAULT_WEIGHTS = { strength: 3, agility: 3, stamina: 3, technique: 3 };
 
-// gladiatorPower's gear term, armorMitigation, and weaponDamageRange below
-// were all originally tuned for an 8-tier gear ceiling. Now that gear runs
-// to MAX_GEAR_TIER (20), each formula's per-tier weight/slope is rescaled
-// so tier 20 lands at the same power the old tier 8 did — same balance
-// ceiling, just spread over more, smaller steps.
+// armorMitigation and weaponDamageRange below were originally tuned for an
+// 8-tier gear ceiling. Now that gear runs to MAX_GEAR_TIER (20), each
+// formula's per-tier weight/slope is rescaled so tier 20 lands at the same
+// value the old tier 8 did — same balance ceiling, just spread over more,
+// smaller steps. gladiatorPower's gear term is handled separately below
+// (GEAR_POWER_SCALE) since it deliberately does NOT preserve the old
+// ceiling — see that comment for why.
 const OLD_MAX_GEAR_TIER = 8;
-// For formulas that scale linearly from zero (gladiatorPower's gear term,
-// armorMitigation): weight * (OLD_MAX_GEAR_TIER / MAX_GEAR_TIER).
+// For formulas that scale linearly from zero (armorMitigation):
+// weight * (OLD_MAX_GEAR_TIER / MAX_GEAR_TIER).
 const GEAR_WEIGHT_RESCALE = OLD_MAX_GEAR_TIER / MAX_GEAR_TIER;
 // For formulas with a tier-1 baseline plus a per-step slope
 // (weaponDamageRange): slope * (oldSteps / newSteps), steps counted from
 // tier 1.
 const GEAR_SLOPE_RESCALE = (OLD_MAX_GEAR_TIER - 1) / (MAX_GEAR_TIER - 1);
+
+// gladiatorPower's gear term scales convexly with tier (tier^1.5) instead
+// of linearly, so a fully-mastercrafted gladiator pulls meaningfully ahead
+// of one who just maxed stats (which is comparatively easy — see statCap).
+// Anchored so tier 5 gear power matches what the old linear formula gave
+// (early-game balance unchanged); tier 20 gear power is ~2x the old
+// tier-8-preserving ceiling as a result. Opponent power bands across pit
+// fights and team battles are rescaled to match — see ARENA_TIERS/
+// TEAM_BATTLES. Boss fights and PvP need no rescaling: both sides there
+// are computed from this same formula, so they stay self-balanced.
+const GEAR_POWER_EXPONENT = 1.5;
+const GEAR_POWER_ANCHOR_TIER = 5;
+const GEAR_POWER_SCALE = GEAR_WEIGHT_RESCALE / Math.pow(GEAR_POWER_ANCHOR_TIER, GEAR_POWER_EXPONENT - 1);
+function gearTierPower(tier: number): number {
+  return GEAR_POWER_SCALE * Math.pow(Math.max(0, tier), GEAR_POWER_EXPONENT);
+}
 
 export function gladiatorPower(
   g: {
@@ -328,10 +346,9 @@ export function gladiatorPower(
 ) {
   const w = STAT_WEIGHTS[g.weapon_type] ?? DEFAULT_WEIGHTS;
   const base = w.strength * g.strength + w.agility * g.agility + w.stamina * g.stamina + w.technique * g.technique;
-  const gear = GEAR_WEIGHT_RESCALE * (
-    g.weapon_tier * 12 + g.armor_tier * 9 +
-    (g.helmet_tier ?? 1) * 4 + (g.legs_tier ?? 1) * 4 + (g.offhand_tier ?? 1) * 5
-  );
+  const gear =
+    gearTierPower(g.weapon_tier) * 12 + gearTierPower(g.armor_tier) * 9 +
+    gearTierPower(g.helmet_tier ?? 1) * 4 + gearTierPower(g.legs_tier ?? 1) * 4 + gearTierPower(g.offhand_tier ?? 1) * 5;
   // Level: small flat bonus + modest multiplicative per level.
   const lvl = g.level * 6;
   const levelMult = 1 + (g.level - 1) * 0.02;
@@ -685,6 +702,14 @@ export type ArenaTier = {
   opponents: string[];   // flavor opponent pool
 };
 
+// Backwater/Wayside are entry-level and assume near-unequipped gear, which
+// gearTierPower's convex curve barely touches — left as-is. Every tier from
+// Local Games up had its power band shifted by gearTierPower's convex
+// delta over the old linear formula, evaluated at that tier's assumed gear
+// progression (roughly tier 3 at Local up to tier 20 — full mastercraft —
+// at Emperor's Spectacle), so a "typically-geared" gladiator at each stage
+// still faces the same relative challenge it always did.
+export const EMPEROR_POWER_CEILING = 3472; // Emperor's new powerMax — see oppGearTier below
 export const ARENA_TIERS: ArenaTier[] = [
   {
     key: "backwater", label: "Backwater Pits",
@@ -707,7 +732,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "Small town munera — a wooden stand and a modest crowd.",
     imageUrl: localImg,
     reqFame: 5, reqLevel: 2, reqWins: 1,
-    powerMin: 300, powerMax: 700, hp: 160, reward: 160, xp: 75, rep: 3,
+    powerMin: 291, powerMax: 691, hp: 160, reward: 160, xp: 75, rep: 3,
     opponents: ["Provincial Auctoratus", "Retired Legionary", "Pit Veteran", "Ostian Bruiser"],
   },
   {
@@ -715,7 +740,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "A magistrate's games — proper editors, painted programs, real steel.",
     imageUrl: provincialImg,
     reqFame: 25, reqLevel: 3, reqWins: 3,
-    powerMin: 900, powerMax: 1300, hp: 230, reward: 320, xp: 130, rep: 6,
+    powerMin: 941, powerMax: 1341, hp: 230, reward: 320, xp: 130, rep: 6,
     opponents: ["Praetorian Washout", "Iberian Veteran", "Champion of Ostia", "Nubian Slayer"],
   },
   {
@@ -723,7 +748,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "Capua's arena, where fortunes are made and legions bet their pay.",
     imageUrl: capuaImg,
     reqFame: 75, reqLevel: 5, reqWins: 8,
-    powerMin: 1300, powerMax: 1700, hp: 280, reward: 650, xp: 240, rep: 14,
+    powerMin: 1408, powerMax: 1808, hp: 280, reward: 500, xp: 240, rep: 14,
     opponents: ["Champion of Capua", "The Bloody Bull", "Marcus Ferrus", "The Thracian Wolf"],
   },
   {
@@ -731,7 +756,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "The Flavian Amphitheatre. Fifty thousand voices thirsting for blood.",
     imageUrl: colosseumImg,
     reqFame: 200, reqLevel: 8, reqWins: 20,
-    powerMin: 1700, powerMax: 2200, hp: 330, reward: 1300, xp: 420, rep: 30,
+    powerMin: 1886, powerMax: 2386, hp: 330, reward: 650, xp: 420, rep: 30,
     opponents: ["Priscus the Undefeated", "Verus of the Palatine", "Flamma Redivivus", "The Iron Senator"],
   },
   {
@@ -739,7 +764,7 @@ export const ARENA_TIERS: ArenaTier[] = [
     flavor: "The Emperor himself watches. Death here becomes legend.",
     imageUrl: emperorImg,
     reqFame: 500, reqLevel: 12, reqWins: 40,
-    powerMin: 2400, powerMax: 3200, hp: 440, reward: 2800, xp: 800, rep: 70,
+    powerMin: 2672, powerMax: EMPEROR_POWER_CEILING, hp: 440, reward: 750, xp: 800, rep: 70,
     opponents: ["Spartacus Reborn", "Hermes of Thrace", "The Emperor's Champion", "Tetraites the Immortal"],
   },
 ];
@@ -844,8 +869,11 @@ export const fightMatch = createServerFn({ method: "POST" })
     if (defenseLevel > 0) log.push(`Defensive doctrine: rank ${defenseLevel} — your armor holds firmer.`);
     log.push(`The crowd roars. Power ${myPower} vs ${opponentPower}.`);
 
-    // Derive opponent gear tier from arena strength (1..8).
-    const oppGearTier = Math.max(1, Math.min(8, Math.round((opponentPower / 2200) * 8)));
+    // Derive opponent gear tier from arena strength (1..MAX_GEAR_TIER) —
+    // divisor matches the rescaled top-arena (Emperor's Spectacle) power
+    // ceiling, so only the very top of the Colosseum/Emperor bracket fields
+    // mastercrafted (tier 20) opponents.
+    const oppGearTier = Math.max(1, Math.min(MAX_GEAR_TIER, Math.round((opponentPower / EMPEROR_POWER_CEILING) * MAX_GEAR_TIER)));
     const opponent = {
       weapon_tier: oppGearTier, armor_tier: oppGearTier,
       helmet_tier: oppGearTier, legs_tier: oppGearTier, offhand_tier: oppGearTier,
@@ -1070,8 +1098,11 @@ export const cancelPvpChallenge = createServerFn({ method: "POST" })
   });
 
 // ---------- SEED BOT CHALLENGES ----------
-// Ensure the arena always has open offers from rival ludi. If any non-caller
-// owner has 0 open challenges and a fit idle gladiator, auto-post one.
+// Ensure the arena always has open offers from rival ludi — but only from
+// bot-flagged ludi (profiles.is_bot). Real players must post their own
+// challenge (see postPvpChallenge) to appear here; this used to auto-post
+// on behalf of ANY idle player, bot or not, which enrolled real gladiators
+// into PvP without their owner's say-so.
 async function ensureBotChallenges(currentUserId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: openByOwner } = await supabaseAdmin
@@ -1080,9 +1111,17 @@ async function ensureBotChallenges(currentUserId: string) {
     .eq("status", "open");
   const havingOpen = new Set((openByOwner ?? []).map(o => o.challenger_id));
 
+  const { data: botProfiles } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("is_bot", true);
+  const botOwnerIds = (botProfiles ?? []).map(p => p.id);
+  if (botOwnerIds.length === 0) return;
+
   const { data: bots } = await supabaseAdmin
     .from("gladiators")
     .select("id,owner_id,level,strength,agility,stamina,technique,weapon_tier,armor_tier,helmet_tier,legs_tier,offhand_tier,health,status,injury_until")
+    .in("owner_id", botOwnerIds)
     .neq("owner_id", currentUserId)
     .eq("status", "idle")
     .gte("health", 60);
@@ -1161,6 +1200,7 @@ export const listOpenPvpChallenges = createServerFn({ method: "GET" })
         similar,
         ludus_name: owner?.ludus_name ?? "Unknown Ludus",
         ludus_fame: owner?.reputation ?? 0,
+        is_bot: owner?.is_bot ?? false,
         gladiator: g ?? null,
       };
     });
@@ -1474,18 +1514,22 @@ export type TeamBattle = {
 // numbers don't need hand-editing.
 export const TEAM_DENARII_SCALE = 0.75;
 
+// Power bands shifted the same way as ARENA_TIERS above (gearTierPower's
+// convex delta over the old linear formula, at an assumed gear tier per
+// battle's reqFame), but multiplied by team size since powerMin/powerMax
+// here compare against a SUMMED team power, not one gladiator's.
 export const TEAM_BATTLES: TeamBattle[] = [
-  { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerMin: 150, powerMax: 400, hp: 150, reward: 400, xp: 120, rep: 6 },
+  { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerMin: 132, powerMax: 382, hp: 150, reward: 400, xp: 120, rep: 6 },
   // All-beast encounters — requireBeast === size, so every slot must be a
   // beast. Beasts are rarer to come by than human recruits (see beastChance
   // in recruitGladiator), so these pay a real premium over the equivalent
   // human-only battle at a comparable power band.
-  { key: "beast_duo", label: "Paired Beasts", flavor: "Two beasts of your ludus, loosed together against a chained bear.", size: 2, requireBeast: 2, reqFame: 8, powerMin: 150, powerMax: 400, hp: 150, reward: 600, xp: 150, rep: 8 },
-  { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerMin: 400, powerMax: 800, hp: 220, reward: 900, xp: 200, rep: 14 },
-  { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerMin: 500, powerMax: 950, hp: 260, reward: 1100, xp: 220, rep: 16 },
-  { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerMin: 1000, powerMax: 1700, hp: 340, reward: 1800, xp: 320, rep: 26 },
-  { key: "grand_venatio", label: "The Emperor's Venatio", flavor: "Five beasts unleashed at once — a full venatio, the crowd's favorite spectacle.", size: 5, requireBeast: 5, reqFame: 150, powerMin: 1800, powerMax: 2600, hp: 400, reward: 2500, xp: 420, rep: 40 },
-  { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerMin: 2200, powerMax: 3400, hp: 480, reward: 3600, xp: 550, rep: 55 },
+  { key: "beast_duo", label: "Paired Beasts", flavor: "Two beasts of your ludus, loosed together against a chained bear.", size: 2, requireBeast: 2, reqFame: 8, powerMin: 147, powerMax: 397, hp: 150, reward: 600, xp: 150, rep: 8 },
+  { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerMin: 491, powerMax: 891, hp: 220, reward: 900, xp: 200, rep: 14 },
+  { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerMin: 652, powerMax: 1102, hp: 260, reward: 1100, xp: 220, rep: 16 },
+  { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerMin: 1451, powerMax: 2151, hp: 340, reward: 1800, xp: 320, rep: 26 },
+  { key: "grand_venatio", label: "The Emperor's Venatio", flavor: "Five beasts unleashed at once — a full venatio, the crowd's favorite spectacle.", size: 5, requireBeast: 5, reqFame: 150, powerMin: 2608, powerMax: 3408, hp: 400, reward: 2500, xp: 420, rep: 40 },
+  { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerMin: 3229, powerMax: 4429, hp: 480, reward: 3600, xp: 550, rep: 55 },
 ];
 
 export function teamBattleRequirementError(
