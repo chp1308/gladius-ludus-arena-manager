@@ -41,39 +41,25 @@ import bPantry from "@/assets/ludus/b-pantry.png";
 import bSocial from "@/assets/ludus/b-social.png";
 import bRelics from "@/assets/ludus/b-relics.png";
 
-// gear tier art — 4 visual grades map to tiers 1-2 / 3-4 / 5-6 / 7-8
-import helmet1 from "@/assets/gear/helmet-1.png";
-import helmet2 from "@/assets/gear/helmet-2.png";
-import helmet3 from "@/assets/gear/helmet-3.png";
-import helmet4 from "@/assets/gear/helmet-4.png";
-import cuirass1 from "@/assets/gear/cuirass-1.png";
-import cuirass2 from "@/assets/gear/cuirass-2.png";
-import cuirass3 from "@/assets/gear/cuirass-3.png";
-import cuirass4 from "@/assets/gear/cuirass-4.png";
-import greaves1 from "@/assets/gear/greaves-1.png";
-import greaves2 from "@/assets/gear/greaves-2.png";
-import greaves3 from "@/assets/gear/greaves-3.png";
-import greaves4 from "@/assets/gear/greaves-4.png";
-import gladius1 from "@/assets/gear/gladius-1.png";
-import gladius2 from "@/assets/gear/gladius-2.png";
-import gladius3 from "@/assets/gear/gladius-3.png";
-import gladius4 from "@/assets/gear/gladius-4.png";
-import spear1 from "@/assets/gear/spear-1.png";
-import spear2 from "@/assets/gear/spear-2.png";
-import spear3 from "@/assets/gear/spear-3.png";
-import spear4 from "@/assets/gear/spear-4.png";
-import trident1 from "@/assets/gear/trident-1.png";
-import trident2 from "@/assets/gear/trident-2.png";
-import trident3 from "@/assets/gear/trident-3.png";
-import trident4 from "@/assets/gear/trident-4.png";
-import net1 from "@/assets/gear/net-1.png";
-import net2 from "@/assets/gear/net-2.png";
-import net3 from "@/assets/gear/net-3.png";
-import net4 from "@/assets/gear/net-4.png";
-import scutum1 from "@/assets/gear/scutum-1.png";
-import scutum2 from "@/assets/gear/scutum-2.png";
-import scutum3 from "@/assets/gear/scutum-3.png";
-import scutum4 from "@/assets/gear/scutum-4.png";
+// Full 20-tier art, one PNG per tier, bulk-imported from the type-named
+// folders under gear-tiers/ (e.g. gear-tiers/helmet/helmet-tier-01.png).
+// Folder names don't all match the in-code category keys (boots→greaves,
+// sword→gladius, shield→scutum) — see GEAR_TIER_FOLDER_TO_CATEGORY below.
+const gearTierFiles = import.meta.glob<string>("../../assets/gear/gear-tiers/*/*.png", { eager: true, import: "default" });
+const GEAR_TIER_ART: Record<string, string[]> = {};
+for (const [path, url] of Object.entries(gearTierFiles)) {
+  const match = path.match(/gear-tiers\/([^/]+)\/[^/]+-tier-(\d+)\.png$/);
+  if (!match) continue;
+  const [, folder, tierStr] = match;
+  (GEAR_TIER_ART[folder] ??= [])[Number(tierStr) - 1] = url;
+}
+const GEAR_TIER_FOLDER_TO_CATEGORY: Record<string, string> = {
+  helmet: "helmet", cuirass: "cuirass", boots: "greaves", sword: "gladius",
+  spear: "spear", trident: "trident", net: "net", shield: "scutum",
+};
+
+// parma (spear off-hand buckler) and beast gear have no tiered art yet —
+// still on the old 4-grade fallback until more is painted.
 import parma1 from "@/assets/gear/parma-1.png";
 import parma2 from "@/assets/gear/parma-2.png";
 import parma3 from "@/assets/gear/parma-3.png";
@@ -95,21 +81,16 @@ import beastSaddle2 from "@/assets/gear/beast-saddle-2.png";
 import beastSaddle3 from "@/assets/gear/beast-saddle-3.png";
 import beastSaddle4 from "@/assets/gear/beast-saddle-4.png";
 
-const GEAR_ART: Record<string, [string, string, string, string]> = {
-  helmet:  [helmet1, helmet2, helmet3, helmet4],
-  cuirass: [cuirass1, cuirass2, cuirass3, cuirass4],
-  greaves: [greaves1, greaves2, greaves3, greaves4],
-  gladius: [gladius1, gladius2, gladius3, gladius4],
-  spear:   [spear1, spear2, spear3, spear4],
-  trident: [trident1, trident2, trident3, trident4],
-  net:     [net1, net2, net3, net4],
-  scutum:  [scutum1, scutum2, scutum3, scutum4],
+const GEAR_ART: Record<string, string[]> = {
   parma:   [parma1, parma2, parma3, parma4],
   beast_head:   [beastHead1, beastHead2, beastHead3, beastHead4],
   beast_body:   [beastBody1, beastBody2, beastBody3, beastBody4],
   beast_legs:   [beastLegs1, beastLegs2, beastLegs3, beastLegs4],
   beast_saddle: [beastSaddle1, beastSaddle2, beastSaddle3, beastSaddle4],
 };
+for (const [folder, category] of Object.entries(GEAR_TIER_FOLDER_TO_CATEGORY)) {
+  if (GEAR_TIER_ART[folder]?.length) GEAR_ART[category] = GEAR_TIER_ART[folder];
+}
 
 // Which art family does a slot use? Weapon/off-hand depend on the fighter's class.
 function gearCategory(slotKey: SlotKey, weaponType: string, isBeast = false): keyof typeof GEAR_ART | null {
@@ -139,14 +120,16 @@ function gearCategory(slotKey: SlotKey, weaponType: string, isBeast = false): ke
   return null;
 }
 
-// Art only exists through tier 8 (4 grades, 2 tiers each) so far — tiers
-// 9-20 clamp to the highest available grade and reuse its art until more
-// is painted. Extending GEAR_ART's tuples later needs no code change here.
+// Categories with the full 20-image set (see GEAR_TIER_ART above) map tier
+// to art 1:1. Categories still on the old 4-image fallback (parma, beast
+// gear) spread those 4 grades proportionally across all 20 tiers instead —
+// adding more art to GEAR_ART later needs no code change here.
 function gearImage(slotKey: SlotKey, weaponType: string, tier: number, isBeast = false): string | null {
   const cat = gearCategory(slotKey, weaponType, isBeast);
   if (!cat) return null;
   const arts = GEAR_ART[cat];
-  const grade = Math.min(arts.length, Math.max(1, Math.ceil(tier / 2)));
+  if (!arts?.length) return null;
+  const grade = Math.min(arts.length, Math.max(1, Math.ceil((tier / MAX_GEAR_TIER) * arts.length)));
   return arts[grade - 1] ?? null;
 }
 

@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "C:\\Users\\ChristianPetersen\\OneDrive - Copenhagen Data\\Documents\\GitHub\\gladius-ludus-arena-manager\\.claude\\dev-with-node.cmd",
-      "runtimeArgs": [],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 8080
     }
   ]
