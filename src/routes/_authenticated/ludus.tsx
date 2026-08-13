@@ -56,38 +56,11 @@ for (const [path, url] of Object.entries(gearTierFiles)) {
 const GEAR_TIER_FOLDER_TO_CATEGORY: Record<string, string> = {
   helmet: "helmet", cuirass: "cuirass", boots: "greaves", sword: "gladius",
   spear: "spear", trident: "trident", net: "net", shield: "scutum",
+  parma: "parma", beast_head: "beast_head", beast_body: "beast_body",
+  beast_legs: "beast_legs", beast_saddle: "beast_saddle",
 };
 
-// parma (spear off-hand buckler) and beast gear have no tiered art yet —
-// still on the old 4-grade fallback until more is painted.
-import parma1 from "@/assets/gear/parma-1.png";
-import parma2 from "@/assets/gear/parma-2.png";
-import parma3 from "@/assets/gear/parma-3.png";
-import parma4 from "@/assets/gear/parma-4.png";
-import beastHead1 from "@/assets/gear/beast-head-1.png";
-import beastHead2 from "@/assets/gear/beast-head-2.png";
-import beastHead3 from "@/assets/gear/beast-head-3.png";
-import beastHead4 from "@/assets/gear/beast-head-4.png";
-import beastBody1 from "@/assets/gear/beast-body-1.png";
-import beastBody2 from "@/assets/gear/beast-body-2.png";
-import beastBody3 from "@/assets/gear/beast-body-3.png";
-import beastBody4 from "@/assets/gear/beast-body-4.png";
-import beastLegs1 from "@/assets/gear/beast-legs-1.png";
-import beastLegs2 from "@/assets/gear/beast-legs-2.png";
-import beastLegs3 from "@/assets/gear/beast-legs-3.png";
-import beastLegs4 from "@/assets/gear/beast-legs-4.png";
-import beastSaddle1 from "@/assets/gear/beast-saddle-1.png";
-import beastSaddle2 from "@/assets/gear/beast-saddle-2.png";
-import beastSaddle3 from "@/assets/gear/beast-saddle-3.png";
-import beastSaddle4 from "@/assets/gear/beast-saddle-4.png";
-
-const GEAR_ART: Record<string, string[]> = {
-  parma:   [parma1, parma2, parma3, parma4],
-  beast_head:   [beastHead1, beastHead2, beastHead3, beastHead4],
-  beast_body:   [beastBody1, beastBody2, beastBody3, beastBody4],
-  beast_legs:   [beastLegs1, beastLegs2, beastLegs3, beastLegs4],
-  beast_saddle: [beastSaddle1, beastSaddle2, beastSaddle3, beastSaddle4],
-};
+const GEAR_ART: Record<string, string[]> = {};
 for (const [folder, category] of Object.entries(GEAR_TIER_FOLDER_TO_CATEGORY)) {
   if (GEAR_TIER_ART[folder]?.length) GEAR_ART[category] = GEAR_TIER_ART[folder];
 }
@@ -120,10 +93,10 @@ function gearCategory(slotKey: SlotKey, weaponType: string, isBeast = false): ke
   return null;
 }
 
-// Categories with the full 20-image set (see GEAR_TIER_ART above) map tier
-// to art 1:1. Categories still on the old 4-image fallback (parma, beast
-// gear) spread those 4 grades proportionally across all 20 tiers instead —
-// adding more art to GEAR_ART later needs no code change here.
+// Every category currently has the full 20-image set, mapping tier to art
+// 1:1. If a category ever falls back to a shorter set again, its grades
+// spread proportionally across all 20 tiers instead — no code change
+// needed here either way.
 function gearImage(slotKey: SlotKey, weaponType: string, tier: number, isBeast = false): string | null {
   const cat = gearCategory(slotKey, weaponType, isBeast);
   if (!cat) return null;
