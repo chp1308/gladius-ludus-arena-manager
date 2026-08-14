@@ -1516,20 +1516,24 @@ export const TEAM_DENARII_SCALE = 0.75;
 
 // Power bands shifted the same way as ARENA_TIERS above (gearTierPower's
 // convex delta over the old linear formula, at an assumed gear tier per
-// battle's reqFame), but multiplied by team size since powerMin/powerMax
-// here compare against a SUMMED team power, not one gladiator's.
+// battle's reqFame). Then EACH band is multiplied by that battle's own
+// `size` on top of that — powerMin/powerMax compare against a SUMMED team
+// power (computeTeamPowerAndHp adds up every fielded gladiator), so a
+// band calibrated at single-fighter scale would be trivial for a team of
+// `size` gladiators to stomp; this puts the band back on the same footing
+// as the team's actual summed power.
 export const TEAM_BATTLES: TeamBattle[] = [
-  { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerMin: 132, powerMax: 382, hp: 150, reward: 400, xp: 120, rep: 6 },
+  { key: "duo", label: "Paired Combat", flavor: "Two gladiators face two condemned killers.", size: 2, reqFame: 5, powerMin: 260, powerMax: 770, hp: 150, reward: 400, xp: 120, rep: 6 },
   // All-beast encounters — requireBeast === size, so every slot must be a
   // beast. Beasts are rarer to come by than human recruits (see beastChance
   // in recruitGladiator), so these pay a real premium over the equivalent
   // human-only battle at a comparable power band.
-  { key: "beast_duo", label: "Paired Beasts", flavor: "Two beasts of your ludus, loosed together against a chained bear.", size: 2, requireBeast: 2, reqFame: 8, powerMin: 147, powerMax: 397, hp: 150, reward: 600, xp: 150, rep: 8 },
-  { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerMin: 491, powerMax: 891, hp: 220, reward: 900, xp: 200, rep: 14 },
-  { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerMin: 652, powerMax: 1102, hp: 260, reward: 1100, xp: 220, rep: 16 },
-  { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerMin: 1451, powerMax: 2151, hp: 340, reward: 1800, xp: 320, rep: 26 },
-  { key: "grand_venatio", label: "The Emperor's Venatio", flavor: "Five beasts unleashed at once — a full venatio, the crowd's favorite spectacle.", size: 5, requireBeast: 5, reqFame: 150, powerMin: 2608, powerMax: 3408, hp: 400, reward: 2500, xp: 420, rep: 40 },
-  { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerMin: 3229, powerMax: 4429, hp: 480, reward: 3600, xp: 550, rep: 55 },
+  { key: "beast_duo", label: "Paired Beasts", flavor: "Two beasts of your ludus, loosed together against a chained bear.", size: 2, requireBeast: 2, reqFame: 8, powerMin: 290, powerMax: 800, hp: 150, reward: 600, xp: 150, rep: 8 },
+  { key: "trio_murmillo", label: "Trio of Murmillones", flavor: "Three Murmillones in disciplined formation.", size: 3, requireClass: "Murmillo", reqFame: 20, powerMin: 1470, powerMax: 2680, hp: 220, reward: 900, xp: 200, rep: 14 },
+  { key: "beast_hunt", label: "Grand Beast Hunt (Venatio)", flavor: "Two hunters and one beast against a Nubian panther.", size: 3, requireBeast: 1, reqFame: 30, powerMin: 1950, powerMax: 3310, hp: 260, reward: 1100, xp: 220, rep: 16 },
+  { key: "cohort", label: "Rival Ludus Melee", flavor: "Four of your best against a rival cohort.", size: 4, reqFame: 80, powerMin: 5800, powerMax: 8610, hp: 340, reward: 1800, xp: 320, rep: 26 },
+  { key: "grand_venatio", label: "The Emperor's Venatio", flavor: "Five beasts unleashed at once — a full venatio, the crowd's favorite spectacle.", size: 5, requireBeast: 5, reqFame: 150, powerMin: 13040, powerMax: 17040, hp: 400, reward: 2500, xp: 420, rep: 40 },
+  { key: "spectacle", label: "Emperor's Spectacle", flavor: "Five champions in a grand spectacle. Legends are made here.", size: 5, reqFame: 250, powerMin: 16140, powerMax: 22150, hp: 480, reward: 3600, xp: 550, rep: 55 },
 ];
 
 export function teamBattleRequirementError(
@@ -2947,5 +2951,317 @@ export const runSocialEvent = createServerFn({ method: "POST" })
     if (insertErr) throw new Error(insertErr.message);
 
     return { ok: true, tone: event.tone, log: fullLog, denariiDelta, reputationDelta };
+  });
+
+// ============================================================
+// GLOBAL EVENTS — a shared, timed spectacle every ludus can join (e.g.
+// Porphyrion, King of the Giants, breaking through the gates of the
+// underworld). No shared/contended HP counter: the "boss HP" shown to
+// players is a client-side animation timed to starts_at/ends_at, not a
+// real damage total, and there's no fail state — the event always
+// resolves as a victory once the timer ends, with rewards scaled by total
+// turnout. Each player's real contribution only ever writes to their own
+// row (event_id, owner_id), so there's nothing for concurrent strikes to
+// race on beyond the same player double-clicking, which
+// apply_global_event_strike (see migration) already guards atomically.
+//
+// No Cloudflare Cron Trigger exists in this project, so the announce/
+// live/resolve transitions are all opportunistic — rolled and checked
+// inside getGlobalEventState, which every client polls periodically. Same
+// pattern as ensureBotChallenges above.
+// ============================================================
+const GLOBAL_EVENT_ROLL_CHANCE = 0.003;
+const GLOBAL_EVENT_LEAD_HOURS = 3;
+const GLOBAL_EVENT_MIN_DURATION_MIN = 5;
+const GLOBAL_EVENT_MAX_DURATION_MIN = 10;
+// No cap on total strikes per fighter — the cooldown alone paces things,
+// which makes striking faster/more consistently an actual skill during
+// the encounter (assuming similarly-powered gladiators) rather than a
+// fixed budget everyone burns identically.
+export const GLOBAL_EVENT_STRIKE_COOLDOWN_SEC = 15; // per fighter, not per player
+// Fixed per-rank reward tiers (by damage rank among participating players,
+// not a shared pool split) — 1st place is always exactly this amount
+// regardless of turnout, rather than a formula output that drifts with
+// participant count. Calibrated so a ~20-participant event averages close
+// to 2500 denarii / 500 XP per player; a smaller event skews richer per
+// player (a lone participant just claims the 1st-place tier), a larger
+// one skews toward the participation floor. XP is the second reward
+// currency alongside denarii — more kinds can slot in the same way later.
+const GLOBAL_EVENT_REWARD_TIERS: { minRank: number; maxRank: number; denarii: number; xp: number }[] = [
+  { minRank: 1, maxRank: 1, denarii: 15000, xp: 1000 },
+  { minRank: 2, maxRank: 2, denarii: 8000, xp: 900 },
+  { minRank: 3, maxRank: 3, denarii: 5000, xp: 700 },
+  { minRank: 4, maxRank: 10, denarii: 2000, xp: 550 },
+  { minRank: 11, maxRank: Infinity, denarii: 750, xp: 350 },
+];
+function globalEventRewardForRank(rank: number): { denarii: number; xp: number } {
+  const tier = GLOBAL_EVENT_REWARD_TIERS.find(t => rank >= t.minRank && rank <= t.maxRank);
+  return tier ? { denarii: tier.denarii, xp: tier.xp } : { denarii: 0, xp: 0 };
+}
+const GLOBAL_EVENT_RELIC_KEY = "titan_shard";
+// Independent 10% roll per participating player (not per fighter, not
+// rank-gated) — "more than one player can get it" per event. Keep in sync
+// with titan_shard.maxTier in relics.ts.
+const GLOBAL_EVENT_RELIC_DROP_CHANCE = 0.10;
+export const GLOBAL_EVENT_RELIC_MAX_TIER = 5;
+const GLOBAL_EVENT_STALE_HOURS = 24; // how long a resolved event still shows its results
+
+// Each titan_shard tier fields one more champion at a World Event (base 1,
+// capped at 1 + GLOBAL_EVENT_RELIC_MAX_TIER = 6).
+function globalEventMaxFighters(relicTiers: unknown): number {
+  const tiers = (relicTiers as Record<string, number> | null) ?? {};
+  const tier = Math.min(GLOBAL_EVENT_RELIC_MAX_TIER, Math.max(0, tiers[GLOBAL_EVENT_RELIC_KEY] ?? 0));
+  return 1 + tier;
+}
+
+async function ensureGlobalEventRoll() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: active } = await supabaseAdmin
+    .from("global_events")
+    .select("id")
+    .in("status", ["announced", "live"])
+    .limit(1)
+    .maybeSingle();
+  if (active) return;
+  if (Math.random() >= GLOBAL_EVENT_ROLL_CHANCE) return;
+
+  const startsAt = new Date(Date.now() + GLOBAL_EVENT_LEAD_HOURS * 3600_000);
+  const durationMin = rand(GLOBAL_EVENT_MIN_DURATION_MIN, GLOBAL_EVENT_MAX_DURATION_MIN);
+  const endsAt = new Date(startsAt.getTime() + durationMin * 60_000);
+  const { error } = await supabaseAdmin.from("global_events").insert({
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+  });
+  // 23505 = unique_violation on global_events_single_active_idx (see
+  // migration) — the SELECT above isn't atomic with this INSERT, so two
+  // concurrent opportunistic callers (e.g. the banner and the Fights page
+  // both loading at once) can both pass the "no active event" check. The
+  // partial unique index is the real guard; losing this race is expected
+  // and fine to swallow silently.
+  if (error && error.code !== "23505") throw new Error(error.message);
+}
+
+// Denarii and XP are paid from the fixed per-rank tiers above (by total
+// damage rank among participating players, not a shared pool) — see
+// GLOBAL_EVENT_REWARD_TIERS for why. Denarii is credited once per player;
+// XP is re-split across that player's own fighters (if a titan_shard tier
+// let them field more than one), proportional to each fighter's own share
+// of their owner's total damage, and applied to that specific gladiator's
+// experience. Every participating player also gets an independent 10%
+// roll for a titan_shard tier, uncapped in count.
+async function payoutGlobalEvent(eventId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: contributions } = await supabaseAdmin
+    .from("global_event_contributions")
+    .select("*")
+    .eq("event_id", eventId);
+  const rows = contributions ?? [];
+  if (rows.length === 0) {
+    await supabaseAdmin.from("global_events").update({ total_pool: 0 }).eq("id", eventId);
+    return;
+  }
+
+  const byOwner = new Map<string, typeof rows>();
+  for (const r of rows) byOwner.set(r.owner_id, [...(byOwner.get(r.owner_id) ?? []), r]);
+  const owners = [...byOwner.entries()]
+    .map(([ownerId, ownerRows]) => ({
+      ownerId,
+      rows: ownerRows,
+      damage: ownerRows.reduce((s, r) => s + Number(r.damage_dealt), 0),
+    }))
+    .sort((a, b) => b.damage - a.damage);
+
+  let totalPaid = 0;
+
+  await Promise.all(owners.map(async (owner, i) => {
+    const { denarii: denariiReward, xp: xpReward } = globalEventRewardForRank(i + 1);
+    totalPaid += denariiReward;
+
+    await Promise.all(owner.rows.map(async (r) => {
+      const rowShare = owner.damage > 0 ? Number(r.damage_dealt) / owner.damage : 1 / owner.rows.length;
+      const rowXp = Math.round(xpReward * rowShare);
+      const { data: glad } = await supabaseAdmin.from("gladiators").select("experience,level").eq("id", r.gladiator_id).maybeSingle();
+      if (glad) {
+        const newXp = glad.experience + rowXp;
+        const xpForNext = glad.level * 100;
+        const leveledUp = newXp >= xpForNext;
+        await supabaseAdmin.from("gladiators").update(
+          leveledUp ? { experience: newXp - xpForNext, level: glad.level + 1 } : { experience: newXp },
+        ).eq("id", r.gladiator_id);
+      }
+      // Full denarii reward is stamped on every one of the owner's rows
+      // (redundant, but avoids picking an arbitrary "first" row) — readers
+      // aggregating per owner (see getGlobalEventState) take it once, not
+      // summed.
+      await supabaseAdmin.from("global_event_contributions")
+        .update({ reward_denarii: denariiReward, reward_xp: rowXp })
+        .eq("event_id", eventId).eq("owner_id", owner.ownerId).eq("gladiator_id", r.gladiator_id);
+    }));
+
+    const { data: profile } = await supabaseAdmin.from("profiles").select("denarii,relics,relic_tiers").eq("id", owner.ownerId).maybeSingle();
+    if (!profile) return;
+    const relics = profile.relics ?? [];
+    const relicTiers = (profile.relic_tiers as Record<string, number> | null) ?? {};
+    const currentTier = Math.min(GLOBAL_EVENT_RELIC_MAX_TIER, relicTiers[GLOBAL_EVENT_RELIC_KEY] ?? 0);
+    const dropped = currentTier < GLOBAL_EVENT_RELIC_MAX_TIER && Math.random() < GLOBAL_EVENT_RELIC_DROP_CHANCE;
+
+    await supabaseAdmin.from("profiles").update({
+      denarii: profile.denarii + denariiReward,
+      ...(dropped ? {
+        relics: relics.includes(GLOBAL_EVENT_RELIC_KEY) ? relics : [...relics, GLOBAL_EVENT_RELIC_KEY],
+        relic_tiers: { ...relicTiers, [GLOBAL_EVENT_RELIC_KEY]: currentTier + 1 },
+      } : {}),
+    }).eq("id", owner.ownerId);
+  }));
+
+  await supabaseAdmin.from("global_events").update({ total_pool: totalPaid }).eq("id", eventId);
+}
+
+// Advances announced -> live -> resolved as their timestamps come due.
+// The live -> resolved UPDATE is the load-bearing part: its WHERE clause
+// only matches a still-live row, so under concurrent callers exactly one
+// of them sees the row come back from .select(), and only that one runs
+// the payout — everyone else's UPDATE simply matches zero rows.
+async function ensureGlobalEventProgressed() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const nowIso = new Date().toISOString();
+
+  await supabaseAdmin.from("global_events")
+    .update({ status: "live" })
+    .eq("status", "announced")
+    .lte("starts_at", nowIso);
+
+  // .select() (not .maybeSingle()) deliberately — the partial unique index
+  // on global_events guarantees at most one announced/live row going
+  // forward, but this stays defensive in case that's ever violated (stale
+  // rows from before the index existed, manual test data, etc.) rather
+  // than throwing on more than one match.
+  const { data: justResolved } = await supabaseAdmin
+    .from("global_events")
+    .update({ status: "resolved", resolved_at: nowIso })
+    .eq("status", "live")
+    .lte("ends_at", nowIso)
+    .select("id");
+  if (!justResolved || justResolved.length === 0) return;
+
+  await Promise.all(justResolved.map(row => payoutGlobalEvent(row.id)));
+}
+
+export type GlobalEventLeaderboardRow = {
+  owner_id: string;
+  ludus_name: string;
+  gladiator_names: string[];
+  damage_dealt: number;
+  reward_denarii: number;
+  reward_xp: number;
+};
+
+export const getGlobalEventState = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    await ensureGlobalEventRoll();
+    await ensureGlobalEventProgressed();
+
+    const { data: profile } = await supabase.from("profiles").select("relic_tiers").eq("id", userId).maybeSingle();
+    const maxFighters = globalEventMaxFighters(profile?.relic_tiers);
+
+    const { data: event } = await supabase
+      .from("global_events")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const stale = !!event && event.status === "resolved" && !!event.resolved_at &&
+      Date.now() - new Date(event.resolved_at).getTime() > GLOBAL_EVENT_STALE_HOURS * 3600_000;
+    if (!event || stale) return { event: null, myContributions: [], maxFighters, leaderboard: [] };
+
+    const { data: myContributions } = await supabase
+      .from("global_event_contributions")
+      .select("*")
+      .eq("event_id", event.id).eq("owner_id", userId);
+
+    let leaderboard: GlobalEventLeaderboardRow[] = [];
+    if (event.status === "resolved") {
+      const { data } = await supabase
+        .from("global_event_contributions")
+        .select("owner_id,ludus_name,gladiator_name,damage_dealt,reward_denarii,reward_xp")
+        .eq("event_id", event.id);
+      const byOwner = new Map<string, GlobalEventLeaderboardRow>();
+      for (const r of data ?? []) {
+        const entry = byOwner.get(r.owner_id) ?? {
+          owner_id: r.owner_id, ludus_name: r.ludus_name, gladiator_names: [],
+          damage_dealt: 0, reward_denarii: r.reward_denarii ?? 0, reward_xp: 0,
+        };
+        entry.gladiator_names.push(r.gladiator_name);
+        entry.damage_dealt += Number(r.damage_dealt);
+        entry.reward_xp += r.reward_xp ?? 0;
+        byOwner.set(r.owner_id, entry);
+      }
+      leaderboard = [...byOwner.values()].sort((a, b) => b.damage_dealt - a.damage_dealt).slice(0, 50);
+    }
+
+    return { event, myContributions: myContributions ?? [], maxFighters, leaderboard };
+  });
+
+export const strikeGlobalEvent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ gladiatorId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: event } = await supabase.from("global_events").select("*").eq("status", "live").maybeSingle();
+    if (!event || new Date(event.ends_at) <= new Date()) throw new Error("No global event is live right now");
+
+    const { data: g } = await supabase.from("gladiators").select("*").eq("id", data.gladiatorId).eq("owner_id", userId).maybeSingle();
+    if (!g) throw new Error("Gladiator not found");
+    if (g.status === "dead") throw new Error("Gladiator has fallen");
+
+    const { data: profile } = await supabase.from("profiles").select("ludus_name,medicus_level,training_level,relic_tiers").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
+    const maxFighters = globalEventMaxFighters(profile.relic_tiers);
+
+    const { data: myRows } = await supabase
+      .from("global_event_contributions")
+      .select("gladiator_id,strikes_used,last_strike_at")
+      .eq("event_id", event.id).eq("owner_id", userId);
+    const rows = myRows ?? [];
+    const existing = rows.find(r => r.gladiator_id === data.gladiatorId);
+    if (!existing && rows.length >= maxFighters) {
+      throw new Error(`You've already fielded your maximum of ${maxFighters} champion${maxFighters === 1 ? "" : "s"} for this event — a Shard of the Titan's Chain fields another`);
+    }
+    if (existing?.last_strike_at) {
+      const cooldownRemainingMs = new Date(existing.last_strike_at).getTime() + GLOBAL_EVENT_STRIKE_COOLDOWN_SEC * 1000 - Date.now();
+      if (cooldownRemainingMs > 0) {
+        throw new Error(`This champion is still recovering — ${Math.ceil(cooldownRemainingMs / 1000)}s left`);
+      }
+    }
+
+    const { data: skillRow } = await supabase.from("ludus_skills").select("level").eq("owner_id", userId).eq("weapon_type", g.weapon_type).maybeSingle();
+    const skillLevel = skillRow?.level ?? 0;
+    const currentHealth = effectiveHealth(g, profile.medicus_level, profile.training_level);
+    const power = gladiatorPower({ ...g, health: currentHealth }, skillLevel);
+    // Big, showy numbers — a healthy fraction of the gladiator's power,
+    // jittered so repeated strikes don't look identical.
+    const damage = Math.max(1, Math.round(power * (0.4 + Math.random() * 0.3)));
+
+    const { data: result, error } = await supabaseAdmin.rpc("apply_global_event_strike", {
+      p_event_id: event.id,
+      p_owner_id: userId,
+      p_gladiator_id: g.id,
+      p_gladiator_name: g.name,
+      p_ludus_name: profile.ludus_name,
+      p_damage: damage,
+      p_cooldown_seconds: GLOBAL_EVENT_STRIKE_COOLDOWN_SEC,
+    });
+    if (error) throw new Error(error.message);
+    const row = result?.[0];
+    if (!row || row.strikes_used <= (existing?.strikes_used ?? 0)) {
+      throw new Error("This champion is still recovering from its last strike");
+    }
+
+    return { ok: true, gladiatorId: g.id, damage, strikesUsed: row.strikes_used, maxFighters };
   });
 

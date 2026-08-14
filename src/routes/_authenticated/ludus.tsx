@@ -1678,6 +1678,7 @@ function HallOfFame({ state }: { state: State }) {
 function RelicsPanel({ state }: { state: State }) {
   const owned = state.profile?.relics ?? [];
   const bossKills = (state.profile as unknown as { boss_kills?: Record<string, number> })?.boss_kills ?? {};
+  const relicTiers = (state.profile as unknown as { relic_tiers?: Record<string, number> })?.relic_tiers ?? {};
   const hadesKeys = state.profile?.hades_keys ?? 0;
   return (
     <Card className="inscribed ornate-border">
@@ -1709,7 +1710,7 @@ function RelicsPanel({ state }: { state: State }) {
             return (
               <li key={r.key} className="flex items-center justify-between gap-4 py-3">
                 <div className="flex items-center gap-3">
-                  {has ? (
+                  {has && r.image ? (
                     <img src={r.image} alt={r.label} className="h-14 w-14 shrink-0 rounded-md object-cover" />
                   ) : (
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
@@ -1726,6 +1727,11 @@ function RelicsPanel({ state }: { state: State }) {
                     {has && r.bonusTier && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         {tierUnlocked ? r.bonusTier.label : `${kills}/${r.bonusTier.killsRequired} slain — ${r.bonusTier.killsRequired - kills} more for another +${Math.round(r.bonusTier.extraGoldBonusPct * 100)}%.`}
+                      </p>
+                    )}
+                    {has && r.maxTier && r.tierDescription && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {r.tierDescription(Math.min(r.maxTier, relicTiers[r.key] ?? 1))}
                       </p>
                     )}
                   </div>

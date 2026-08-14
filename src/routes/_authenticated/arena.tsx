@@ -15,6 +15,7 @@ import {
   getBossFightState, startBossFight, resolveBossRound,
   BOSS_PLAYER_REVEAL_MS, BOSS_BOAR_REVEAL_MS,
   keyDropChance,
+  getGlobalEventState, strikeGlobalEvent, GLOBAL_EVENT_STRIKE_COOLDOWN_SEC,
 } from "@/lib/game.functions";
 import type { FightRound, BossRoundOutcome } from "@/lib/game.functions";
 import { BOSS_ENCOUNTERS, bossRequirementError, type BossDefinition, type DogLungeVariant } from "@/lib/boss-encounters";
@@ -32,6 +33,10 @@ import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
 import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, ArrowRight, ArrowDown, Users, Shield, Heart, Flame, Zap, Wind } from "lucide-react";
+import porphyrionSelectImg from "@/assets/events/event-select.jpg";
+import porphyrionArenaBgImg from "@/assets/events/event-arena-bg.jpg";
+import porphyrionAttackImg from "@/assets/events/event-attack.jpg";
+import porphyrionDefeatedImg from "@/assets/events/event-defeated.jpg";
 
 function formatCountdown(iso: string): string {
   return formatMinutes(minutesUntil(iso));
@@ -107,6 +112,14 @@ function ArenaPage() {
   const denarii = data.profile?.denarii ?? 0;
   const navigate = useNavigate();
 
+  const fetchEvent = useServerFn(getGlobalEventState);
+  const { data: eventData } = useQuery({
+    queryKey: ["global-event"],
+    queryFn: () => fetchEvent({}),
+    refetchInterval: 15_000,
+  });
+  const hasEvent = !!eventData?.event;
+
   const headerActions: HeaderAction[] = [
     { key: "codex", label: "Codex", onClick: () => navigate({ to: "/info" }) },
   ];
@@ -126,18 +139,24 @@ function ArenaPage() {
       />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <Tabs defaultValue="pits" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-4">
+        <Tabs defaultValue={hasEvent ? "event" : "pits"} className="w-full">
+          <TabsList className={`grid w-full ${hasEvent ? "max-w-3xl grid-cols-5" : "max-w-2xl grid-cols-4"}`}>
             <TabsTrigger value="pits"><Swords className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Pit Fights</span><span className="sm:hidden">Pits</span></TabsTrigger>
             <TabsTrigger value="pvp"><Shield className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Rival Ludi</span><span className="sm:hidden">Rivals</span></TabsTrigger>
             <TabsTrigger value="team"><Users className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Team Battles</span><span className="sm:hidden">Teams</span></TabsTrigger>
             <TabsTrigger value="boss"><Skull className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Boss Fights</span><span className="sm:hidden">Bosses</span></TabsTrigger>
+            {hasEvent && (
+              <TabsTrigger value="event"><Flame className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">World Event</span><span className="sm:hidden">Event</span></TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="pits" className="mt-6"><PitFights state={data} /></TabsContent>
           <TabsContent value="pvp" className="mt-6"><PvpFights state={data} /></TabsContent>
           <TabsContent value="team" className="mt-6"><TeamFights state={data} /></TabsContent>
           <TabsContent value="boss" className="mt-6"><BossFights state={data} /></TabsContent>
+          {hasEvent && (
+            <TabsContent value="event" className="mt-6"><WorldEventFight state={data} /></TabsContent>
+          )}
         </Tabs>
       </main>
     </div>
@@ -1472,6 +1491,250 @@ function BossPortrait({ boss, beat }: { boss: BossDefinition; beat: string }) {
     <div className={`relative flex h-36 w-36 items-center justify-center overflow-hidden rounded-full border-2 transition-shadow duration-300 ${ring}`}>
       <img src={pose} alt={boss.name} className="h-full w-full object-cover" />
     </div>
+  );
+}
+
+// -----------------------------------------------------------
+// WORLD EVENT — a shared, timed spectacle every ludus can join. Unlike
+// the fights above, nothing here is resolved server-side round-by-round:
+// the "Titan's strength" bar is a client-side animation timed to the
+// event's starts_at/ends_at, and the ambient damage-number feed (other
+// ludus names) is simulated — not real aggregate data from other players
+// (see strikeGlobalEvent in game.functions.ts for why: no shared counter
+// means no contention). Your own strikes show their real damage in the
+// ticker and are saved server-side; full standings are only revealed in
+// the leaderboard once the event resolves.
+// -----------------------------------------------------------
+function randInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+const WORLD_EVENT_TICKER_NAMES = [
+  "A gladiator", "A legionary veteran", "A Thracian champion", "A retiarius",
+  "A Nubian slayer", "An Iberian swordsman", "A Praetorian washout", "A beast handler",
+];
+// A "crazy amount" of HP, purely for spectacle — see the section comment
+// above. Only sampled at tick moments (each ticker line, real or
+// simulated), not continuously, so the bar visibly drops in chunks
+// instead of gliding smoothly.
+const TITAN_MAX_HP = 1_000_000;
+function titanHpAt(startMs: number, endMs: number): number {
+  const remainingFraction = 1 - (Date.now() - startMs) / Math.max(1, endMs - startMs);
+  return Math.max(0, Math.round(TITAN_MAX_HP * Math.max(0, Math.min(1, remainingFraction))));
+}
+
+function WorldEventFight({ state }: { state: State }) {
+  const qc = useQueryClient();
+  const fetchEvent = useServerFn(getGlobalEventState);
+  const strikeFn = useServerFn(strikeGlobalEvent);
+  const { data } = useQuery({
+    queryKey: ["global-event"],
+    queryFn: () => fetchEvent({}),
+    refetchInterval: 15_000,
+  });
+  const eligible = state.gladiators.filter(gl => gl.status !== "dead");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [ticker, setTicker] = useState<{ id: number; text: string; mine?: boolean }[]>([]);
+  const tickerIdRef = useRef(0);
+  const [titanHp, setTitanHp] = useState(TITAN_MAX_HP);
+  const [remainingSec, setRemainingSec] = useState(0);
+  const status = data?.event?.status;
+  const startsAt = data?.event?.starts_at;
+  const endsAt = data?.event?.ends_at;
+
+  const strike = useMutation({
+    mutationFn: (gladiatorId: string) => strikeFn({ data: { gladiatorId } }),
+    onSuccess: (r) => {
+      tickerIdRef.current += 1;
+      setTicker(t => [...t.slice(-7), { id: tickerIdRef.current, text: `You strike for ${r.damage.toLocaleString()}!`, mine: true }]);
+      if (startsAt && endsAt) setTitanHp(titanHpAt(new Date(startsAt).getTime(), new Date(endsAt).getTime()));
+      if (!selectedIds.includes(r.gladiatorId)) setSelectedIds(ids => [...ids, r.gladiatorId]);
+      qc.invalidateQueries({ queryKey: ["global-event"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Simulated ambient hits from "other players" — purely cosmetic, no
+  // server round-trip, no real data. Also the only thing that updates the
+  // strength bar / countdown outside of a strike, so both move in the
+  // same chunky increments instead of a smooth glide.
+  useEffect(() => {
+    if (status !== "live" || !startsAt || !endsAt) return;
+    const startMs = new Date(startsAt).getTime();
+    const endMs = new Date(endsAt).getTime();
+    setTitanHp(titanHpAt(startMs, endMs));
+    setRemainingSec(Math.max(0, Math.ceil((endMs - Date.now()) / 1000)));
+    const id = setInterval(() => {
+      tickerIdRef.current += 1;
+      const who = WORLD_EVENT_TICKER_NAMES[randInt(0, WORLD_EVENT_TICKER_NAMES.length - 1)];
+      setTicker(t => [...t.slice(-7), { id: tickerIdRef.current, text: `${who} strikes for ${randInt(60, 850)}!` }]);
+      setTitanHp(titanHpAt(startMs, endMs));
+      setRemainingSec(Math.max(0, Math.ceil((endMs - Date.now()) / 1000)));
+    }, randInt(1000, 2200));
+    return () => clearInterval(id);
+  }, [status, startsAt, endsAt]);
+
+  // Separate steady 1s tick just to keep per-fighter cooldown countdowns
+  // (computed from Date.now() at render time, not stored state) accurate
+  // — the ticker above only fires every 1-2.2s, too irregular for a "18s"
+  // style countdown to feel right.
+  const [, setCooldownTick] = useState(0);
+  useEffect(() => {
+    if (status !== "live") return;
+    const id = setInterval(() => setCooldownTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [status]);
+
+  if (!data || !data.event) {
+    return <p className="font-serif italic text-muted-foreground">No world event is active right now. Watch the banner above — Rome will call when it needs you.</p>;
+  }
+  const { event, myContributions, maxFighters, leaderboard } = data;
+  const myByGladiator = new Map(myContributions.map(c => [c.gladiator_id, c]));
+
+  if (event.status === "announced") {
+    return (
+      <Card className="overflow-hidden bg-card/50">
+        <img src={porphyrionArenaBgImg} alt="" className="h-[40rem] w-full object-cover" />
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 font-display text-lg">
+            <img src={porphyrionSelectImg} alt="" className="h-7 w-7 rounded-full object-cover ring-1 ring-border" />
+            Porphyrion, King of the Giants
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="font-serif text-sm italic text-muted-foreground">
+            Something has broken through the gates of the underworld — worn thin, some say, by the endless brawls fought there. Jupiter calls every ludus in Rome to answer together. No single champion can stand against a Giant; only Rome entire.
+          </p>
+          <p className="text-accent">Breaks loose in {formatMinutes(minutesUntil(event.starts_at))}.</p>
+          {maxFighters > 1 && (
+            <p className="text-xs text-muted-foreground">Your Shard of the Titan's Chain lets you field up to {maxFighters} champions this time.</p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (event.status === "live") {
+    const pct = (titanHp / TITAN_MAX_HP) * 100;
+    const toggle = (id: string) => {
+      setSelectedIds(ids => ids.includes(id) ? ids.filter(x => x !== id)
+        : ids.length < maxFighters ? [...ids, id] : ids);
+    };
+    return (
+      <Card className="overflow-hidden bg-card/50">
+        <img src={porphyrionAttackImg} alt="" className="h-[40rem] w-full object-cover" />
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 font-display text-lg">
+            <img src={porphyrionSelectImg} alt="" className="h-7 w-7 rounded-full object-cover ring-1 ring-border" />
+            Porphyrion, King of the Giants
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Titan's strength — {titanHp.toLocaleString()} / {TITAN_MAX_HP.toLocaleString()} HP</span>
+              <span>{Math.floor(remainingSec / 60)}:{String(remainingSec % 60).padStart(2, "0")} remaining</span>
+            </div>
+            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-destructive transition-all duration-200 ease-out" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+
+          <div className="h-40 space-y-1 overflow-y-auto rounded-lg border border-border bg-background/40 p-2 font-mono text-xs text-muted-foreground">
+            {ticker.length === 0 && <p className="italic">The sands await the first blow...</p>}
+            {ticker.map(t => (
+              <p key={t.id} className={t.mine ? "text-accent" : ""}>{t.text}</p>
+            ))}
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center justify-between text-xs uppercase tracking-widest text-muted-foreground">
+              <span>Your champions</span>
+              <span>{selectedIds.length}/{maxFighters} fielded</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {eligible.length === 0 && <p className="font-serif text-sm italic text-muted-foreground">No gladiators fit to fight.</p>}
+              {eligible.map(gl => {
+                const selected = selectedIds.includes(gl.id);
+                const dim = !selected && selectedIds.length >= maxFighters;
+                return (
+                  <button
+                    key={gl.id}
+                    onClick={() => toggle(gl.id)}
+                    disabled={dim}
+                    className={`rounded-lg border px-3 py-1.5 text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${selected ? "border-primary bg-primary/10" : "border-border hover:border-primary/60"}`}
+                  >
+                    {gl.name}
+                  </button>
+                );
+              })}
+            </div>
+            {maxFighters === 1 && (
+              <p className="mt-1 text-xs text-muted-foreground">A Shard of the Titan's Chain (10% drop from this event) fields more champions next time.</p>
+            )}
+          </div>
+
+          {selectedIds.length > 0 && (
+            <ul className="space-y-2">
+              {selectedIds.map(id => {
+                const gl = eligible.find(g => g.id === id);
+                if (!gl) return null;
+                const contribution = myByGladiator.get(id);
+                const strikesUsed = contribution?.strikes_used ?? 0;
+                const lastStrikeMs = contribution?.last_strike_at ? new Date(contribution.last_strike_at).getTime() : 0;
+                const cooldownLeft = Math.max(0, GLOBAL_EVENT_STRIKE_COOLDOWN_SEC - Math.floor((Date.now() - lastStrikeMs) / 1000));
+                const onCooldown = cooldownLeft > 0;
+                return (
+                  <li key={id} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                    <span className="text-sm font-display">{gl.name}</span>
+                    <span className="flex items-center gap-3">
+                      {strikesUsed > 0 && <span className="text-xs text-muted-foreground">{strikesUsed} strike{strikesUsed === 1 ? "" : "s"} landed</span>}
+                      <Button size="sm" disabled={onCooldown || strike.isPending} onClick={() => strike.mutate(id)}>
+                        {onCooldown ? `${cooldownLeft}s` : "Strike!"}
+                      </Button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // resolved
+  return (
+    <Card className="overflow-hidden bg-card/50">
+      <img src={porphyrionDefeatedImg} alt="" className="h-[40rem] w-full object-cover" />
+      <CardHeader>
+        <CardTitle className="font-display text-lg">Rome Has Held</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="font-serif text-sm italic text-muted-foreground">
+          Porphyrion is driven back to Tartarus. {leaderboard.length} ludus{leaderboard.length === 1 ? "" : "es"} answered the call.
+        </p>
+        {leaderboard.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No one struck a blow this time.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {leaderboard.map((row, i) => (
+              <li key={row.owner_id} className="flex items-center justify-between py-2 text-sm">
+                <span className="flex items-center gap-2">
+                  <Badge variant={i < 3 ? "default" : "outline"}>{i + 1}</Badge>
+                  <span className="font-display">{row.ludus_name}</span>
+                  <span className="text-muted-foreground">({row.gladiator_names.join(", ")})</span>
+                </span>
+                <span className="flex items-center gap-3 text-muted-foreground">
+                  <span>{row.damage_dealt.toLocaleString()} dmg</span>
+                  <span className="text-accent">+{row.reward_denarii}d</span>
+                  <span className="text-accent">+{row.reward_xp}xp</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

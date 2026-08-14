@@ -398,6 +398,7 @@ export type Database = {
           ludus_name: string
           medicus_level: number
           pantry_level: number
+          relic_tiers: Json
           relics: string[]
           relics_level: number
           reputation: number
@@ -423,6 +424,7 @@ export type Database = {
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number
+          relic_tiers?: Json
           relics?: string[]
           relics_level?: number
           reputation?: number
@@ -448,6 +450,7 @@ export type Database = {
           ludus_name?: string
           medicus_level?: number
           pantry_level?: number
+          relic_tiers?: Json
           relics?: string[]
           relics_level?: number
           reputation?: number
@@ -520,11 +523,110 @@ export type Database = {
           },
         ]
       }
+      global_events: {
+        Row: {
+          announced_at: string
+          created_at: string
+          ends_at: string
+          id: string
+          monster_key: string
+          resolved_at: string | null
+          starts_at: string
+          status: string
+          total_pool: number | null
+        }
+        Insert: {
+          announced_at?: string
+          created_at?: string
+          ends_at: string
+          id?: string
+          monster_key?: string
+          resolved_at?: string | null
+          starts_at: string
+          status?: string
+          total_pool?: number | null
+        }
+        Update: {
+          announced_at?: string
+          created_at?: string
+          ends_at?: string
+          id?: string
+          monster_key?: string
+          resolved_at?: string | null
+          starts_at?: string
+          status?: string
+          total_pool?: number | null
+        }
+        Relationships: []
+      }
+      global_event_contributions: {
+        Row: {
+          damage_dealt: number
+          event_id: string
+          gladiator_id: string
+          gladiator_name: string
+          last_strike_at: string | null
+          ludus_name: string
+          owner_id: string
+          reward_denarii: number | null
+          reward_xp: number | null
+          strikes_used: number
+        }
+        Insert: {
+          damage_dealt?: number
+          event_id: string
+          gladiator_id: string
+          gladiator_name: string
+          last_strike_at?: string | null
+          ludus_name: string
+          owner_id: string
+          reward_denarii?: number | null
+          reward_xp?: number | null
+          strikes_used?: number
+        }
+        Update: {
+          damage_dealt?: number
+          event_id?: string
+          gladiator_id?: string
+          gladiator_name?: string
+          last_strike_at?: string | null
+          ludus_name?: string
+          owner_id?: string
+          reward_denarii?: number | null
+          reward_xp?: number | null
+          strikes_used?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "global_event_contributions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "global_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      apply_global_event_strike: {
+        Args: {
+          p_cooldown_seconds: number
+          p_damage: number
+          p_event_id: string
+          p_gladiator_id: string
+          p_gladiator_name: string
+          p_ludus_name: string
+          p_owner_id: string
+        }
+        Returns: {
+          damage_dealt: number
+          last_strike_at: string | null
+          strikes_used: number
+        }[]
+      }
       get_boss_kill_leaderboard: {
         Args: Record<PropertyKey, never>
         Returns: {
