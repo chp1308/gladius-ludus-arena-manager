@@ -1731,7 +1731,10 @@ function RelicsPanel({ state }: { state: State }) {
                     )}
                     {has && r.maxTier && r.tierDescription && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {r.tierDescription(Math.min(r.maxTier, relicTiers[r.key] ?? 1))}
+                        {/* Falls back to 0, matching globalEventMaxFighters'
+                            own fallback — this must never promise a tier the
+                            server won't actually honor. */}
+                        {r.tierDescription(Math.min(r.maxTier, relicTiers[r.key] ?? 0))}
                       </p>
                     )}
                   </div>

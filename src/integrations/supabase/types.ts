@@ -559,6 +559,21 @@ export type Database = {
         }
         Relationships: []
       }
+      global_event_roll_state: {
+        Row: {
+          id: number
+          last_checked_at: string
+        }
+        Insert: {
+          id?: number
+          last_checked_at?: string
+        }
+        Update: {
+          id?: number
+          last_checked_at?: string
+        }
+        Relationships: []
+      }
       global_event_contributions: {
         Row: {
           damage_dealt: number

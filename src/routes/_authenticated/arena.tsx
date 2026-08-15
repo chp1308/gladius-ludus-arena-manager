@@ -1711,18 +1711,18 @@ function WorldEventFight({ state }: { state: State }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="font-serif text-sm italic text-muted-foreground">
-          Porphyrion is driven back to Tartarus. {leaderboard.length} ludus{leaderboard.length === 1 ? "" : "es"} answered the call.
+          Porphyrion is driven back to Tartarus. {leaderboard.length} champion{leaderboard.length === 1 ? "" : "s"} answered the call.
         </p>
         {leaderboard.length === 0 ? (
           <p className="text-sm text-muted-foreground">No one struck a blow this time.</p>
         ) : (
           <ul className="divide-y divide-border">
             {leaderboard.map((row, i) => (
-              <li key={row.owner_id} className="flex items-center justify-between py-2 text-sm">
+              <li key={`${row.owner_id}-${row.gladiator_name}`} className="flex items-center justify-between py-2 text-sm">
                 <span className="flex items-center gap-2">
                   <Badge variant={i < 3 ? "default" : "outline"}>{i + 1}</Badge>
                   <span className="font-display">{row.ludus_name}</span>
-                  <span className="text-muted-foreground">({row.gladiator_names.join(", ")})</span>
+                  <span className="text-muted-foreground">({row.gladiator_name})</span>
                 </span>
                 <span className="flex items-center gap-3 text-muted-foreground">
                   <span>{row.damage_dealt.toLocaleString()} dmg</span>

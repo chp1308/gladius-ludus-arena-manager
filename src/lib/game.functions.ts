@@ -1850,23 +1850,27 @@ export const getBossFightState = createServerFn({ method: "GET" })
       supabase.from("profiles").select("relics_level").eq("id", userId).maybeSingle(),
     ]);
     const cooldownHours = relicsCooldownHours(profileRes.data?.relics_level ?? 1);
-    const latestByBoss = new Map<string, string>();
     const defeatedBosses = new Set<string>();
     const lootCounts: Record<string, Record<string, number>> = {};
     for (const row of attemptsRes.data ?? []) {
-      if (!latestByBoss.has(row.boss_key)) latestByBoss.set(row.boss_key, row.created_at);
       if (row.won) defeatedBosses.add(row.boss_key);
       const counts = lootCounts[row.boss_key] ?? (lootCounts[row.boss_key] = {});
       for (const key of row.loot_drops ?? []) counts[key] = (counts[key] ?? 0) + 1;
     }
+    // Cooldown is shared across every boss (see startBossFight) — computed
+    // once from the single most recent attempt against any boss, then
+    // applied identically to every boss key, rather than tracked
+    // independently per boss_key.
+    const lastAnyAttempt = attemptsRes.data?.[0]?.created_at;
+    let sharedCooldown: string | null = null;
+    if (lastAnyAttempt) {
+      const availableAt = new Date(new Date(lastAnyAttempt).getTime() + cooldownHours * 3600_000);
+      sharedCooldown = availableAt > new Date() ? availableAt.toISOString() : null;
+    }
     const cooldowns: Record<string, string | null> = {};
     const defeated: Record<string, boolean> = {};
     for (const boss of BOSS_ENCOUNTERS) {
-      const last = latestByBoss.get(boss.key);
-      if (!last) { cooldowns[boss.key] = null; } else {
-        const availableAt = new Date(new Date(last).getTime() + cooldownHours * 3600_000);
-        cooldowns[boss.key] = availableAt > new Date() ? availableAt.toISOString() : null;
-      }
+      cooldowns[boss.key] = sharedCooldown;
       defeated[boss.key] = defeatedBosses.has(boss.key);
     }
     return { session: sessionRes.data, cooldowns, hasWonLocal: (localWinRes.data ?? []).length > 0, defeated, lootCounts };
@@ -1948,13 +1952,17 @@ export const startBossFight = createServerFn({ method: "POST" })
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (!profile) throw new Error("No profile");
 
+    // Cooldown is shared across every boss, not tracked per boss_key — a
+    // lanista only has so much time to prepare a raid, whichever beast it's
+    // against, so beating the boar doesn't free up an immediate second shot
+    // at Cerberus.
     const { data: lastAttempt } = await supabase.from("boss_attempts")
-      .select("created_at").eq("owner_id", userId).eq("boss_key", boss.key)
+      .select("created_at").eq("owner_id", userId)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (lastAttempt) {
       const availableAt = new Date(lastAttempt.created_at).getTime() + relicsCooldownHours(profile.relics_level) * 3600_000;
       if (Date.now() < availableAt) {
-        throw new Error(`${boss.name} is not ready — recovers in ${Math.ceil((availableAt - Date.now()) / 3_600_000)}h`);
+        throw new Error(`Your ludus isn't ready for another boss raid — recovers in ${Math.ceil((availableAt - Date.now()) / 3_600_000)}h`);
       }
     }
 
@@ -2970,7 +2978,15 @@ export const runSocialEvent = createServerFn({ method: "POST" })
 // inside getGlobalEventState, which every client polls periodically. Same
 // pattern as ensureBotChallenges above.
 // ============================================================
-const GLOBAL_EVENT_ROLL_CHANCE = 0.003;
+// Target cadence, expressed as a mean interval fed through an
+// exponential/Poisson process in ensureGlobalEventRoll rather than a flat
+// per-poll chance — a flat chance ties real-world frequency to how often
+// the app gets polled (i.e. to player traffic), which drifts as the
+// player count changes. The exponential process is memoryless, so the
+// *aggregate* average time-to-next-event converges on this target
+// regardless of how often, or how unevenly, checks happen to land.
+const GLOBAL_EVENT_TARGET_PER_WEEK = 2.5;
+const GLOBAL_EVENT_MEAN_INTERVAL_SEC = (7 * 24 * 3600) / GLOBAL_EVENT_TARGET_PER_WEEK;
 const GLOBAL_EVENT_LEAD_HOURS = 3;
 const GLOBAL_EVENT_MIN_DURATION_MIN = 5;
 const GLOBAL_EVENT_MAX_DURATION_MIN = 10;
@@ -2979,24 +2995,37 @@ const GLOBAL_EVENT_MAX_DURATION_MIN = 10;
 // the encounter (assuming similarly-powered gladiators) rather than a
 // fixed budget everyone burns identically.
 export const GLOBAL_EVENT_STRIKE_COOLDOWN_SEC = 15; // per fighter, not per player
-// Fixed per-rank reward tiers (by damage rank among participating players,
-// not a shared pool split) — 1st place is always exactly this amount
-// regardless of turnout, rather than a formula output that drifts with
-// participant count. Calibrated so a ~20-participant event averages close
-// to 2500 denarii / 500 XP per player; a smaller event skews richer per
-// player (a lone participant just claims the 1st-place tier), a larger
-// one skews toward the participation floor. XP is the second reward
-// currency alongside denarii — more kinds can slot in the same way later.
-const GLOBAL_EVENT_REWARD_TIERS: { minRank: number; maxRank: number; denarii: number; xp: number }[] = [
-  { minRank: 1, maxRank: 1, denarii: 15000, xp: 1000 },
-  { minRank: 2, maxRank: 2, denarii: 8000, xp: 900 },
-  { minRank: 3, maxRank: 3, denarii: 5000, xp: 700 },
-  { minRank: 4, maxRank: 10, denarii: 2000, xp: 550 },
-  { minRank: 11, maxRank: Infinity, denarii: 750, xp: 350 },
-];
-function globalEventRewardForRank(rank: number): { denarii: number; xp: number } {
-  const tier = GLOBAL_EVENT_REWARD_TIERS.find(t => rank >= t.minRank && rank <= t.maxRank);
-  return tier ? { denarii: tier.denarii, xp: tier.xp } : { denarii: 0, xp: 0 };
+// Reward shape: every participating FIGHTER (one gladiator's own
+// contribution row — a player fielding multiple champions via a
+// titan_shard tier has each one rank and get paid independently) gets a
+// floor, then a bonus pool that scales linearly with turnout (so "average
+// reward" is literally true regardless of how many fighters show up) is
+// distributed across ranks with a harmonic (1/rank) decay curve — top
+// ranks pull well ahead, the tail settles near the floor, roughly the
+// same shape as the old fixed tiers but continuous and turnout-aware
+// instead of a step function that drifted with participant count.
+//
+// Sum of rewards across all N ranks is exactly N * average by
+// construction (the bonus pool is N * (average - floor), redistributed by
+// weight so the weights-over-H(N) shares always sum to 1) — solo
+// participant (N=1) gets exactly the average, since there's nobody to
+// rank against.
+const GLOBAL_EVENT_MIN_DENARII = 1000;
+const GLOBAL_EVENT_AVG_DENARII = 2500;
+const GLOBAL_EVENT_MIN_XP = 100;
+const GLOBAL_EVENT_AVG_XP = 250;
+
+function harmonicNumber(n: number): number {
+  let h = 0;
+  for (let i = 1; i <= n; i++) h += 1 / i;
+  return h;
+}
+
+function globalEventRewardForRank(rank: number, participantCount: number): { denarii: number; xp: number } {
+  const weight = (1 / rank) / harmonicNumber(participantCount);
+  const denarii = GLOBAL_EVENT_MIN_DENARII + (GLOBAL_EVENT_AVG_DENARII - GLOBAL_EVENT_MIN_DENARII) * participantCount * weight;
+  const xp = GLOBAL_EVENT_MIN_XP + (GLOBAL_EVENT_AVG_XP - GLOBAL_EVENT_MIN_XP) * participantCount * weight;
+  return { denarii: Math.round(denarii / 10) * 10, xp: Math.round(xp / 10) * 10 };
 }
 const GLOBAL_EVENT_RELIC_KEY = "titan_shard";
 // Independent 10% roll per participating player (not per fighter, not
@@ -3016,6 +3045,21 @@ function globalEventMaxFighters(relicTiers: unknown): number {
 
 async function ensureGlobalEventRoll() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  // Always advance the checkpoint first (regardless of whether an event is
+  // currently active), so elapsed time only ever measures real quiet-gap
+  // time between events, not raw calendar time. Two concurrent callers
+  // reading/advancing this at once just means a small, harmless imprecision
+  // in dt — the single-active-event unique index (see 23505 handling
+  // below) is what actually prevents a double-roll, not this checkpoint.
+  const { data: rollState } = await supabaseAdmin
+    .from("global_event_roll_state")
+    .select("last_checked_at")
+    .eq("id", 1)
+    .maybeSingle();
+  const lastCheckedMs = rollState ? new Date(rollState.last_checked_at).getTime() : Date.now();
+  await supabaseAdmin.from("global_event_roll_state").update({ last_checked_at: new Date().toISOString() }).eq("id", 1);
+
   const { data: active } = await supabaseAdmin
     .from("global_events")
     .select("id")
@@ -3023,7 +3067,10 @@ async function ensureGlobalEventRoll() {
     .limit(1)
     .maybeSingle();
   if (active) return;
-  if (Math.random() >= GLOBAL_EVENT_ROLL_CHANCE) return;
+
+  const dtSeconds = Math.max(0, (Date.now() - lastCheckedMs) / 1000);
+  const rollChance = 1 - Math.exp(-dtSeconds / GLOBAL_EVENT_MEAN_INTERVAL_SEC);
+  if (Math.random() >= rollChance) return;
 
   const startsAt = new Date(Date.now() + GLOBAL_EVENT_LEAD_HOURS * 3600_000);
   const durationMin = rand(GLOBAL_EVENT_MIN_DURATION_MIN, GLOBAL_EVENT_MAX_DURATION_MIN);
@@ -3041,14 +3088,15 @@ async function ensureGlobalEventRoll() {
   if (error && error.code !== "23505") throw new Error(error.message);
 }
 
-// Denarii and XP are paid from the fixed per-rank tiers above (by total
-// damage rank among participating players, not a shared pool) — see
-// GLOBAL_EVENT_REWARD_TIERS for why. Denarii is credited once per player;
-// XP is re-split across that player's own fighters (if a titan_shard tier
-// let them field more than one), proportional to each fighter's own share
-// of their owner's total damage, and applied to that specific gladiator's
-// experience. Every participating player also gets an independent 10%
-// roll for a titan_shard tier, uncapped in count.
+// Denarii and XP are both paid per FIGHTER (one gladiator's own
+// contribution row), ranked by that row's own damage_dealt across the
+// whole event — see globalEventRewardForRank. Denarii is credited to the
+// owning player's wallet (summed across all of that player's fighters,
+// since it's account-level currency); XP goes straight to the specific
+// gladiator that earned it — no splitting needed, each row already
+// carries its own independent reward. Every participating PLAYER (not
+// fighter) still gets a single independent 10% roll for a titan_shard
+// tier, uncapped in count — that stays account-level, unlike denarii/XP.
 async function payoutGlobalEvent(eventId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: contributions } = await supabaseAdmin
@@ -3061,44 +3109,40 @@ async function payoutGlobalEvent(eventId: string) {
     return;
   }
 
-  const byOwner = new Map<string, typeof rows>();
-  for (const r of rows) byOwner.set(r.owner_id, [...(byOwner.get(r.owner_id) ?? []), r]);
-  const owners = [...byOwner.entries()]
-    .map(([ownerId, ownerRows]) => ({
-      ownerId,
-      rows: ownerRows,
-      damage: ownerRows.reduce((s, r) => s + Number(r.damage_dealt), 0),
-    }))
-    .sort((a, b) => b.damage - a.damage);
+  // Tie-break deterministically (owner_id, gladiator_id) rather than by
+  // arrival time — there's no created_at column on this table, and exact
+  // damage ties are rare/low-stakes enough not to warrant adding one.
+  const ranked = [...rows].sort((a, b) =>
+    Number(b.damage_dealt) - Number(a.damage_dealt)
+    || a.owner_id.localeCompare(b.owner_id)
+    || a.gladiator_id.localeCompare(b.gladiator_id),
+  );
+  const n = ranked.length;
 
+  const denariiByOwner = new Map<string, number>();
   let totalPaid = 0;
 
-  await Promise.all(owners.map(async (owner, i) => {
-    const { denarii: denariiReward, xp: xpReward } = globalEventRewardForRank(i + 1);
-    totalPaid += denariiReward;
+  await Promise.all(ranked.map(async (r, i) => {
+    const { denarii, xp } = globalEventRewardForRank(i + 1, n);
+    totalPaid += denarii;
+    denariiByOwner.set(r.owner_id, (denariiByOwner.get(r.owner_id) ?? 0) + denarii);
 
-    await Promise.all(owner.rows.map(async (r) => {
-      const rowShare = owner.damage > 0 ? Number(r.damage_dealt) / owner.damage : 1 / owner.rows.length;
-      const rowXp = Math.round(xpReward * rowShare);
-      const { data: glad } = await supabaseAdmin.from("gladiators").select("experience,level").eq("id", r.gladiator_id).maybeSingle();
-      if (glad) {
-        const newXp = glad.experience + rowXp;
-        const xpForNext = glad.level * 100;
-        const leveledUp = newXp >= xpForNext;
-        await supabaseAdmin.from("gladiators").update(
-          leveledUp ? { experience: newXp - xpForNext, level: glad.level + 1 } : { experience: newXp },
-        ).eq("id", r.gladiator_id);
-      }
-      // Full denarii reward is stamped on every one of the owner's rows
-      // (redundant, but avoids picking an arbitrary "first" row) — readers
-      // aggregating per owner (see getGlobalEventState) take it once, not
-      // summed.
-      await supabaseAdmin.from("global_event_contributions")
-        .update({ reward_denarii: denariiReward, reward_xp: rowXp })
-        .eq("event_id", eventId).eq("owner_id", owner.ownerId).eq("gladiator_id", r.gladiator_id);
-    }));
+    const { data: glad } = await supabaseAdmin.from("gladiators").select("experience,level").eq("id", r.gladiator_id).maybeSingle();
+    if (glad) {
+      const newXp = glad.experience + xp;
+      const xpForNext = glad.level * 100;
+      const leveledUp = newXp >= xpForNext;
+      await supabaseAdmin.from("gladiators").update(
+        leveledUp ? { experience: newXp - xpForNext, level: glad.level + 1 } : { experience: newXp },
+      ).eq("id", r.gladiator_id);
+    }
+    await supabaseAdmin.from("global_event_contributions")
+      .update({ reward_denarii: denarii, reward_xp: xp })
+      .eq("event_id", eventId).eq("owner_id", r.owner_id).eq("gladiator_id", r.gladiator_id);
+  }));
 
-    const { data: profile } = await supabaseAdmin.from("profiles").select("denarii,relics,relic_tiers").eq("id", owner.ownerId).maybeSingle();
+  await Promise.all([...denariiByOwner.entries()].map(async ([ownerId, denariiTotal]) => {
+    const { data: profile } = await supabaseAdmin.from("profiles").select("denarii,relics,relic_tiers").eq("id", ownerId).maybeSingle();
     if (!profile) return;
     const relics = profile.relics ?? [];
     const relicTiers = (profile.relic_tiers as Record<string, number> | null) ?? {};
@@ -3106,12 +3150,12 @@ async function payoutGlobalEvent(eventId: string) {
     const dropped = currentTier < GLOBAL_EVENT_RELIC_MAX_TIER && Math.random() < GLOBAL_EVENT_RELIC_DROP_CHANCE;
 
     await supabaseAdmin.from("profiles").update({
-      denarii: profile.denarii + denariiReward,
+      denarii: profile.denarii + denariiTotal,
       ...(dropped ? {
         relics: relics.includes(GLOBAL_EVENT_RELIC_KEY) ? relics : [...relics, GLOBAL_EVENT_RELIC_KEY],
         relic_tiers: { ...relicTiers, [GLOBAL_EVENT_RELIC_KEY]: currentTier + 1 },
       } : {}),
-    }).eq("id", owner.ownerId);
+    }).eq("id", ownerId);
   }));
 
   await supabaseAdmin.from("global_events").update({ total_pool: totalPaid }).eq("id", eventId);
@@ -3147,10 +3191,13 @@ async function ensureGlobalEventProgressed() {
   await Promise.all(justResolved.map(row => payoutGlobalEvent(row.id)));
 }
 
+// One row per FIGHTER (gladiator), not per player — see
+// globalEventRewardForRank for why each fielded champion ranks and gets
+// paid independently.
 export type GlobalEventLeaderboardRow = {
   owner_id: string;
   ludus_name: string;
-  gladiator_names: string[];
+  gladiator_name: string;
   damage_dealt: number;
   reward_denarii: number;
   reward_xp: number;
@@ -3187,19 +3234,17 @@ export const getGlobalEventState = createServerFn({ method: "GET" })
       const { data } = await supabase
         .from("global_event_contributions")
         .select("owner_id,ludus_name,gladiator_name,damage_dealt,reward_denarii,reward_xp")
-        .eq("event_id", event.id);
-      const byOwner = new Map<string, GlobalEventLeaderboardRow>();
-      for (const r of data ?? []) {
-        const entry = byOwner.get(r.owner_id) ?? {
-          owner_id: r.owner_id, ludus_name: r.ludus_name, gladiator_names: [],
-          damage_dealt: 0, reward_denarii: r.reward_denarii ?? 0, reward_xp: 0,
-        };
-        entry.gladiator_names.push(r.gladiator_name);
-        entry.damage_dealt += Number(r.damage_dealt);
-        entry.reward_xp += r.reward_xp ?? 0;
-        byOwner.set(r.owner_id, entry);
-      }
-      leaderboard = [...byOwner.values()].sort((a, b) => b.damage_dealt - a.damage_dealt).slice(0, 50);
+        .eq("event_id", event.id)
+        .order("damage_dealt", { ascending: false })
+        .limit(50);
+      leaderboard = (data ?? []).map(r => ({
+        owner_id: r.owner_id,
+        ludus_name: r.ludus_name,
+        gladiator_name: r.gladiator_name,
+        damage_dealt: Number(r.damage_dealt),
+        reward_denarii: r.reward_denarii ?? 0,
+        reward_xp: r.reward_xp ?? 0,
+      }));
     }
 
     return { event, myContributions: myContributions ?? [], maxFighters, leaderboard };
