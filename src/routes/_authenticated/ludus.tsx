@@ -27,19 +27,63 @@ import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbb
 import { STAT_INFO, STAT_SCALING_NOTE } from "@/lib/stat-info";
 
 const STAT_INFO_ICONS = { strength: Dumbbell, agility: Zap, stamina: Heart, technique: Brain } as const;
-import cityBg from "@/assets/ludus/city-bg.jpg";
-import bLudus from "@/assets/ludus/b-ludus.png";
-import bMarket from "@/assets/ludus/b-market.png";
-import bTraining from "@/assets/ludus/b-training.png";
-import bScouting from "@/assets/ludus/b-scouting.png";
-import bMedicus from "@/assets/ludus/b-medicus.png";
-import bArmory from "@/assets/ludus/b-armory.png";
-import bStudy from "@/assets/ludus/b-study.png";
-import bTemple from "@/assets/ludus/b-temple.png";
-import bChronicle from "@/assets/ludus/b-chronicle.png";
-import bPantry from "@/assets/ludus/b-pantry.png";
-import bSocial from "@/assets/ludus/b-social.png";
-import bRelics from "@/assets/ludus/b-relics.png";
+import ludusMapBase from "@/assets/ludus/ludus-map-kit/buildings/map-base-v2.png";
+import bLudus from "@/assets/ludus/ludus-map-kit/buildings/ludus-grounds.png";
+import bMarket from "@/assets/ludus/ludus-map-kit/buildings/slave-market.png";
+import bTraining from "@/assets/ludus/ludus-map-kit/buildings/training-yard.png";
+import bScouting from "@/assets/ludus/ludus-map-kit/buildings/scouting-network.png";
+import bMedicus from "@/assets/ludus/ludus-map-kit/buildings/valetudinarium.png";
+import bArmory from "@/assets/ludus/ludus-map-kit/buildings/the-forge.png";
+import bStudy from "@/assets/ludus/ludus-map-kit/buildings/study-of-arms.png";
+import bTemple from "@/assets/ludus/ludus-map-kit/buildings/temple-of-memory.png";
+import bChronicle from "@/assets/ludus/ludus-map-kit/buildings/chronicle-stele.png";
+import bPantry from "@/assets/ludus/ludus-map-kit/buildings/pantry.png";
+import bSocial from "@/assets/ludus/ludus-map-kit/buildings/cursus-honorum.png";
+import bRelics from "@/assets/ludus/ludus-map-kit/buildings/temple-of-relics.png";
+import mapGate from "@/assets/ludus/ludus-map-kit/buildings/gate.png";
+
+// Slot coordinates for map-base-v2.png (the current base map), which
+// draws each of the 11 building spots as an explicit round stone
+// platform — and every replacement building-v2 PNG now renders its own
+// building sitting on a matching round platform (rather than a plain
+// bottom-trimmed sprite). So instead of the old wedge-fitting problem,
+// alignment here is just "match the building's own platform circle to
+// the base map's platform circle":
+//   - Circle centers (x, y) are exact — hand-marked by dropping a solid
+//     dot at each platform's true center (dotsinmiddle.png, kept
+//     alongside this kit for reference) and detecting the 11 dot
+//     centroids by color, which sidesteps every issue pixel-classifying
+//     the platform stone directly ran into (same color as the connecting
+//     paths, broken up by statues/wells/trees sitting on the platform,
+//     roof tiles matching building colors near the walls). Diameter is
+//     still measured off the empty base map (scanning horizontal/
+//     vertical profiles through each hand-marked center), which came out
+//     ~0.13-0.18 — uniform by design, 0.15 (the median) used as the
+//     common target — so every slot renders the same platform size.
+//   - The building's own platform center within its 1024x1024 source
+//     (≈(0.5, platformWidestYFrac), measured per file by scanning for the
+//     widest row of opaque pixels) is aligned to the marked circle center
+//     — y here is the CSS anchor (bottom-center of the full source image,
+//     per translate(-50%,-100%) below), back-solved via
+//     y = circleCenterY + scale*(1 - platformWidestYFrac). scale is
+//     back-solved per building from platformMaxWidthFrac (~0.97-1.0, the
+//     platform's width as a fraction of the source image) so the
+//     rendered platform diameter is 0.15 for all of them despite each
+//     source image's platform taking up a slightly different fraction of
+//     its own canvas.
+const MAP_SLOTS: Record<string, { x: number; y: number; scale: number }> = {
+  market:   { x: 0.4984, y: 0.2360, scale: 0.1539 },
+  relics:   { x: 0.3200, y: 0.2926, scale: 0.1503 },
+  training: { x: 0.6742, y: 0.2818, scale: 0.1509 },
+  social:   { x: 0.2289, y: 0.4051, scale: 0.1506 },
+  scouting: { x: 0.7718, y: 0.3859, scale: 0.1503 },
+  chronicle:{ x: 0.1969, y: 0.5709, scale: 0.1530 },
+  medicus:  { x: 0.8089, y: 0.5388, scale: 0.1509 },
+  temple:   { x: 0.2503, y: 0.6994, scale: 0.1533 },
+  armory:   { x: 0.7607, y: 0.6837, scale: 0.1545 },
+  study:    { x: 0.3552, y: 0.8027, scale: 0.1503 },
+  pantry:   { x: 0.6565, y: 0.7899, scale: 0.1506 },
+};
 
 // Full 20-tier art, one PNG per tier, bulk-imported from the type-named
 // folders under gear-tiers/ (e.g. gear-tiers/helmet/helmet-tier-01.png).
@@ -282,11 +326,10 @@ type Building = {
   flavor: string;
   Icon: React.ComponentType<{ className?: string }>;
   image: string;
-  span?: string; // grid column span
 };
 
 const BUILDINGS: Building[] = [
-  { key: "ludus",    name: "Ludus Grounds",    flavor: "Your gladiators drill and rest.",        Icon: Home,       image: bLudus,     span: "md:col-span-2" },
+  { key: "ludus",    name: "Ludus Grounds",    flavor: "Your gladiators drill and rest.",        Icon: Home,       image: bLudus },
   { key: "market",   name: "Slave Market",     flavor: "Buy fresh blood from the provinces.",    Icon: Users,      image: bMarket },
   { key: "training", name: "Training Yard",    flavor: "Higher stat caps and cheaper drills.",   Icon: Dumbbell,   image: bTraining },
   { key: "scouting", name: "Scouting Network", flavor: "Stronger recruits, rare beasts.",        Icon: Search,     image: bScouting },
@@ -334,51 +377,79 @@ function VillageView({
         <p className="mt-1 font-serif italic text-muted-foreground">Walk the grounds — visit the forge, the market, the temple.</p>
       </div>
 
-      <div
-        className="ornate-border relative overflow-hidden rounded-xl p-4 md:p-6"
-        style={{
-          backgroundImage: `linear-gradient(to bottom, oklch(0.965 0.018 85 / 0.55) 0%, oklch(0.965 0.018 85 / 0.85) 55%, oklch(0.87 0.028 80 / 0.95) 100%), url(${cityBg})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center top",
-        }}
-      >
-        {/* ground shadow strip */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[oklch(0.35_0.04_60_/_0.25)] to-transparent" />
+      <div className="ornate-border relative mx-auto aspect-square w-full max-w-2xl overflow-hidden rounded-xl shadow-[var(--shadow-relief)]">
+        <img src={ludusMapBase} alt="" className="absolute inset-0 h-full w-full select-none object-cover" draggable={false} />
 
-        <div className="relative grid grid-cols-2 gap-4 md:grid-cols-4">
-          {BUILDINGS.map((b) => {
-            const Icon = b.Icon;
-            return (
-              <button
-                key={b.key}
-                onClick={() => setOpen(b.key)}
-                className={`group relative flex flex-col items-center overflow-hidden rounded-lg border border-border/70 bg-[oklch(0.99_0.012_85_/_0.72)] p-3 text-center backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-[oklch(0.99_0.012_85_/_0.9)] hover:shadow-[var(--shadow-relief)] ${b.span ?? ""}`}
-              >
-                <div className="relative flex h-32 w-full items-end justify-center md:h-36">
-                  {/* soft ground disc */}
-                  <div className="absolute bottom-1 h-4 w-4/5 rounded-[50%] bg-[oklch(0.35_0.04_60_/_0.25)] blur-md" />
-                  <img
-                    src={b.image}
-                    alt={b.name}
-                    loading="lazy"
-                    width={512}
-                    height={512}
-                    className="relative z-10 h-full w-auto object-contain drop-shadow-[0_6px_10px_oklch(0.2_0.01_60/0.35)] transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:scale-[1.03]"
-                  />
-                </div>
-                <div className="mt-2 flex items-center gap-1.5 font-display text-sm tracking-wide">
-                  <Icon className="h-4 w-4 text-primary" /> {b.name}
-                </div>
-                <div className="mt-0.5 max-w-[18rem] font-serif text-xs italic text-muted-foreground">{b.flavor}</div>
-                {badges[b.key] && (
-                  <span className="mt-1.5 inline-flex items-center rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {badges[b.key]}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        {/* Decorative only — the gate is already part of the base map art,
+            this crisper standalone cutout sits exactly on top of it so
+            study/pantry's neighboring platforms (positioned independently
+            via MAP_SLOTS) have a precise, controllable edge to stay clear
+            of instead of an edge baked immovably into the background.
+            Explicit z-10, below the buildings' own z-20 baseline — its
+            footprint (the gate plus its two flanking wall towers)
+            overlaps the edge of study/pantry's hit-areas, and without
+            this it was covering their level badges. Still
+            non-interactive (no click handler, pointer-events-none) so it
+            never blocks clicking study/pantry through that overlap. */}
+        <img
+          src={mapGate}
+          alt=""
+          className="pointer-events-none absolute z-10 select-none"
+          style={{ left: "49.73%", top: "92.68%", width: "29.93%", transform: "translate(-50%, -100%)" }}
+          draggable={false}
+        />
+
+        {/* Ludus Grounds — the central training ground is baked into the
+            base map art (walls, gate, arena), not a placeable sprite like
+            the other 11 buildings, so it gets a hand-positioned hotspot
+            over that area instead of a MAP_SLOTS entry. */}
+        <button
+          onClick={() => setOpen("ludus")}
+          className="group absolute z-20 flex items-end justify-center hover:z-30"
+          style={{ left: "50%", top: "47%", width: "34%", height: "34%", transform: "translate(-50%, -50%)" }}
+          title="Ludus Grounds"
+        >
+          <span className="mb-1 whitespace-nowrap rounded-full border border-border/60 bg-background/90 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground shadow-sm transition group-hover:border-primary/60 group-hover:text-foreground">
+            {badges.ludus}
+          </span>
+          <span className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-border/70 bg-[oklch(0.99_0.012_85_/_0.92)] px-2.5 py-1 font-display text-xs tracking-wide opacity-0 shadow-[var(--shadow-relief)] transition group-hover:opacity-100">
+            Ludus Grounds
+          </span>
+        </button>
+
+        {BUILDINGS.filter(b => b.key !== "ludus").map((b) => {
+          const slot = MAP_SLOTS[b.key];
+          if (!slot) return null;
+          return (
+            <button
+              key={b.key}
+              onClick={() => setOpen(b.key)}
+              className="group absolute z-20 hover:z-30"
+              style={{
+                left: `${slot.x * 100}%`,
+                top: `${slot.y * 100}%`,
+                width: `${slot.scale * 100}%`,
+                transform: "translate(-50%, -100%)",
+              }}
+              title={b.name}
+            >
+              <img
+                src={b.image}
+                alt={b.name}
+                loading="lazy"
+                className="w-full drop-shadow-[0_6px_10px_oklch(0.2_0.01_60/0.4)] transition-transform duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06]"
+              />
+              {badges[b.key] && (
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-border/60 bg-background/90 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground shadow-sm">
+                  {badges[b.key]}
+                </span>
+              )}
+              <span className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-border/70 bg-[oklch(0.99_0.012_85_/_0.92)] px-2.5 py-1 font-display text-xs tracking-wide opacity-0 shadow-[var(--shadow-relief)] transition group-hover:opacity-100">
+                {b.name}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <Dialog open={open !== null} onOpenChange={(o) => !o && setOpen(null)}>

@@ -1,0 +1,83 @@
+{
+  "base": "ludus-map-base.jpg",
+  "note": "x/y are fractions of map width/height; anchor is bottom-center of the building sprite. scale = sprite width as fraction of map width.",
+  "slots": {
+    "slave-market": {
+      "x": 0.5,
+      "y": 0.2387,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 1
+    },
+    "training-yard": {
+      "x": 0.6811,
+      "y": 0.2802,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 2
+    },
+    "scouting-network": {
+      "x": 0.8047,
+      "y": 0.3915,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 3
+    },
+    "valetudinarium": {
+      "x": 0.8316,
+      "y": 0.5372,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 4
+    },
+    "the-forge": {
+      "x": 0.7532,
+      "y": 0.6711,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 5
+    },
+    "pantry": {
+      "x": 0.5944,
+      "y": 0.7507,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 6
+    },
+    "study-of-arms": {
+      "x": 0.4056,
+      "y": 0.7507,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 7
+    },
+    "temple-of-memory": {
+      "x": 0.2468,
+      "y": 0.6711,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 8
+    },
+    "chronicle-stele": {
+      "x": 0.1684,
+      "y": 0.5372,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 9
+    },
+    "cursus-honorum": {
+      "x": 0.1953,
+      "y": 0.3915,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 10
+    },
+    "temple-of-relics": {
+      "x": 0.3189,
+      "y": 0.2802,
+      "scale": 0.155,
+      "anchor": "bottom-center",
+      "order": 11
+    }
+  }
+}
