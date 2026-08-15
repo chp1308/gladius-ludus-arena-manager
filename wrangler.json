@@ -1,5 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  "compatibility_date": "2026-08-15",
   "routes": [
     { "pattern": "gladiusludus.com", "custom_domain": true },
     { "pattern": "www.gladiusludus.com", "custom_domain": true }
