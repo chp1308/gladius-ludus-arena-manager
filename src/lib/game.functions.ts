@@ -2155,7 +2155,7 @@ export const startBossFight = createServerFn({ method: "POST" })
     const { teamPower, teamMaxHp } = computeTeamPowerAndHp(withCurrentHealth, skillMap);
 
     const phase1 = boss.phases[0];
-    const bossMaxHp = Math.max(1, Math.round(teamPower * phase1.hpScale));
+    const bossMaxHp = Math.max(boss.baseHp ?? 1, Math.round(teamPower * phase1.hpScale));
     const log = [`${team.map(g => g.name).join(", ")} face ${boss.name}. ${boss.flavor}`];
 
     let beatType: BossBeat;

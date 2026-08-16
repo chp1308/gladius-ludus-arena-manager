@@ -1387,6 +1387,9 @@ function GladiatorSheet({ g, state, onClose }: { g: Gladiator; state: State; onC
   return (
     <>
       <DialogHeader>
+        <div className="flex items-center gap-1.5 text-sm font-medium text-accent">
+          <Coins className="h-4 w-4" /> {denarii.toLocaleString()} denarii
+        </div>
         <DialogTitle className="flex items-center gap-2 font-display text-2xl">
           {g.is_beast && <Cat className="h-6 w-6 text-accent" />}
           {g.name}

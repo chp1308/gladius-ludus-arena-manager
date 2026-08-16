@@ -679,7 +679,19 @@ function RivalChallengesCard({ state }: { state: State }) {
 }
 
 
+// Keeps a fight log's scroll container pinned to the bottom whenever it
+// grows, so the reward line (always the last entry) is visible immediately
+// instead of requiring the player to scroll past the flavor text above it.
+function useAutoScrollBottom(dep: unknown) {
+  const ref = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [dep]);
+  return ref;
+}
+
 function PvpResultView({ result, onClose }: { result: { won: boolean; log: string[]; fallen: Fallen | null }; onClose: () => void }) {
+  const logRef = useAutoScrollBottom(result.log.length);
   const qc = useQueryClient();
   const confirm = useConfirm();
   const honor = useServerFn(honorGladiator);
@@ -703,7 +715,7 @@ function PvpResultView({ result, onClose }: { result: { won: boolean; log: strin
         <div className={`rounded-lg p-3 text-center ${result.won ? "bg-accent/20" : "bg-muted"}`}>
           {result.won ? <Trophy className="mx-auto h-8 w-8 text-accent" /> : <Skull className="mx-auto h-8 w-8 text-muted-foreground" />}
         </div>
-        <ol className="max-h-56 space-y-1 overflow-y-auto font-serif text-sm">
+        <ol ref={logRef} className="max-h-56 space-y-1 overflow-y-auto font-serif text-sm">
           {result.log.map((line, i) => (
             <li key={i} className="border-l-2 border-border pl-3">{line}</li>
           ))}
@@ -1359,6 +1371,8 @@ function BossFightScreen({
         {lastLine && <p className="mt-1 font-serif text-sm italic text-muted-foreground">{lastLine}</p>}
       </div>
 
+      <BossAttackBanner boss={boss} beat={beat} />
+
       <div className="flex items-center justify-center gap-10">
         <FighterPanel label="Your Cohort" portrait={<PortraitCluster gladiators={party} size={64} />} hp={session.party_hp} maxHp={session.party_max_hp} hit={false} />
         <FighterPanel label={boss.name} portrait={<BossPortrait boss={boss} beat={beat} />} hp={session.boss_hp} maxHp={session.boss_max_hp} hit={false} />
@@ -1467,6 +1481,8 @@ function BossRoundReveal({
         <div className="font-display text-lg text-primary">{boss.name} — Phase {prevSession.phase}/{boss.phases.length}</div>
       </div>
 
+      <BossAttackBanner boss={boss} beat={prevSession.beat_type} />
+
       <div className="flex items-center justify-center gap-10">
         <FighterPanel
           label="Your Cohort" portrait={<PortraitCluster gladiators={party} size={64} />}
@@ -1504,19 +1520,45 @@ function BossRoundReveal({
 // net-bonus) — there's no dedicated "exposed" pose yet, see boss-encounters.ts.
 // Cerberus picks its pose from the specific head-lunge variant or the snake
 // bite instead, falling back to its select pose for strike windows.
-function BossPortrait({ boss, beat }: { boss: BossDefinition; beat: string }) {
+function bossPose(boss: BossDefinition, beat: string): string {
   const isSnake = beat === "snake_bite";
   const lungeVariant = beat.startsWith("lunge:") ? (beat.slice("lunge:".length) as DogLungeVariant) : null;
-  const ring = beat === "net_bonus" ? "border-sky-500/70 shadow-[0_0_22px_rgba(56,189,248,0.55)]"
+  return boss.mechanic === "cerberus"
+    ? (isSnake ? boss.snakeAttackImage : lungeVariant ? boss.dogLungeImages?.[lungeVariant] : boss.image) ?? boss.image
+    : beat === "defensive" ? boss.chargeImage : boss.howlImage;
+}
+
+function bossPoseRing(beat: string): string {
+  const isSnake = beat === "snake_bite";
+  const lungeVariant = beat.startsWith("lunge:") ? (beat.slice("lunge:".length) as DogLungeVariant) : null;
+  return beat === "net_bonus" ? "border-sky-500/70 shadow-[0_0_22px_rgba(56,189,248,0.55)]"
     : beat === "vulnerable" ? "border-amber-500/70 shadow-[0_0_22px_rgba(251,191,36,0.55)]"
       : (beat === "howl" || isSnake || lungeVariant === "all_three") ? "border-red-600/70 shadow-[0_0_26px_rgba(220,38,38,0.7)]"
         : "border-destructive/70 shadow-[0_0_22px_rgba(220,38,38,0.55)]";
-  const pose = boss.mechanic === "cerberus"
-    ? (isSnake ? boss.snakeAttackImage : lungeVariant ? boss.dogLungeImages?.[lungeVariant] : boss.image) ?? boss.image
-    : beat === "defensive" ? boss.chargeImage : boss.howlImage;
+}
+
+function BossPortrait({ boss, beat }: { boss: BossDefinition; beat: string }) {
+  const ring = bossPoseRing(beat);
+  const pose = bossPose(boss, beat);
   return (
     <div className={`relative flex h-36 w-36 items-center justify-center overflow-hidden rounded-full border-2 transition-shadow duration-300 ${ring}`}>
       <img src={pose} alt={boss.name} className="h-full w-full object-cover" />
+    </div>
+  );
+}
+
+// Cerberus specifically was flagged as too easy/underwhelming with only a
+// small circular portrait — this gives its attack pose a large full-width
+// banner instead, so the head-lunge/snake-bite art actually reads at a
+// glance rather than being a tiny thumbnail next to the party's avatar.
+// The boar keeps its original small-portrait presentation.
+function BossAttackBanner({ boss, beat }: { boss: BossDefinition; beat: string }) {
+  if (boss.mechanic !== "cerberus") return null;
+  const ring = bossPoseRing(beat);
+  const pose = bossPose(boss, beat);
+  return (
+    <div className={`mx-auto max-w-2xl overflow-hidden rounded-xl border-2 transition-shadow duration-300 ${ring}`}>
+      <img src={pose} alt={boss.name} className="h-64 w-full object-cover sm:h-80" />
     </div>
   );
 }
@@ -1880,6 +1922,7 @@ function BattleAnimation({
     ...rounds.slice(0, step).map(r => r.text),
     ...(step > rounds.length ? outroLines : []),
   ];
+  const logRef = useAutoScrollBottom(visibleLines.length);
 
   return (
     <Dialog open>
@@ -1892,7 +1935,7 @@ function BattleAnimation({
           <Swords className="h-6 w-6 text-muted-foreground" />
           <FighterPanel label={oppLabel} portrait={oppPortrait} hp={oppHp} maxHp={oppMaxHp} hit={hitSide === "opponent"} />
         </div>
-        <ol className="mt-2 max-h-40 space-y-1 overflow-y-auto font-serif text-sm">
+        <ol ref={logRef} className="mt-2 max-h-40 space-y-1 overflow-y-auto font-serif text-sm">
           {visibleLines.map((line, i) => (
             <li key={i} className="border-l-2 border-border pl-3">{line}</li>
           ))}
@@ -1936,6 +1979,7 @@ function highlightRewards(line: string): ReactNode {
 }
 
 function ResultView({ result, onClose, image }: { result: { won: boolean; log: string[] }; onClose: () => void; image?: string }) {
+  const logRef = useAutoScrollBottom(result.log.length);
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-lg">
@@ -1949,7 +1993,7 @@ function ResultView({ result, onClose, image }: { result: { won: boolean; log: s
             {result.won ? <Trophy className="mx-auto h-8 w-8 text-accent" /> : <Skull className="mx-auto h-8 w-8 text-muted-foreground" />}
           </div>
         )}
-        <ol className="max-h-72 space-y-1 overflow-y-auto font-serif text-sm">
+        <ol ref={logRef} className="max-h-72 space-y-1 overflow-y-auto font-serif text-sm">
           {result.log.map((line, i) => (
             <li key={i} className="border-l-2 border-border pl-3">{highlightRewards(line)}</li>
           ))}

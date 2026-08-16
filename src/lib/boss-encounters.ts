@@ -111,6 +111,17 @@ export type BossDefinition = {
   // one attack in a variable-length burst before a single strike window.
   mechanic: "boar" | "cerberus";
   unlock: BossUnlock;
+  // Hard floor on the boss's HP at fight start, in absolute points — NOT
+  // scaled by the sending party's power. Boss HP is otherwise
+  // teamPower * phases[0].hpScale (see fightBoss in game.functions.ts), and
+  // per-hit damage is also proportional to teamPower, so those two ratios
+  // cancel out: without a floor, a weak party and a strong party need the
+  // exact same number of successful hits, which makes the fight trivial
+  // regardless of what you actually send. This floor only bites when
+  // teamPower * hpScale falls under it — an underpowered party then needs
+  // more hits (their own damage-per-hit is still small), while a
+  // well-built party clears the floor and the fight plays out as before.
+  baseHp?: number;
   phases: BossPhase[];
   lootTable: LootItem[];
   roundDeadlineMs: number;
@@ -171,6 +182,7 @@ export const BOSS_ENCOUNTERS: BossDefinition[] = [
     size: 3,
     mechanic: "cerberus",
     unlock: { type: "defeat_boss", bossKey: "erymanthian_boar", label: "Defeat the Erymanthian Boar first" },
+    baseHp: 2200,
     // Reused as three attack-intensity zones of one continuous HP bar, not
     // three separate pools — see the mechanic comment on BossDefinition.
     // hpScale is only read from phases[0], at fight start.
