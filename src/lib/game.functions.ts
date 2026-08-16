@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import backwaterImg from "@/assets/arena/arena-backwater-pits.jpg";
+import beastPensImg from "@/assets/arena/arena-beast-pens.jpg";
 import waysideImg from "@/assets/arena/arena-wayside-arena.jpg";
 import localImg from "@/assets/arena/arena-local-games.jpg";
 import provincialImg from "@/assets/arena/arena-provincial-munera.jpg";
@@ -13,6 +14,7 @@ import emperorImg from "@/assets/arena/arena-emperor-spectacle.jpg";
 import { SOCIAL_EVENTS, type SocialEvent, type SocialTone } from "@/lib/social-events";
 import { BOSS_ENCOUNTERS, bossRequirementError, type LootItem, type BossDefinition, type DogLungeVariant } from "@/lib/boss-encounters";
 import { RELICS, applyGoldBonus } from "@/lib/relics";
+import { withNewDiscoveries, type DiscoveryKey } from "@/lib/discovery";
 
 // Structured per-round combat data for animated battle replays on the
 // client. `text` mirrors the exact line pushed into the fight's `log` for
@@ -247,24 +249,28 @@ export function techniqueInjuryReduction(technique: number, trainingLevel: numbe
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
+// Weighted species roll: lion 40%, tiger 30%, rhino 20%, elephant 10%.
+function generateBeast(_scoutingLevel: number) {
+  const r = Math.random();
+  const species: "lion" | "tiger" | "rhino" | "elephant" =
+    r < 0.40 ? "lion" : r < 0.70 ? "tiger" : r < 0.90 ? "rhino" : "elephant";
+  const profiles = {
+    lion:     { name: "Roaring Lion",   origin: "Numidia",  wt: "beast_lion" as const,     s: rand(9, 14),  a: rand(6, 10),  st: rand(7, 11),  t: rand(1, 3) },
+    tiger:    { name: "Prowling Tiger", origin: "India",    wt: "beast_tiger" as const,    s: rand(8, 12),  a: rand(9, 14),  st: rand(7, 11),  t: rand(1, 3) },
+    rhino:    { name: "Armored Rhino",  origin: "Aethiopia",wt: "beast_rhino" as const,    s: rand(12, 16), a: rand(3, 6),   st: rand(11, 15), t: rand(1, 2) },
+    elephant: { name: "War Elephant",   origin: "Mauretania",wt:"beast_elephant" as const, s: rand(13, 18), a: rand(2, 5),   st: rand(13, 18), t: rand(1, 2) },
+  };
+  const p = profiles[species];
+  return {
+    name: p.name, origin: p.origin, class: "Beast", weapon_type: p.wt,
+    is_beast: true, strength: p.s, agility: p.a, stamina: p.st, technique: p.t,
+  };
+}
+
 function generateGladiator(scoutingLevel: number) {
   // Better scouting = better base stats + chance of beast
   if (Math.random() < beastChance(scoutingLevel)) {
-    // Weighted species roll: lion 40%, tiger 30%, rhino 20%, elephant 10%.
-    const r = Math.random();
-    const species: "lion" | "tiger" | "rhino" | "elephant" =
-      r < 0.40 ? "lion" : r < 0.70 ? "tiger" : r < 0.90 ? "rhino" : "elephant";
-    const profiles = {
-      lion:     { name: "Roaring Lion",   origin: "Numidia",  wt: "beast_lion" as const,     s: rand(9, 14),  a: rand(6, 10),  st: rand(7, 11),  t: rand(1, 3) },
-      tiger:    { name: "Prowling Tiger", origin: "India",    wt: "beast_tiger" as const,    s: rand(8, 12),  a: rand(9, 14),  st: rand(7, 11),  t: rand(1, 3) },
-      rhino:    { name: "Armored Rhino",  origin: "Aethiopia",wt: "beast_rhino" as const,    s: rand(12, 16), a: rand(3, 6),   st: rand(11, 15), t: rand(1, 2) },
-      elephant: { name: "War Elephant",   origin: "Mauretania",wt:"beast_elephant" as const, s: rand(13, 18), a: rand(2, 5),   st: rand(13, 18), t: rand(1, 2) },
-    };
-    const p = profiles[species];
-    return {
-      name: p.name, origin: p.origin, class: "Beast", weapon_type: p.wt,
-      is_beast: true, strength: p.s, agility: p.a, stamina: p.st, technique: p.t,
-    };
+    return generateBeast(scoutingLevel);
   }
 
   const bonus = Math.floor((scoutingLevel - 1) * 0.8);
@@ -540,7 +546,62 @@ export const recruitGladiator = createServerFn({ method: "POST" })
 
     const { error: insertErr } = await supabaseAdmin.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
     if (insertErr) throw new Error(insertErr.message);
+
+    const newTotal = living.length + 1;
+    const grants: DiscoveryKey[] = [];
+    if (newTotal >= 1) grants.push("training", "social");
+    if (newTotal >= 2) grants.push("pantry", "team", "study");
+    const nextDiscovered = withNewDiscoveries((profile as unknown as { discovered_buildings?: string[] }).discovered_buildings, grants);
+    if (nextDiscovered) {
+      await supabaseAdmin.from("profiles").update({ discovered_buildings: nextDiscovered }).eq("id", userId);
+    }
+
+    // Recruit milestones advance the tutorial — conditional on the current
+    // value so a later recruit (or any race) never regresses or re-fires it.
+    if (newTotal === 1) {
+      await supabaseAdmin.from("profiles").update({ tutorial_step: "cursus_or_fight" }).eq("id", userId).eq("tutorial_step", "welcome");
+    } else if (newTotal === 2) {
+      await supabaseAdmin.from("profiles").update({ tutorial_step: "done" }).eq("id", userId).eq("tutorial_step", "recruit_second");
+    }
+
     return { ok: true, isBeast: g.is_beast, name: g.name };
+  });
+
+// Opt-in gamble available only when the pantry has no room left for a
+// human but still has room for a beast: doubles the normal beast odds,
+// but — unlike recruitGladiator's safe capacity check — the scouting fee
+// is charged regardless of outcome. Rolling a human means there's nowhere
+// to put them (that's the whole reason this path exists), so the fee is
+// simply lost rather than the gladiator being generated and discarded.
+export const recruitBeastRoll = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
+    const COST = recruitCost(profile.scouting_level);
+
+    const { data: roster } = await supabase
+      .from("gladiators").select("is_beast,status").eq("owner_id", userId);
+    const living = (roster ?? []).filter((r) => r.status !== "dead");
+    const humans = living.filter((r) => !r.is_beast).length;
+    const beasts = living.filter((r) => r.is_beast).length;
+    const cap = pantryCapacity((profile as unknown as { pantry_level: number }).pantry_level ?? 1);
+    if (humans < cap.humans) throw new Error("Your pantry still has room for gladiators — this gamble is only for a full pantry.");
+    if (beasts >= cap.beasts) throw new Error(`Your pantry cannot feed another beast (${beasts}/${cap.beasts}). Upgrade the Pantry.`);
+
+    await spendDenarii(supabaseAdmin, userId, COST, `Scouting fee: ${COST} denarii`);
+
+    const doubledOdds = Math.min(1, beastChance(profile.scouting_level) * 2);
+    if (Math.random() >= doubledOdds) {
+      return { ok: true, wasted: true, isBeast: false, name: null };
+    }
+
+    const g = generateBeast(profile.scouting_level);
+    const { error: insertErr } = await supabaseAdmin.from("gladiators").insert({ owner_id: userId, ...g, total_invested: COST });
+    if (insertErr) throw new Error(insertErr.message);
+    return { ok: true, wasted: false, isBeast: true, name: g.name };
   });
 
 
@@ -570,22 +631,30 @@ export const trainGladiator = createServerFn({ method: "POST" })
     const startVal = g[data.stat] as number;
     if (startVal >= cap) throw new Error(`Stat capped at ${cap} — upgrade Training Yard`);
 
+    // The session done during the "training" tutorial step is free — but
+    // capped to one session (the player picks a single stat, once), not a
+    // free ride on ×5/×10.
+    const isFreeTutorialTraining = profile.tutorial_step === "training";
+    const effectiveTimes = isFreeTutorialTraining ? 1 : data.times;
+
     // Simulate up to `times` sessions, stopping early if the stat caps out —
     // only sessions that actually ran get charged. Better training = bigger
     // gains per session.
     const bigChance = trainBigChance(profile.training_level);
     let val = startVal;
     let sessions = 0;
-    for (let i = 0; i < data.times; i++) {
+    for (let i = 0; i < effectiveTimes; i++) {
       if (val >= cap) break;
       const gain = Math.random() < bigChance ? 2 : 1;
       val = Math.min(cap, val + gain);
       sessions++;
     }
     const totalGain = val - startVal;
-    const totalCost = COST * sessions;
+    const totalCost = isFreeTutorialTraining ? 0 : COST * sessions;
 
-    await spendDenarii(supabaseAdmin, userId, totalCost, `Training costs ${totalCost} denarii`);
+    if (totalCost > 0) {
+      await spendDenarii(supabaseAdmin, userId, totalCost, `Training costs ${totalCost} denarii`);
+    }
 
     const basePatch: Record<string, number | string | null> = { total_invested: (g.total_invested ?? 0) + totalCost };
     const patch =
@@ -598,7 +667,82 @@ export const trainGladiator = createServerFn({ method: "POST" })
       { ...basePatch, technique: val };
     const { error } = await supabaseAdmin.from("gladiators").update(patch).eq("id", g.id);
     if (error) throw new Error(error.message);
-    return { ok: true, gain: totalGain, sessions, stat: data.stat };
+
+    if (sessions > 0) {
+      const nextDiscovered = withNewDiscoveries((profile as unknown as { discovered_buildings?: string[] }).discovered_buildings, ["scouting"]);
+      if (nextDiscovered || isFreeTutorialTraining) {
+        await supabaseAdmin.from("profiles").update({
+          ...(nextDiscovered ? { discovered_buildings: nextDiscovered } : {}),
+          ...(isFreeTutorialTraining ? { tutorial_step: "recruit_second" } : {}),
+        }).eq("id", userId);
+      }
+    }
+
+    return { ok: true, gain: totalGain, sessions, stat: data.stat, free: isFreeTutorialTraining };
+  });
+
+// ---------- TUTORIAL ----------
+// Advances the scripted first-time-user tutorial by exactly one dismiss-
+// driven step ("unlocks" and "codex" are pure information — nothing to
+// wait for, so the client just marks them read). Steps with an attached
+// gameplay mechanic or a "go visit X" requirement advance themselves
+// elsewhere: recruit -> cursus_or_fight, fight -> unlocks (fightMatch),
+// visiting Cursus Honorum / Ludus Grounds -> visit_ludus / codex
+// (markBuildingVisited below), train -> done (trainGladiator).
+//
+// The next step after "unlocks" depends on what's already been visited —
+// a player who already opened Cursus Honorum (e.g. following the earlier
+// "cursus_or_fight" message) shouldn't be told to go visit it again — so
+// that branching lives server-side here rather than trusting a
+// client-supplied target.
+const TUTORIAL_NEXT: Record<string, string> = { unlocks: "visit_cursus", codex: "training" };
+
+export const advanceTutorial = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    from: z.enum(["unlocks", "codex"]),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabase.from("profiles").select("visited_buildings").eq("id", userId).maybeSingle();
+    const visited = new Set(profile?.visited_buildings ?? []);
+    let next = TUTORIAL_NEXT[data.from];
+    if (next === "visit_cursus" && visited.has("social")) next = "visit_ludus";
+    if (next === "visit_ludus" && visited.has("ludus")) next = "codex";
+    await supabaseAdmin.from("profiles").update({ tutorial_step: next }).eq("id", userId).eq("tutorial_step", data.from);
+    return { ok: true };
+  });
+
+// Called whenever a player opens any building's dialog — persistent,
+// separate from discovered_buildings (visibility) and from the tutorial:
+// it powers a lasting "haven't visited this yet" reminder on the map so
+// players keep exploring everything the game contains, well after the
+// scripted tutorial ends. Also doubles as the trigger for the tutorial's
+// "go visit Cursus Honorum" / "go visit Ludus Grounds" steps.
+export const markBuildingVisited = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ key: z.string() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabase.from("profiles").select("visited_buildings,tutorial_step").eq("id", userId).maybeSingle();
+    if (!profile) throw new Error("No profile");
+    const current = new Set(profile.visited_buildings ?? []);
+    const patch: Record<string, unknown> = {};
+    if (!current.has(data.key)) {
+      current.add(data.key);
+      patch.visited_buildings = [...current];
+    }
+    if (profile.tutorial_step === "visit_cursus" && data.key === "social") {
+      patch.tutorial_step = current.has("ludus") ? "codex" : "visit_ludus";
+    } else if (profile.tutorial_step === "visit_ludus" && data.key === "ludus") {
+      patch.tutorial_step = "codex";
+    }
+    if (Object.keys(patch).length > 0) {
+      await supabaseAdmin.from("profiles").update(patch as never).eq("id", userId);
+    }
+    return { ok: true };
   });
 
 
@@ -700,6 +844,7 @@ export type ArenaTier = {
   xp: number;            // base XP
   rep: number;           // fame on win
   opponents: string[];   // flavor opponent pool
+  requireBeast?: boolean; // beasts-only venue (e.g. Beast Pens)
 };
 
 // Backwater/Wayside are entry-level and assume near-unequipped gear, which
@@ -718,6 +863,15 @@ export const ARENA_TIERS: ArenaTier[] = [
     reqFame: 0, reqLevel: 1, reqWins: 0,
     powerMin: 50, powerMax: 110, hp: 100, reward: 70, xp: 35, rep: 1,
     opponents: ["Drunken Brawler", "Runaway Slave", "Village Bully", "Starving Thief"],
+  },
+  {
+    key: "beastpens", label: "Beast Pens",
+    flavor: "A caged ring reeking of blood and straw — beasts only, no humans allowed.",
+    imageUrl: beastPensImg,
+    reqFame: 0, reqLevel: 1, reqWins: 0,
+    powerMin: 50, powerMax: 110, hp: 100, reward: 140, xp: 35, rep: 1,
+    opponents: ["Chained Wretch", "Condemned Beast-Handler", "Doomed Prisoner"],
+    requireBeast: true,
   },
   {
     key: "wayside", label: "Wayside Arena",
@@ -774,7 +928,9 @@ export function tierUnlockReason(
   ludusFame: number,
   gladLevel: number,
   gladWins: number,
+  isBeast: boolean = false,
 ): string | null {
+  if (tier.requireBeast && !isBeast) return "Beasts only";
   if (ludusFame < tier.reqFame) return `Ludus needs ${tier.reqFame} fame`;
   if (gladLevel < tier.reqLevel) return `Gladiator must be level ${tier.reqLevel}`;
   if (gladWins < tier.reqWins) return `Gladiator needs ${tier.reqWins} wins`;
@@ -825,7 +981,7 @@ export const fightMatch = createServerFn({ method: "POST" })
 
     const tier = ARENA_TIERS.find(t => t.key === data.difficulty);
     if (!tier) throw new Error("Unknown arena");
-    const lock = tierUnlockReason(tier, profile.reputation, g.level, g.wins);
+    const lock = tierUnlockReason(tier, profile.reputation, g.level, g.wins, g.is_beast);
     if (lock) throw new Error(lock);
 
     const cooldownHours = reflexCooldownHours(g.stamina, profile.training_level);
@@ -880,7 +1036,13 @@ export const fightMatch = createServerFn({ method: "POST" })
     };
     const myDmg = weaponDamageRange(g.weapon_tier);
     const myMit = armorMitigation(g, defenseLevel);
-    const myChance = winChance(myPower, opponentPower);
+    // The fight completed during the "cursus_or_fight" tutorial step is a
+    // guaranteed win — first impressions matter. Bias the round-by-round
+    // simulation toward a clean victory (not just flipping the final
+    // result) so the log itself reads like a real win, and still hard-
+    // guarantee `won` below as a backstop against improbable bad luck.
+    const isTutorialFight = profile.tutorial_step === "cursus_or_fight";
+    const myChance = isTutorialFight ? 0.92 : winChance(myPower, opponentPower);
     log.push(`Win chance: ${Math.round(myChance * 100)}%. Your blade strikes for ${myDmg.min}–${myDmg.max}; your armor absorbs ${myMit.min}–${myMit.max}.`);
 
     const myMaxHp = maxHealth(g.strength);
@@ -912,7 +1074,7 @@ export const fightMatch = createServerFn({ method: "POST" })
     }
 
 
-    const won = oppHp <= myHp;
+    const won = isTutorialFight ? true : oppHp <= myHp;
     const denariiGained = applyGoldBonus(
       won ? tier.reward + rand(0, Math.floor(tier.reward * 0.2)) : Math.floor(tier.reward * 0.12),
       profile.relics,
@@ -968,9 +1130,15 @@ export const fightMatch = createServerFn({ method: "POST" })
     const { error: gErr } = await supabaseAdmin.from("gladiators").update(gladPatch).eq("id", g.id);
     if (gErr) throw new Error(gErr.message);
 
+    const pitDiscoveryGrants: DiscoveryKey[] = ["medicus", "chronicle", "pvp", "armory"];
+    if (won && tier.key === "local") pitDiscoveryGrants.push("relics", "boss");
+    const nextDiscovered = withNewDiscoveries((profile as unknown as { discovered_buildings?: string[] }).discovered_buildings, pitDiscoveryGrants);
+
     await supabaseAdmin.from("profiles").update({
       denarii: profile.denarii + denariiGained,
       reputation: profile.reputation + repGained,
+      ...(nextDiscovered ? { discovered_buildings: nextDiscovered } : {}),
+      ...(isTutorialFight ? { tutorial_step: "unlocks" } : {}),
     }).eq("id", userId);
 
     await supabase.from("matches").insert({
@@ -1359,9 +1527,11 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       losses: g.losses + (won ? 0 : 1),
     }).eq("id", g.id);
 
+    const myPvpDiscovered = withNewDiscoveries((profile as unknown as { discovered_buildings?: string[] }).discovered_buildings, ["temple"]);
     await supabaseAdmin.from("profiles").update({
       denarii: profile.denarii + denariiGained,
       reputation: Math.max(0, profile.reputation + repGained),
+      ...(myPvpDiscovered ? { discovered_buildings: myPvpDiscovered } : {}),
     }).eq("id", userId);
 
     // Update opposing (challenger) gladiator via admin (medicus/training/health already resolved above, before the fight sim)
@@ -1396,11 +1566,13 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
       losses: opp.losses + (won ? 1 : 0),
     }).eq("id", opp.id);
 
-    const { data: oppProfile } = await supabaseAdmin.from("profiles").select("denarii,reputation,relics,boss_kills").eq("id", opp.owner_id).maybeSingle();
+    const { data: oppProfile } = await supabaseAdmin.from("profiles").select("denarii,reputation,relics,boss_kills,discovered_buildings").eq("id", opp.owner_id).maybeSingle();
     if (oppProfile) {
+      const oppPvpDiscovered = withNewDiscoveries(oppProfile.discovered_buildings, ["temple"]);
       await supabaseAdmin.from("profiles").update({
         denarii: oppProfile.denarii + applyGoldBonus(won ? 30 : 150 * rewardMult, oppProfile.relics, oppProfile.boss_kills as Record<string, number>),
         reputation: Math.max(0, oppProfile.reputation + (won ? -1 : 6 * rewardMult)),
+        ...(oppPvpDiscovered ? { discovered_buildings: oppPvpDiscovered } : {}),
       }).eq("id", opp.owner_id);
     }
 
@@ -2643,16 +2815,18 @@ export const getPublicLudus = createServerFn({ method: "GET" })
   });
 
 // ============================================================
-// ACHIEVEMENTS — badges with 5 tiers each. Purely derived from existing
-// tables (profiles/gladiators/hall_of_fame/matches); no dedicated table, so
-// "recruited" and "level reached" are best-effort from what's still on
-// record (a dismissed-without-honor gladiator's history isn't preserved).
+// ACHIEVEMENTS — badges with a handful of tiers each (length varies by
+// category). Purely derived from existing tables
+// (profiles/gladiators/hall_of_fame/matches/global_event_contributions);
+// no dedicated table, so "recruited" and "level reached" are best-effort
+// from what's still on record (a dismissed-without-honor gladiator's
+// history isn't preserved).
 // ============================================================
 export type AchievementCategory = {
   key: string;
   label: string;
   description: string;
-  tiers: [number, number, number, number, number]; // first 4 linear, 5th a longer grind
+  tiers: number[]; // first tiers linear, later ones a longer grind — length varies per category
 };
 
 export const ACHIEVEMENTS: AchievementCategory[] = [
@@ -2678,18 +2852,18 @@ export const ACHIEVEMENTS: AchievementCategory[] = [
   },
   {
     key: "facilities", label: "Master of the Ludus",
-    description: "Raise the combined level of all five facilities to this total (35 is every facility maxed, including a fully-trained Training Yard and Foundry).",
-    tiers: [5, 10, 15, 20, 35],
+    description: "Raise the combined level of all seven facilities to this total (50 is every facility maxed, including fully-trained Training Yard, Foundry, and Temple of Relics).",
+    tiers: [10, 20, 30, 40, 50],
   },
   {
     key: "reputation", label: "Renown of Rome",
     description: "Grow your ludus's fame to this level.",
-    tiers: [50, 100, 250, 1000, 2500],
+    tiers: [50, 100, 250, 1000, 2500, 5000, 10000],
   },
   {
     key: "denarii", label: "Coffers of the Ludus",
     description: "Hold this many denarii.",
-    tiers: [1000, 2000, 3000, 4000, 10000],
+    tiers: [1000, 2000, 3000, 4000, 10000, 25000, 50000],
   },
   {
     key: "recruits", label: "Lanista's Eye",
@@ -2700,6 +2874,11 @@ export const ACHIEVEMENTS: AchievementCategory[] = [
     key: "beasts", label: "Beast Master",
     description: "Keep this many beasts in your pantry at once.",
     tiers: [1, 2, 3, 4, 8],
+  },
+  {
+    key: "eventDamage", label: "Slayer of Giants",
+    description: "Deal this much damage across all World Events combined.",
+    tiers: [500, 2000, 10000, 50000, 200000],
   },
 ];
 
@@ -2712,22 +2891,24 @@ export const getAchievementProgress = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [profileRes, gladRes, hofRes, winsRes, pvpWinsRes, deathWinsRes] = await Promise.all([
+    const [profileRes, gladRes, hofRes, winsRes, pvpWinsRes, deathWinsRes, eventDamageRes] = await Promise.all([
       supabase.from("profiles")
-        .select("denarii,reputation,training_level,scouting_level,medicus_level,armory_level,pantry_level,achievement_tiers_claimed")
+        .select("denarii,reputation,training_level,scouting_level,medicus_level,armory_level,pantry_level,social_level,relics_level,achievement_tiers_claimed")
         .eq("id", userId).maybeSingle(),
       supabase.from("gladiators").select("level,is_beast").eq("owner_id", userId),
       supabase.from("hall_of_fame").select("level").eq("owner_id", userId),
       supabase.from("matches").select("id", { count: "exact", head: true }).eq("owner_id", userId).eq("result", "win"),
       supabase.from("matches").select("id", { count: "exact", head: true }).eq("owner_id", userId).eq("result", "win").in("difficulty", ["pvp", "pvp_death"]),
       supabase.from("matches").select("id", { count: "exact", head: true }).eq("owner_id", userId).eq("result", "win").eq("difficulty", "pvp_death"),
+      supabase.from("global_event_contributions").select("damage_dealt").eq("owner_id", userId),
     ]);
     const profile = profileRes.data;
     const glads = gladRes.data ?? [];
     const hof = hofRes.data ?? [];
     const facilities = profile
-      ? profile.training_level + profile.scouting_level + profile.medicus_level + profile.armory_level + profile.pantry_level
+      ? profile.training_level + profile.scouting_level + profile.medicus_level + profile.armory_level + profile.pantry_level + profile.social_level + profile.relics_level
       : 0;
+    const eventDamage = (eventDamageRes.data ?? []).reduce((sum, r) => sum + Number(r.damage_dealt), 0);
 
     const progress: Record<string, number> = {
       level: Math.max(0, ...glads.map(g => g.level), ...hof.map(h => h.level)),
@@ -2739,6 +2920,7 @@ export const getAchievementProgress = createServerFn({ method: "GET" })
       denarii: profile?.denarii ?? 0,
       recruits: glads.length + hof.length,
       beasts: glads.filter(g => g.is_beast).length,
+      eventDamage,
     };
 
     // Grant a one-time denarii reward for each tier newly crossed since the
@@ -2804,13 +2986,17 @@ export function socialToneWeights(socialLevel: number): Record<SocialTone, numbe
   return { positive, negative, neutral };
 }
 
-function pickSocialEvent(socialLevel: number): SocialEvent {
+// excludeNegative: a brand-new lanista's very first Cursus Honorum outing
+// is guaranteed positive or neutral — first impressions matter, same
+// reasoning as the guaranteed first pit-fight win.
+function pickSocialEvent(socialLevel: number, excludeNegative = false): SocialEvent {
   const weights = socialToneWeights(socialLevel);
   const r = Math.random();
-  const tone: SocialTone =
+  let tone: SocialTone =
     r < weights.positive ? "positive" :
     r < weights.positive + weights.negative ? "negative" :
     "neutral";
+  if (excludeNegative && tone === "negative") tone = "positive";
   const pool = SOCIAL_EVENTS.filter(e => e.tone === tone);
   return pick(pool);
 }
@@ -2866,7 +3052,7 @@ export const runSocialEvent = createServerFn({ method: "POST" })
     if (party.length !== data.gladiatorIds.length) throw new Error("One of those gladiators isn't yours");
     if (party.some(g => g.status === "dead")) throw new Error("The dead do not attend feasts");
 
-    const event = pickSocialEvent(profile.social_level);
+    const event = pickSocialEvent(profile.social_level, !last);
     const names = party.map(g => g.name);
     const text = event.text.replace("{g}", joinNames(names));
 
@@ -2987,7 +3173,7 @@ export const runSocialEvent = createServerFn({ method: "POST" })
 // regardless of how often, or how unevenly, checks happen to land.
 const GLOBAL_EVENT_TARGET_PER_WEEK = 2.5;
 const GLOBAL_EVENT_MEAN_INTERVAL_SEC = (7 * 24 * 3600) / GLOBAL_EVENT_TARGET_PER_WEEK;
-const GLOBAL_EVENT_LEAD_HOURS = 3;
+const GLOBAL_EVENT_LEAD_HOURS = 5;
 const GLOBAL_EVENT_MIN_DURATION_MIN = 5;
 const GLOBAL_EVENT_MAX_DURATION_MIN = 10;
 // No cap on total strikes per fighter — the cooldown alone paces things,
@@ -3033,7 +3219,7 @@ const GLOBAL_EVENT_RELIC_KEY = "titan_shard";
 // with titan_shard.maxTier in relics.ts.
 const GLOBAL_EVENT_RELIC_DROP_CHANCE = 0.10;
 export const GLOBAL_EVENT_RELIC_MAX_TIER = 5;
-const GLOBAL_EVENT_STALE_HOURS = 24; // how long a resolved event still shows its results
+const GLOBAL_EVENT_STALE_HOURS = 3; // how long a resolved event still shows its results
 
 // Each titan_shard tier fields one more champion at a World Event (base 1,
 // capped at 1 + GLOBAL_EVENT_RELIC_MAX_TIER = 6).

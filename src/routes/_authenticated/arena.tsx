@@ -18,6 +18,8 @@ import {
   getGlobalEventState, strikeGlobalEvent, GLOBAL_EVENT_STRIKE_COOLDOWN_SEC,
 } from "@/lib/game.functions";
 import type { FightRound, BossRoundOutcome } from "@/lib/game.functions";
+import { DISCOVERY_KEYS } from "@/lib/discovery";
+import { useDiscoveryReveal } from "@/lib/use-discovery-reveal";
 import { BOSS_ENCOUNTERS, bossRequirementError, type BossDefinition, type DogLungeVariant } from "@/lib/boss-encounters";
 import { FaceAvatar } from "./ludus";
 import type { PortraitSubject } from "./ludus";
@@ -120,6 +122,25 @@ function ArenaPage() {
   });
   const hasEvent = !!eventData?.event;
 
+  const TAB_LABELS: Record<string, string> = { pvp: "Rival Ludi", team: "Team Battles", boss: "Boss Fights" };
+  const justRevealed = useDiscoveryReveal(
+    data.profile?.id,
+    data.profile?.discovered_buildings?.filter(k => k === "pvp" || k === "team" || k === "boss"),
+    (key) => TAB_LABELS[key] ?? key,
+  );
+  const discovered = new Set<string>(data.profile?.discovered_buildings ?? DISCOVERY_KEYS);
+  const showPvp = discovered.has("pvp");
+  const showTeam = discovered.has("team");
+  const showBoss = discovered.has("boss");
+  const visibleTabCount = 1 + (showPvp ? 1 : 0) + (showTeam ? 1 : 0) + (showBoss ? 1 : 0) + (hasEvent ? 1 : 0);
+  const gridClass: Record<number, string> = {
+    1: "max-w-md grid-cols-1",
+    2: "max-w-lg grid-cols-2",
+    3: "max-w-xl grid-cols-3",
+    4: "max-w-2xl grid-cols-4",
+    5: "max-w-3xl grid-cols-5",
+  };
+
   const headerActions: HeaderAction[] = [
     { key: "codex", label: "Codex", onClick: () => navigate({ to: "/info" }) },
   ];
@@ -139,21 +160,27 @@ function ArenaPage() {
       />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <Tabs defaultValue={hasEvent ? "event" : "pits"} className="w-full">
-          <TabsList className={`grid w-full ${hasEvent ? "max-w-3xl grid-cols-5" : "max-w-2xl grid-cols-4"}`}>
+        <Tabs defaultValue="pits" className="w-full">
+          <TabsList className={`grid w-full ${gridClass[visibleTabCount] ?? gridClass[4]}`}>
             <TabsTrigger value="pits"><Swords className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Pit Fights</span><span className="sm:hidden">Pits</span></TabsTrigger>
-            <TabsTrigger value="pvp"><Shield className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Rival Ludi</span><span className="sm:hidden">Rivals</span></TabsTrigger>
-            <TabsTrigger value="team"><Users className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Team Battles</span><span className="sm:hidden">Teams</span></TabsTrigger>
-            <TabsTrigger value="boss"><Skull className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Boss Fights</span><span className="sm:hidden">Bosses</span></TabsTrigger>
+            {showPvp && (
+              <TabsTrigger value="pvp" className={justRevealed.has("pvp") ? "animate-in fade-in zoom-in-90 duration-700" : ""}><Shield className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Rival Ludi</span><span className="sm:hidden">Rivals</span></TabsTrigger>
+            )}
+            {showTeam && (
+              <TabsTrigger value="team" className={justRevealed.has("team") ? "animate-in fade-in zoom-in-90 duration-700" : ""}><Users className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Team Battles</span><span className="sm:hidden">Teams</span></TabsTrigger>
+            )}
+            {showBoss && (
+              <TabsTrigger value="boss" className={justRevealed.has("boss") ? "animate-in fade-in zoom-in-90 duration-700" : ""}><Skull className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Boss Fights</span><span className="sm:hidden">Bosses</span></TabsTrigger>
+            )}
             {hasEvent && (
               <TabsTrigger value="event"><Flame className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">World Event</span><span className="sm:hidden">Event</span></TabsTrigger>
             )}
           </TabsList>
 
           <TabsContent value="pits" className="mt-6"><PitFights state={data} /></TabsContent>
-          <TabsContent value="pvp" className="mt-6"><PvpFights state={data} /></TabsContent>
-          <TabsContent value="team" className="mt-6"><TeamFights state={data} /></TabsContent>
-          <TabsContent value="boss" className="mt-6"><BossFights state={data} /></TabsContent>
+          {showPvp && <TabsContent value="pvp" className="mt-6"><PvpFights state={data} /></TabsContent>}
+          {showTeam && <TabsContent value="team" className="mt-6"><TeamFights state={data} /></TabsContent>}
+          {showBoss && <TabsContent value="boss" className="mt-6"><BossFights state={data} /></TabsContent>}
           {hasEvent && (
             <TabsContent value="event" className="mt-6"><WorldEventFight state={data} /></TabsContent>
           )}
@@ -320,7 +347,7 @@ function TierPicker({ g, state, availability }: { g: Gladiator; state: State; av
       </div>
       <div className="space-y-2">
         {ARENA_TIERS.map(t => {
-          const lock = tierUnlockReason(t, state.profile?.reputation ?? 0, g.level, g.wins);
+          const lock = tierUnlockReason(t, state.profile?.reputation ?? 0, g.level, g.wins, g.is_beast);
           const selected = difficulty === t.key;
           return (
             <button
@@ -1881,6 +1908,33 @@ function BattleAnimation({
 // -----------------------------------------------------------
 // Shared result view
 // -----------------------------------------------------------
+// Fight-recap log lines mix flavor text with the actual outcome (denarii,
+// XP, fame, relic/key drops) in the same sentence, and the exact wording
+// varies by fight type (pit/team/boss/pvp) — so instead of restructuring
+// every server handler to return separate reward fields, this pulls the
+// reward tokens back out of whatever sentence they're embedded in and
+// renders just those in bold, larger text.
+const REWARD_TOKEN = /\+?\d[\d,]*\s?(?:denarii|d(?=[,.\s]|$)|XP(?: each)?|fame)/g;
+const REWARD_LINE = /(discovers .+!|recovers a Key to the Underworld!)/i;
+
+function highlightRewards(line: string): ReactNode {
+  if (REWARD_LINE.test(line)) {
+    return <strong className="font-display text-base text-accent">{line}</strong>;
+  }
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  REWARD_TOKEN.lastIndex = 0;
+  while ((match = REWARD_TOKEN.exec(line))) {
+    if (match.index > lastIndex) parts.push(line.slice(lastIndex, match.index));
+    parts.push(<strong key={match.index} className="font-display text-base text-accent">{match[0]}</strong>);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex === 0) return line;
+  parts.push(line.slice(lastIndex));
+  return parts;
+}
+
 function ResultView({ result, onClose, image }: { result: { won: boolean; log: string[] }; onClose: () => void; image?: string }) {
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -1897,7 +1951,7 @@ function ResultView({ result, onClose, image }: { result: { won: boolean; log: s
         )}
         <ol className="max-h-72 space-y-1 overflow-y-auto font-serif text-sm">
           {result.log.map((line, i) => (
-            <li key={i} className="border-l-2 border-border pl-3">{line}</li>
+            <li key={i} className="border-l-2 border-border pl-3">{highlightRewards(line)}</li>
           ))}
         </ol>
         <Button className="w-full" onClick={onClose}>Close</Button>

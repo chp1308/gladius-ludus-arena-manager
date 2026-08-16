@@ -37,7 +37,7 @@ function AchievementsPage() {
     qc.invalidateQueries({ queryKey: ["ludus"] });
   }, [data, qc]);
 
-  const totalBadges = ACHIEVEMENTS.length * 5;
+  const totalBadges = ACHIEVEMENTS.reduce((sum, cat) => sum + cat.tiers.length, 0);
   const earnedBadges = ACHIEVEMENTS.reduce((sum, cat) => {
     const val = progress[cat.key] ?? 0;
     const fromValue = cat.tiers.filter(t => val >= t).length;
@@ -55,7 +55,7 @@ function AchievementsPage() {
 
       <main className="mx-auto max-w-4xl space-y-4 px-6 py-8">
         <p className="font-serif text-sm italic text-muted-foreground">
-          Every honor your ludus has earned — five tiers each, the last a proper grind.
+          Every honor your ludus has earned — several tiers each, the last a proper grind.
         </p>
         {isLoading && <p className="font-serif italic text-muted-foreground">Consulting the ludus's chronicles…</p>}
         {ACHIEVEMENTS.map(cat => (
@@ -72,8 +72,8 @@ function AchievementCard({ category, value, claimedTier }: { category: Achieveme
   // is the ratchet-only-up record from the server, live value can only
   // push it further, never below.
   const fromValue = category.tiers.filter(t => value >= t).length;
-  const highestUnlocked = Math.max(fromValue, claimedTier); // 0-5
-  const nextTier = highestUnlocked < 5 ? category.tiers[highestUnlocked] : null;
+  const highestUnlocked = Math.max(fromValue, claimedTier); // 0-category.tiers.length
+  const nextTier = highestUnlocked < category.tiers.length ? category.tiers[highestUnlocked] : null;
   const prevTier = highestUnlocked > 0 ? category.tiers[highestUnlocked - 1] : 0;
   const pct = nextTier ? Math.min(100, ((Math.max(value, prevTier) - prevTier) / (nextTier - prevTier)) * 100) : 100;
 
@@ -89,7 +89,7 @@ function AchievementCard({ category, value, claimedTier }: { category: Achieveme
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {category.tiers.map((t, i) => {
           const unlocked = i < highestUnlocked;
           return (
@@ -99,7 +99,7 @@ function AchievementCard({ category, value, claimedTier }: { category: Achieveme
                   unlocked
                     ? "border-primary bg-primary/15 text-primary shadow-[0_0_10px_rgba(0,0,0,0.15)]"
                     : "border-border bg-muted/40 text-muted-foreground"
-                } ${i === 4 ? "ring-1 ring-accent/50" : ""}`}
+                } ${i === category.tiers.length - 1 ? "ring-1 ring-accent/50" : ""}`}
                 title={`Tier ${i + 1} — ${t.toLocaleString()}`}
               >
                 {unlocked ? <Medal className="h-5 w-5" /> : <Lock className="h-4 w-4" />}

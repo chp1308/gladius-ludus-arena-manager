@@ -1,17 +1,20 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getLudusState, recruitGladiator, trainGladiator, upgradeEquipment,
+  getLudusState, recruitGladiator, recruitBeastRoll, trainGladiator, upgradeEquipment,
   healGladiator, dismissGladiator, honorGladiator,
   upgradeFacility, upgradeSkill, updateLudusDescription, WEAPON_LABELS,
   ARENA_TIERS, statCap, maxHealth, trainCost, gearCost, healCost, healRegenPerHour, pantryCapacity, gladiatorPower,
   keyDropChance, EXTENDED_MAX_LEVEL, extendedFacilityCost, relicsCooldownHours,
   trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier, armoryDiscountPct,
   runSocialEvent, socialDelegationSize, socialToneWeights, SOCIAL_COOLDOWN_MINUTES,
+  markBuildingVisited,
 } from "@/lib/game.functions";
+import { DISCOVERY_KEYS, DISCOVERY_INTRO, DISCOVERY_MILESTONE, type DiscoveryKey } from "@/lib/discovery";
+import { useDiscoveryReveal, useFirstOpenIntro } from "@/lib/use-discovery-reveal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MAX_GEAR_TIER, requiredArmoryLevel } from "@/lib/game.functions";
@@ -23,11 +26,11 @@ import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem, Zap, Brain, KeyRound } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem, Zap, Brain, KeyRound, ChevronDown, Compass } from "lucide-react";
 import { STAT_INFO, STAT_SCALING_NOTE } from "@/lib/stat-info";
 
 const STAT_INFO_ICONS = { strength: Dumbbell, agility: Zap, stamina: Heart, technique: Brain } as const;
-import ludusMapBase from "@/assets/ludus/ludus-map-kit/buildings/map-base-v2.png";
+import ludusMapBase from "@/assets/ludus/ludus-map-kit/buildings/map-base-v2-cut.png";
 import bLudus from "@/assets/ludus/ludus-map-kit/buildings/ludus-grounds.png";
 import bMarket from "@/assets/ludus/ludus-map-kit/buildings/slave-market.png";
 import bTraining from "@/assets/ludus/ludus-map-kit/buildings/training-yard.png";
@@ -259,6 +262,27 @@ function LudusPage() {
     if (ok) recruitMut.mutate();
   };
 
+  const recruitBeast = useServerFn(recruitBeastRoll);
+  const recruitBeastMut = useMutation({
+    mutationFn: () => recruitBeast(),
+    onSuccess: (r) => {
+      if (r.wasted) {
+        toast.error(`No beast this time — the scout brought back a gladiator with nowhere to put them. The ${recruitCost} denarii fee is gone.`);
+      } else {
+        toast.success(`A ${r.name} was captured in the wilds!`);
+      }
+      qc.invalidateQueries({ queryKey: ["ludus"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const onRecruitBeast = async () => {
+    const ok = await confirm({
+      title: "Roll for a beast?",
+      description: `Your pantry has no room for another gladiator, but there's space for a beast. For ${recruitCost} denarii, your scouts will hunt specifically for one — double the usual odds. If they turn up a person instead, there's nowhere to house them and the fee is simply lost. Proceed?`,
+    });
+    if (ok) recruitBeastMut.mutate();
+  };
+
   const signOut = async () => {
     await qc.cancelQueries();
     qc.clear();
@@ -272,16 +296,17 @@ function LudusPage() {
 
   const [open, setOpen] = useState<BuildingKey | null>(null);
   const { onCooldown: socialOnCooldown, minutesLeft: socialMinutesLeft } = socialCooldownStatus(data.socialEvents);
+  const discoveredKeys = new Set<string>(data.profile?.discovered_buildings ?? DISCOVERY_KEYS);
 
   const headerActions: HeaderAction[] = [
     { key: "profile", label: "Public Profile", icon: <ScrollText className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/profile" }) },
     { key: "codex", label: "Codex", icon: <BookOpen className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/info" }) },
     { key: "champions", label: "Champions", icon: <Trophy className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/leaderboard" }) },
     { key: "achievements", label: "Achievements", icon: <Medal className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/achievements" }) },
-    {
+    ...(discoveredKeys.has("social") ? [{
       key: "cursus", icon: <Landmark className="mr-1 h-4 w-4" />, onClick: () => setOpen("social"),
       label: socialOnCooldown ? `Resting — ${formatMinutes(socialMinutesLeft)}` : "Cursus Honorum",
-    },
+    }] : []),
     { key: "signout", label: "Sign out", onClick: signOut, variant: "ghost" },
   ];
 
@@ -307,6 +332,8 @@ function LudusPage() {
           recruitCost={recruitCost}
           recruitPending={recruitMut.isPending}
           onRecruit={onRecruit}
+          recruitBeastPending={recruitBeastMut.isPending}
+          onRecruitBeast={onRecruitBeast}
           open={open}
           setOpen={setOpen}
         />
@@ -343,10 +370,31 @@ const BUILDINGS: Building[] = [
   { key: "relics",   name: "Temple of Relics", flavor: "Rare treasures won from mythic beasts.", Icon: Gem,        image: bRelics },
 ];
 
+// A bouncing pointer used by the tutorial to nudge the player toward a
+// specific building — x/y are the same map-fraction coordinates MAP_SLOTS
+// buildings use, positioned just above the sprite so it doesn't cover it.
+function MapArrow({ x, y }: { x: number; y: number }) {
+  return (
+    <div
+      className="pointer-events-none absolute z-40 animate-bounce"
+      style={{ left: `${x * 100}%`, top: `${y * 100}%`, transform: "translate(-50%, -100%)" }}
+    >
+      {/* Lucide icons are stroke-only (no fill), so a black "edge" is faked
+          by layering a thicker black chevron directly behind a thinner red
+          one — same trick as an SVG icon outline. */}
+      <div className="relative h-[70px] w-[70px]">
+        <ChevronDown className="absolute inset-0 h-[70px] w-[70px] text-black" strokeWidth={6} />
+        <ChevronDown className="absolute inset-0 h-[70px] w-[70px] text-red-600" strokeWidth={3.5} />
+      </div>
+    </div>
+  );
+}
+
 function VillageView({
-  state, recruitCost, recruitPending, onRecruit, open, setOpen,
+  state, recruitCost, recruitPending, onRecruit, recruitBeastPending, onRecruitBeast, open, setOpen,
 }: {
   state: State; recruitCost: number; recruitPending: boolean; onRecruit: () => void;
+  recruitBeastPending: boolean; onRecruitBeast: () => void;
   open: BuildingKey | null; setOpen: (key: BuildingKey | null) => void;
 }) {
   const denarii = state.profile?.denarii ?? 0;
@@ -357,6 +405,19 @@ function VillageView({
   const beasts = living.filter(g => g.is_beast).length;
   const pantryLvl = (state.profile as unknown as { pantry_level?: number })?.pantry_level ?? 1;
   const cap = pantryCapacity(pantryLvl);
+  // Fail open: an account somehow missing discovered_buildings sees
+  // everything rather than nothing, so a data hiccup never locks anyone out.
+  const discovered = new Set<string>(state.profile?.discovered_buildings ?? DISCOVERY_KEYS);
+  const justRevealed = useDiscoveryReveal(
+    state.profile?.id,
+    state.profile?.discovered_buildings?.filter(k => BUILDINGS.some(b => b.key === k)),
+    (key) => BUILDINGS.find(b => b.key === key)?.name ?? key,
+  );
+  // Persistent "haven't opened this yet" reminder — separate from the
+  // one-time reveal animation above, stays until the player actually
+  // clicks in, so it keeps nudging exploration long after the tutorial ends.
+  const visited = new Set<string>(state.profile?.visited_buildings ?? []);
+  const tutorialStep = state.profile?.tutorial_step;
 
   const badges: Partial<Record<BuildingKey, string>> = {
     ludus: `${living.length}`,
@@ -377,8 +438,17 @@ function VillageView({
         <p className="mt-1 font-serif italic text-muted-foreground">Walk the grounds — visit the forge, the market, the temple.</p>
       </div>
 
-      <div className="ornate-border relative mx-auto aspect-square w-full max-w-[63rem] overflow-hidden rounded-xl shadow-[var(--shadow-relief)]">
-        <img src={ludusMapBase} alt="" className="absolute inset-0 h-full w-full select-none object-cover" draggable={false} />
+      <div className="ornate-border relative mx-auto aspect-square w-full max-w-[63rem] overflow-hidden rounded-xl bg-background shadow-[var(--shadow-relief)]">
+        {/* map-base-v2-cut.png has a real alpha channel around the circular
+            art (unlike the original map-base-v2.png, whose corners were
+            opaque white baked into the file) — bg-background on the
+            container above shows straight through, no clip-path needed. */}
+        <img
+          src={ludusMapBase}
+          alt=""
+          className="absolute inset-0 h-full w-full select-none object-cover"
+          draggable={false}
+        />
 
         {/* Decorative only — the gate is already part of the base map art;
             this crisper standalone cutout (gatev2.png — a tighter, sharper
@@ -408,6 +478,14 @@ function VillageView({
           draggable={false}
         />
 
+        {tutorialStep === "visit_cursus" && MAP_SLOTS.social && (
+          <MapArrow x={MAP_SLOTS.social.x} y={MAP_SLOTS.social.y - MAP_SLOTS.social.scale - 0.03} />
+        )}
+        {tutorialStep === "visit_ludus" && <MapArrow x={0.5} y={0.27} />}
+        {tutorialStep === "recruit_second" && MAP_SLOTS.market && (
+          <MapArrow x={MAP_SLOTS.market.x} y={MAP_SLOTS.market.y - MAP_SLOTS.market.scale - 0.03} />
+        )}
+
         {/* Ludus Grounds — the central training ground is baked into the
             base map art (walls, gate, arena), not a placeable sprite like
             the other 11 buildings, so it gets a hand-positioned hotspot
@@ -418,6 +496,9 @@ function VillageView({
           style={{ left: "50%", top: "47%", width: "34%", height: "34%", transform: "translate(-50%, -50%)" }}
           title="Ludus Grounds"
         >
+          {!visited.has("ludus") && (
+            <span className="absolute -top-2 right-[36%] h-[36px] w-[36px] animate-pulse rounded-full border-2 border-black bg-red-600 shadow-[0_0_8px_#dc2626]" title="Not yet visited" />
+          )}
           <span className="mb-1 whitespace-nowrap rounded-full border border-border/60 bg-background/90 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground shadow-sm transition group-hover:border-primary/60 group-hover:text-foreground">
             {badges.ludus}
           </span>
@@ -426,14 +507,14 @@ function VillageView({
           </span>
         </button>
 
-        {BUILDINGS.filter(b => b.key !== "ludus").map((b) => {
+        {BUILDINGS.filter(b => b.key !== "ludus" && discovered.has(b.key)).map((b) => {
           const slot = MAP_SLOTS[b.key];
           if (!slot) return null;
           return (
             <button
               key={b.key}
               onClick={() => setOpen(b.key)}
-              className="group absolute z-20 hover:z-30"
+              className={`group absolute z-20 hover:z-30 ${justRevealed.has(b.key) ? "animate-in fade-in zoom-in-90 duration-700" : ""}`}
               style={{
                 left: `${slot.x * 100}%`,
                 top: `${slot.y * 100}%`,
@@ -448,6 +529,9 @@ function VillageView({
                 loading="lazy"
                 className="w-full drop-shadow-[0_6px_10px_oklch(0.2_0.01_60/0.4)] transition-transform duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06]"
               />
+              {!visited.has(b.key) && (
+                <span className="absolute -top-2 right-1/4 h-[36px] w-[36px] animate-pulse rounded-full border-2 border-black bg-red-600 shadow-[0_0_8px_#dc2626]" title="Not yet visited" />
+              )}
               {badges[b.key] && (
                 <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-border/60 bg-background/90 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground shadow-sm">
                   {badges[b.key]}
@@ -472,6 +556,9 @@ function VillageView({
               recruitCost={recruitCost}
               recruitPending={recruitPending}
               onRecruit={onRecruit}
+              canRollBeast={humans >= cap.humans && beasts < cap.beasts}
+              recruitBeastPending={recruitBeastPending}
+              onRecruitBeast={onRecruitBeast}
             />
           )}
         </DialogContent>
@@ -482,12 +569,24 @@ function VillageView({
 
 function BuildingPanel({
   buildingKey, state, denarii, scoutingLevel, recruitCost, recruitPending, onRecruit,
+  canRollBeast, recruitBeastPending, onRecruitBeast,
 }: {
   buildingKey: BuildingKey; state: State; denarii: number; scoutingLevel: number;
   recruitCost: number; recruitPending: boolean; onRecruit: () => void;
+  canRollBeast: boolean; recruitBeastPending: boolean; onRecruitBeast: () => void;
 }) {
   const b = BUILDINGS.find(x => x.key === buildingKey)!;
   const Icon = b.Icon;
+  const showIntro = useFirstOpenIntro(state.profile?.id, buildingKey as DiscoveryKey);
+
+  const qc = useQueryClient();
+  const markVisited = useServerFn(markBuildingVisited);
+  useEffect(() => {
+    markVisited({ data: { key: buildingKey } }).then(() => {
+      qc.invalidateQueries({ queryKey: ["ludus"] });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildingKey]);
 
   return (
     <>
@@ -496,11 +595,15 @@ function BuildingPanel({
           <Icon className="h-6 w-6 text-primary" /> {b.name}
         </DialogTitle>
         <p className="font-serif text-sm italic text-muted-foreground">{b.flavor}</p>
+        {showIntro && DISCOVERY_INTRO[buildingKey as DiscoveryKey] && (
+          <p className="mt-1 font-serif text-sm italic text-accent">{DISCOVERY_INTRO[buildingKey as DiscoveryKey]}</p>
+        )}
       </DialogHeader>
 
       <div className="mt-4 space-y-6">
         {buildingKey === "ludus" && (
           <>
+            <GettingStartedChecklist state={state} />
             {state.gladiators.filter(g => g.status === "dead").length > 0 && <FallenSection state={state} />}
             {state.gladiators.filter(g => g.status !== "dead").length === 0 ? (
               <div className="inscribed ornate-border rounded-lg p-12 text-center">
@@ -524,6 +627,23 @@ function BuildingPanel({
               <Button size="lg" onClick={onRecruit} disabled={recruitPending || denarii < recruitCost}>
                 Scout recruit · {recruitCost} denarii
               </Button>
+
+              {canRollBeast && (
+                <div className="mt-2 rounded-lg border border-accent/40 bg-accent/5 p-4">
+                  <p className="font-serif text-sm italic text-muted-foreground">
+                    Your pantry has no room left for gladiators, but there's still space for a beast. Send scouts hunting specifically for one — double the usual odds — but if they turn up a person instead, there's nowhere to house them and the fee is lost.
+                  </p>
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="mt-3"
+                    onClick={onRecruitBeast}
+                    disabled={recruitBeastPending || denarii < recruitCost}
+                  >
+                    <Cat className="mr-2 h-4 w-4" /> Roll for a beast · {recruitCost} denarii
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1617,6 +1737,52 @@ function SlotButton({
         </div>
       ) : null}
     </button>
+  );
+}
+
+// -----------------------------------------------------------
+// GETTING STARTED — next 2-3 onboarding milestones, driven by the same
+// discovered_buildings array that gates the map, so there's one source of
+// truth instead of two lists to keep in sync.
+// -----------------------------------------------------------
+function GettingStartedChecklist({ state }: { state: State }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const discovered = new Set<string>(state.profile?.discovered_buildings ?? DISCOVERY_KEYS);
+
+  const milestones: string[] = [];
+  const seenText = new Set<string>();
+  for (const key of DISCOVERY_KEYS) {
+    if (discovered.has(key)) continue;
+    const text = DISCOVERY_MILESTONE[key];
+    if (!text || seenText.has(text)) continue;
+    seenText.add(text);
+    milestones.push(text);
+  }
+  if (milestones.length === 0) return null;
+  const shown = milestones.slice(0, 3);
+
+  return (
+    <div className="inscribed ornate-border rounded-lg p-4">
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="flex items-center gap-2 font-display text-sm text-primary">
+          <Compass className="h-4 w-4" /> Getting Started
+        </span>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+      </button>
+      {!collapsed && (
+        <ul className="mt-3 space-y-2">
+          {shown.map((text) => (
+            <li key={text} className="flex items-start gap-2 font-serif text-sm text-muted-foreground">
+              <span className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border border-border" />
+              {text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

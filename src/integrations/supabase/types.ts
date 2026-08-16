@@ -392,6 +392,7 @@ export type Database = {
           created_at: string
           denarii: number
           description: string
+          discovered_buildings: string[]
           hades_keys: number
           id: string
           is_bot: boolean
@@ -407,7 +408,9 @@ export type Database = {
           showcase_limit: number
           social_level: number
           training_level: number
+          tutorial_step: string
           updated_at: string
+          visited_buildings: string[]
         }
         Insert: {
           achievement_tiers_claimed?: Json
@@ -418,6 +421,7 @@ export type Database = {
           created_at?: string
           denarii?: number
           description?: string
+          discovered_buildings?: string[]
           hades_keys?: number
           id: string
           is_bot?: boolean
@@ -433,7 +437,9 @@ export type Database = {
           showcase_limit?: number
           social_level?: number
           training_level?: number
+          tutorial_step?: string
           updated_at?: string
+          visited_buildings?: string[]
         }
         Update: {
           achievement_tiers_claimed?: Json
@@ -444,6 +450,7 @@ export type Database = {
           created_at?: string
           denarii?: number
           description?: string
+          discovered_buildings?: string[]
           hades_keys?: number
           id?: string
           is_bot?: boolean
@@ -459,7 +466,9 @@ export type Database = {
           showcase_limit?: number
           social_level?: number
           training_level?: number
+          tutorial_step?: string
           updated_at?: string
+          visited_buildings?: string[]
         }
         Relationships: []
       }
