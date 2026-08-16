@@ -40,7 +40,7 @@ import bChronicle from "@/assets/ludus/ludus-map-kit/buildings/chronicle-stele.p
 import bPantry from "@/assets/ludus/ludus-map-kit/buildings/pantry.png";
 import bSocial from "@/assets/ludus/ludus-map-kit/buildings/cursus-honorum.png";
 import bRelics from "@/assets/ludus/ludus-map-kit/buildings/temple-of-relics.png";
-import mapGate from "@/assets/ludus/ludus-map-kit/buildings/gate.png";
+import mapGate from "@/assets/ludus/ludus-map-kit/buildings/gatev2.png";
 
 // Slot coordinates for map-base-v2.png (the current base map), which
 // draws each of the 11 building spots as an explicit round stone
@@ -381,25 +381,30 @@ function VillageView({
         <img src={ludusMapBase} alt="" className="absolute inset-0 h-full w-full select-none object-cover" draggable={false} />
 
         {/* Decorative only — the gate is already part of the base map art;
-            this crisper standalone cutout sits exactly on top of it, at
-            the same size/position, purely for sharper pixels. It must
-            stay matched to the baked-in gate's true size — shrinking it
-            to dodge study/pantry's platforms (a prior attempt) left the
-            overlay smaller than the gate baked into the background,
-            producing a visible "double roof" ghosting artifact where
-            both were visible at once, offset from each other. The
-            baked-in gate and study/pantry's platforms do genuinely sit
-            close together in the source art; z-25 (above the buildings'
-            z-20 baseline, below their z-30 hover state) is what decides
-            which one shows in that sliver, not a substitute for matching
-            size. Still non-interactive (no click handler,
-            pointer-events-none) so it never blocks clicking study/pantry
-            through that overlap. */}
+            this crisper standalone cutout (gatev2.png — a tighter, sharper
+            crop than the original gate.png) sits exactly on top of it,
+            purely for sharper pixels. It must stay matched to the
+            baked-in gate's true size — shrinking it to dodge study/
+            pantry's platforms (a prior attempt) left the overlay smaller
+            than the gate baked into the background, producing a visible
+            "double roof" ghosting artifact where both were visible at
+            once, offset from each other. x/y/width here were back-solved
+            from gate.png's known-correct fit (matched by eye against the
+            baked-in art) by measuring both images' alpha-trimmed content
+            boxes and solving for the transform that lands gatev2's own
+            content on the exact same map-space box gate.png's did — not
+            re-fitted by eye from scratch. The baked-in gate and study/
+            pantry's platforms do genuinely sit close together in the
+            source art; z-25 (above the buildings' z-20 baseline, below
+            their z-30 hover state) is what decides which one shows in
+            that sliver, not a substitute for matching size. Still
+            non-interactive (no click handler, pointer-events-none) so it
+            never blocks clicking study/pantry through that overlap. */}
         <img
           src={mapGate}
           alt=""
           className="pointer-events-none absolute z-[25] select-none"
-          style={{ left: "49.73%", top: "92.68%", width: "29.93%", transform: "translate(-50%, -100%)" }}
+          style={{ left: "50.17%", top: "92.72%", width: "30.89%", transform: "translate(-50%, -100%)" }}
           draggable={false}
         />
 
