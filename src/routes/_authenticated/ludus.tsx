@@ -380,27 +380,26 @@ function VillageView({
       <div className="ornate-border relative mx-auto aspect-square w-full max-w-[63rem] overflow-hidden rounded-xl shadow-[var(--shadow-relief)]">
         <img src={ludusMapBase} alt="" className="absolute inset-0 h-full w-full select-none object-cover" draggable={false} />
 
-        {/* Decorative only — the gate is already part of the base map art,
-            this crisper standalone cutout sits exactly on top of it so
-            study/pantry's neighboring platforms (positioned independently
-            via MAP_SLOTS) have a precise, controllable edge to stay clear
-            of instead of an edge baked immovably into the background.
-            Scaled down from its first pass (was 29.93% wide) — at that
-            size its two flanking towers genuinely overlapped study/
-            pantry's platforms, not just their badges, so neither z-order
-            choice looked right (one clipped the gate's tower, the other
-            clipped their badge). Narrower now, so it clears both with
-            real margin, sits at z-25 — above the buildings' z-20
-            baseline (it reads as "in front" like a real gate should) but
-            below their z-30 hover state, so a hovered building's own art
-            and tooltip still win. Still non-interactive (no click
-            handler, pointer-events-none) so it never blocks clicking
-            study/pantry through the small remaining overlap. */}
+        {/* Decorative only — the gate is already part of the base map art;
+            this crisper standalone cutout sits exactly on top of it, at
+            the same size/position, purely for sharper pixels. It must
+            stay matched to the baked-in gate's true size — shrinking it
+            to dodge study/pantry's platforms (a prior attempt) left the
+            overlay smaller than the gate baked into the background,
+            producing a visible "double roof" ghosting artifact where
+            both were visible at once, offset from each other. The
+            baked-in gate and study/pantry's platforms do genuinely sit
+            close together in the source art; z-25 (above the buildings'
+            z-20 baseline, below their z-30 hover state) is what decides
+            which one shows in that sliver, not a substitute for matching
+            size. Still non-interactive (no click handler,
+            pointer-events-none) so it never blocks clicking study/pantry
+            through that overlap. */}
         <img
           src={mapGate}
           alt=""
           className="pointer-events-none absolute z-[25] select-none"
-          style={{ left: "49.73%", top: "92.4%", width: "19%", transform: "translate(-50%, -100%)" }}
+          style={{ left: "49.73%", top: "92.68%", width: "29.93%", transform: "translate(-50%, -100%)" }}
           draggable={false}
         />
 
