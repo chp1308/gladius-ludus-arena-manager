@@ -951,12 +951,16 @@ const TIER_KEYS = ARENA_TIERS.map(t => t.key) as [string, ...string[]];
 
 // Reflex-fight pacing (pit fights and team battles both use this): 3
 // charges per gladiator, each on its own cooldown. Stamina shortens the
-// cooldown, scaled toward the fixed STAT_BONUS_CAP (100) — halved only at
-// genuinely maxed-out stamina, not just the Training Yard's current cap.
+// cooldown, scaled toward the fixed STAT_BONUS_CAP (100) — cut by
+// STAMINA_COOLDOWN_REDUCTION_MAX only at genuinely maxed-out stamina, not
+// just the Training Yard's current cap. Raising fight frequency this much
+// at max stamina is a deliberate balance call — more fights means more
+// wounds, which raises the value of Valetudinarium investment too.
+const STAMINA_COOLDOWN_REDUCTION_MAX = 0.75; // 24h -> 6h at 100 stamina
 export const PIT_MAX_CHARGES = 3;
 export const PIT_BASE_COOLDOWN_HOURS = 24;
 export function reflexCooldownHours(stamina: number, trainingLevel: number): number {
-  const reduction = 0.5 * Math.min(1, stamina / STAT_BONUS_CAP);
+  const reduction = STAMINA_COOLDOWN_REDUCTION_MAX * Math.min(1, stamina / STAT_BONUS_CAP);
   return PIT_BASE_COOLDOWN_HOURS * (1 - reduction);
 }
 // recentDesc: this gladiator's timestamps for this charge pool, most recent first.

@@ -35,7 +35,7 @@ export const STAT_INFO: StatInfo[] = [
     blurb: "Endurance and grit — how many hard fights a gladiator can shrug off before needing rest.",
     bonuses: [
       { label: "Power", value: "weighted by weapon style — heaviest for Gladius & Shield" },
-      { label: "Pit & Team Battle charges", value: "up to 50% shorter cooldown between fights (scales toward 100 Stamina)" },
+      { label: "Pit & Team Battle charges", value: "up to 75% shorter cooldown between fights (scales toward 100 Stamina)" },
     ],
   },
   {
