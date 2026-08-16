@@ -131,6 +131,18 @@ export function maxCraftableTier(armoryLevel: number): number {
 // shallower +7/level from 6-10 so it lands exactly on 100 at the new max).
 export const statCap = (trainingLevel: number) =>
   trainingLevel <= 5 ? 15 + trainingLevel * 10 : 65 + (trainingLevel - 5) * 7; // lvl1=25, lvl5=65, lvl10=100
+
+// Agility's heal-speed bonus, Technique's injury-risk reduction, and
+// Stamina's pit/team cooldown reduction all scale toward this fixed
+// ceiling — NOT statCap(trainingLevel) — so a gladiator genuinely needs
+// 100 in the stat to earn the full bonus, regardless of the Training
+// Yard's current level. Earlier this scaled toward the current cap
+// instead, which let a lvl-1 Training Yard's cap of 25 award the full
+// bonus for a fraction of the investment; this makes the Training Yard
+// worth upgrading for more than just cheaper/bigger stat gains. Matches
+// how Technique's boss-fight reaction-window bonus already worked (see
+// TECHNIQUE_DEADLINE_CAP below).
+const STAT_BONUS_CAP = 100;
 // Max health scales with strength: +5 HP per point
 export const maxHealth = (strength: number) => 100 + strength * 5;
 // Training cost falls with training facility level — rescaled to span all
@@ -175,9 +187,9 @@ export const healCost = (missingHealth: number, medicusLevel: number, level: num
 // Time-based healing (both passive HP regen and injury-day cooldowns) share
 // this reduction: Valetudinarium levels give a flat table (big jump at max
 // level, matching the achievement-badge tier shape), and Agility adds up to
-// +30% more, scaled relative to the *current* stat cap rather than a flat
-// per-point bonus — a flat rate would blow past 100% reduction if the stat
-// cap is ever raised later (same reasoning as the pit-fight cooldown).
+// +30% more, scaled toward the fixed STAT_BONUS_CAP (100) — reaching the
+// full bonus takes genuinely maxed-out Agility, not just matching whatever
+// the Training Yard's current cap happens to allow.
 const MEDICUS_HEAL_SPEED_PCT: Record<number, number> = { 1: 0.05, 2: 0.10, 3: 0.15, 4: 0.20, 5: 0.50 };
 const AGILITY_HEAL_BONUS_MAX = 0.30;
 // The Valetudinarium's own contribution to heal-speed/injury-duration
@@ -185,8 +197,7 @@ const AGILITY_HEAL_BONUS_MAX = 0.30;
 export const medicusSpeedPct = (medicusLevel: number) => MEDICUS_HEAL_SPEED_PCT[medicusLevel] ?? 0;
 export function healSpeedReduction(agility: number, medicusLevel: number, trainingLevel: number): number {
   const medicusPct = MEDICUS_HEAL_SPEED_PCT[medicusLevel] ?? 0;
-  const cap = statCap(trainingLevel);
-  const agilityPct = cap > 0 ? AGILITY_HEAL_BONUS_MAX * Math.min(1, agility / cap) : 0;
+  const agilityPct = AGILITY_HEAL_BONUS_MAX * Math.min(1, agility / STAT_BONUS_CAP);
   return Math.min(0.9, medicusPct + agilityPct);
 }
 
@@ -232,18 +243,17 @@ export function pitInjuryChance(startHealthPct: number): number {
 }
 
 // Technique cuts injury risk by up to 75% at full development — scaled
-// toward the CURRENT stat cap (not a hardcoded 100) so it keeps working
-// correctly as the Training Yard levels up further. Applied everywhere a
-// gladiator can be injured: multiplies the pit's existing pitInjuryChance,
-// and gates the PvP/team/boss "hit crossed the injury threshold" trigger
-// with its own roll (those fight types had no probability at all before —
-// a qualifying hit always injured — so this is purely additive value from
-// training technique, not a nerf to untrained gladiators).
+// toward the fixed STAT_BONUS_CAP (100), so it takes genuinely maxed-out
+// Technique to earn, not just matching the Training Yard's current cap.
+// Applied everywhere a gladiator can be injured: multiplies the pit's
+// existing pitInjuryChance, and gates the PvP/team/boss "hit crossed the
+// injury threshold" trigger with its own roll (those fight types had no
+// probability at all before — a qualifying hit always injured — so this is
+// purely additive value from training technique, not a nerf to untrained
+// gladiators).
 const TECHNIQUE_INJURY_REDUCTION_MAX = 0.75;
 export function techniqueInjuryReduction(technique: number, trainingLevel: number): number {
-  const cap = statCap(trainingLevel);
-  const pct = cap > 0 ? Math.min(1, technique / cap) : 0;
-  return TECHNIQUE_INJURY_REDUCTION_MAX * pct;
+  return TECHNIQUE_INJURY_REDUCTION_MAX * Math.min(1, technique / STAT_BONUS_CAP);
 }
 
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -941,13 +951,12 @@ const TIER_KEYS = ARENA_TIERS.map(t => t.key) as [string, ...string[]];
 
 // Reflex-fight pacing (pit fights and team battles both use this): 3
 // charges per gladiator, each on its own cooldown. Stamina shortens the
-// cooldown, scaled relative to the CURRENT stat cap (not a fixed number) so
-// it stays correct if the cap ever changes — halved at max stamina.
+// cooldown, scaled toward the fixed STAT_BONUS_CAP (100) — halved only at
+// genuinely maxed-out stamina, not just the Training Yard's current cap.
 export const PIT_MAX_CHARGES = 3;
 export const PIT_BASE_COOLDOWN_HOURS = 24;
 export function reflexCooldownHours(stamina: number, trainingLevel: number): number {
-  const cap = statCap(trainingLevel);
-  const reduction = cap > 0 ? 0.5 * Math.min(1, stamina / cap) : 0;
+  const reduction = 0.5 * Math.min(1, stamina / STAT_BONUS_CAP);
   return PIT_BASE_COOLDOWN_HOURS * (1 - reduction);
 }
 // recentDesc: this gladiator's timestamps for this charge pool, most recent first.
@@ -2073,16 +2082,15 @@ function bossRoundDeadlineMs(boss: BossDefinition, beat: BossBeat, deadlineMult:
 }
 
 // Average party Technique -> reaction-window multiplier, scaled toward the
-// hard stat cap of 100 (not the current Training Yard cap) so the full 2x
-// bonus requires genuinely maxed-out technique, not just matching whatever
-// cap the party's training level happens to allow — 1x at zero technique,
-// up to 2x (TECHNIQUE_DEADLINE_BONUS_MAX) at 100 average technique.
+// same fixed STAT_BONUS_CAP as the other training bonuses above, so the
+// full 2x bonus requires genuinely maxed-out technique — 1x at zero
+// technique, up to 2x (TECHNIQUE_DEADLINE_BONUS_MAX) at 100 average
+// technique.
 const TECHNIQUE_DEADLINE_BONUS_MAX = 1;
-const TECHNIQUE_DEADLINE_CAP = 100;
 function bossDeadlineMult(team: { technique: number }[]): number {
   if (team.length === 0) return 1;
   const avgTechnique = team.reduce((sum, g) => sum + g.technique, 0) / team.length;
-  const pct = Math.min(1, avgTechnique / TECHNIQUE_DEADLINE_CAP);
+  const pct = Math.min(1, avgTechnique / STAT_BONUS_CAP);
   return 1 + TECHNIQUE_DEADLINE_BONUS_MAX * pct;
 }
 
