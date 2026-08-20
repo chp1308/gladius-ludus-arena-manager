@@ -26,7 +26,7 @@ import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem, Zap, Brain, KeyRound, ChevronDown, Compass } from "lucide-react";
+import { Coins, Swords, Sword, Shield, ShieldHalf, Heart, X, Skull, Award, Dumbbell, Search, Cross, Hammer, Cat, HardHat, Footprints, Flame, Home, ScrollText, Users, BookOpen, Lock, Trophy, Wheat, Medal, Landmark, Gem, Zap, Brain, KeyRound, ChevronDown, Compass, History } from "lucide-react";
 import { STAT_INFO, STAT_SCALING_NOTE } from "@/lib/stat-info";
 
 const STAT_INFO_ICONS = { strength: Dumbbell, agility: Zap, stamina: Heart, technique: Brain } as const;
@@ -303,6 +303,7 @@ function LudusPage() {
     { key: "codex", label: "Codex", icon: <BookOpen className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/info" }) },
     { key: "champions", label: "Champions", icon: <Trophy className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/leaderboard" }) },
     { key: "achievements", label: "Achievements", icon: <Medal className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/achievements" }) },
+    { key: "changelog", label: "Changelog", icon: <History className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/changelog" }) },
     ...(discoveredKeys.has("social") ? [{
       key: "cursus", icon: <Landmark className="mr-1 h-4 w-4" />, onClick: () => setOpen("social"),
       label: socialOnCooldown ? `Resting — ${formatMinutes(socialMinutesLeft)}` : "Cursus Honorum",

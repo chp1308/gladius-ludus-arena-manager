@@ -34,7 +34,7 @@ import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
 import { formatMinutes, minutesUntil } from "@/lib/format";
 import { toast } from "sonner";
-import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, ArrowRight, ArrowDown, Users, Shield, Heart, Flame, Zap, Wind } from "lucide-react";
+import { Coins, Swords, Trophy, Skull, Award, Cat, ArrowLeft, ArrowRight, ArrowDown, Users, Shield, Heart, Flame, Zap, Wind, History } from "lucide-react";
 import porphyrionSelectImg from "@/assets/events/event-select.jpg";
 import porphyrionArenaBgImg from "@/assets/events/event-arena-bg.jpg";
 import porphyrionAttackImg from "@/assets/events/event-attack.jpg";
@@ -143,6 +143,7 @@ function ArenaPage() {
 
   const headerActions: HeaderAction[] = [
     { key: "codex", label: "Codex", onClick: () => navigate({ to: "/info" }) },
+    { key: "changelog", label: "Changelog", icon: <History className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/changelog" }) },
   ];
 
   return (

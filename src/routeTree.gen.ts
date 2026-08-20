@@ -18,6 +18,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedLudusRouteImport } from './routes/_authenticated/ludus'
 import { Route as AuthenticatedLeaderboardRouteImport } from './routes/_authenticated/leaderboard'
 import { Route as AuthenticatedInfoRouteImport } from './routes/_authenticated/info'
+import { Route as AuthenticatedChangelogRouteImport } from './routes/_authenticated/changelog'
 import { Route as AuthenticatedArenaRouteImport } from './routes/_authenticated/arena'
 import { Route as AuthenticatedAchievementsRouteImport } from './routes/_authenticated/achievements'
 import { Route as AuthenticatedLudiIdRouteImport } from './routes/_authenticated/ludi.$id'
@@ -67,6 +68,11 @@ const AuthenticatedInfoRoute = AuthenticatedInfoRouteImport.update({
   path: '/info',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedChangelogRoute = AuthenticatedChangelogRouteImport.update({
+  id: '/changelog',
+  path: '/changelog',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedArenaRoute = AuthenticatedArenaRouteImport.update({
   id: '/arena',
   path: '/arena',
@@ -91,6 +97,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/achievements': typeof AuthenticatedAchievementsRoute
   '/arena': typeof AuthenticatedArenaRoute
+  '/changelog': typeof AuthenticatedChangelogRoute
   '/info': typeof AuthenticatedInfoRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/ludus': typeof AuthenticatedLudusRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/achievements': typeof AuthenticatedAchievementsRoute
   '/arena': typeof AuthenticatedArenaRoute
+  '/changelog': typeof AuthenticatedChangelogRoute
   '/info': typeof AuthenticatedInfoRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/ludus': typeof AuthenticatedLudusRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/achievements': typeof AuthenticatedAchievementsRoute
   '/_authenticated/arena': typeof AuthenticatedArenaRoute
+  '/_authenticated/changelog': typeof AuthenticatedChangelogRoute
   '/_authenticated/info': typeof AuthenticatedInfoRoute
   '/_authenticated/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/_authenticated/ludus': typeof AuthenticatedLudusRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/achievements'
     | '/arena'
+    | '/changelog'
     | '/info'
     | '/leaderboard'
     | '/ludus'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/achievements'
     | '/arena'
+    | '/changelog'
     | '/info'
     | '/leaderboard'
     | '/ludus'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/achievements'
     | '/_authenticated/arena'
+    | '/_authenticated/changelog'
     | '/_authenticated/info'
     | '/_authenticated/leaderboard'
     | '/_authenticated/ludus'
@@ -241,6 +253,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInfoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/changelog': {
+      id: '/_authenticated/changelog'
+      path: '/changelog'
+      fullPath: '/changelog'
+      preLoaderRoute: typeof AuthenticatedChangelogRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/arena': {
       id: '/_authenticated/arena'
       path: '/arena'
@@ -268,6 +287,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAchievementsRoute: typeof AuthenticatedAchievementsRoute
   AuthenticatedArenaRoute: typeof AuthenticatedArenaRoute
+  AuthenticatedChangelogRoute: typeof AuthenticatedChangelogRoute
   AuthenticatedInfoRoute: typeof AuthenticatedInfoRoute
   AuthenticatedLeaderboardRoute: typeof AuthenticatedLeaderboardRoute
   AuthenticatedLudusRoute: typeof AuthenticatedLudusRoute
@@ -278,6 +298,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAchievementsRoute: AuthenticatedAchievementsRoute,
   AuthenticatedArenaRoute: AuthenticatedArenaRoute,
+  AuthenticatedChangelogRoute: AuthenticatedChangelogRoute,
   AuthenticatedInfoRoute: AuthenticatedInfoRoute,
   AuthenticatedLeaderboardRoute: AuthenticatedLeaderboardRoute,
   AuthenticatedLudusRoute: AuthenticatedLudusRoute,
