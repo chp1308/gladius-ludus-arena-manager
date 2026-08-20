@@ -36,8 +36,9 @@ export type BossPhase = {
   // Damage to the boss on a correctly-timed strike = teamPower * this.
   vulnerableDamageScale: number;
   // On a "defensive" beat (the boar's regular attack) every gladiator must
-  // individually choose block (shield-bearers, weapon_type "gladius") or
-  // dodge (everyone else). A single wrong or missing answer costs the WHOLE
+  // individually choose block (shield-bearers — Gladius & Shield, Spear &
+  // Shield, see hasShield in game.functions.ts) or dodge (everyone else).
+  // A single wrong or missing answer costs the WHOLE
   // party — this isn't graduated, one gap in the line is enough for the
   // boar through. Damage to the party's pooled HP on any failure =
   // teamMaxHp * this.
@@ -126,9 +127,9 @@ export type BossDefinition = {
   lootTable: LootItem[];
   roundDeadlineMs: number;
   maxRoundsPerPhase: number;
-  // Shieldwall: if every gladiator sent carries a shield (weapon_type
-  // "gladius") and all of them block correctly on a defensive/snake-bite
-  // beat, the party doesn't just take zero damage — they counter with a
+  // Shieldwall: if every gladiator sent carries a shield (Gladius & Shield
+  // or Spear & Shield — see hasShield) and all of them block correctly on
+  // a defensive/snake-bite beat, the party doesn't just take zero damage — they counter with a
   // critical strike on the boss instead, at vulnerableDamageScale * this.
   shieldwallCritMult: number;
   image: string;

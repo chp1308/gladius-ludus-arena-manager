@@ -36,11 +36,11 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-const WEAPON_STYLES: { label: string; str: number; agi: number; sta: number; tec: number; favors: string }[] = [
-  { label: "Gladius & Shield", str: 4, agi: 2, sta: 4, tec: 2, favors: "Strength & Stamina" },
-  { label: "Spear", str: 2, agi: 3, sta: 3, tec: 4, favors: "Technique" },
-  { label: "Net & Trident", str: 2, agi: 4, sta: 2, tec: 4, favors: "Agility & Technique" },
-  { label: "Dual Blades", str: 3, agi: 5, sta: 2, tec: 2, favors: "Agility" },
+const WEAPON_STYLES: { label: string; classes: string[]; shield: boolean; str: number; agi: number; sta: number; tec: number; favors: string }[] = [
+  { label: "Gladius & Shield", classes: ["Murmillo", "Secutor", "Thraex"], shield: true, str: 4, agi: 2, sta: 4, tec: 2, favors: "Strength & Stamina" },
+  { label: "Spear & Shield", classes: ["Hoplomachus"], shield: true, str: 2, agi: 3, sta: 3, tec: 4, favors: "Technique" },
+  { label: "Net & Trident", classes: ["Retiarius"], shield: false, str: 2, agi: 4, sta: 2, tec: 4, favors: "Agility & Technique" },
+  { label: "Dual Blades", classes: ["Dimachaerus"], shield: false, str: 3, agi: 5, sta: 2, tec: 2, favors: "Agility" },
 ];
 
 function InfoPage() {
@@ -107,19 +107,27 @@ function InfoPage() {
             <Row label="Cuirass (body)" value="mitigation ×1.5" />
             <Row label="Helmet" value="mitigation ×1.0" />
             <Row label="Greaves (legs)" value="mitigation ×1.0" />
-            <Row label="Off-hand / Shield" value="mitigation ×0.8" />
-            <p>Each piece also feeds Power directly: Cuirass +9, Helmet +4, Greaves +4, Off-hand +5 per tier. The <span className="text-foreground">Defensive Doctrine</span> skill (Study of Arms) further hardens mitigation by +15% per rank.</p>
+            <Row label="Off-hand — shield styles" value="mitigation ×0.8" />
+            <Row label="Off-hand — Net & Trident / Dual Blades" value="damage bonus instead (no shield to mitigate with)" />
+            <p>Each piece also feeds Power directly: Cuirass +9, Helmet +4, Greaves +4, Off-hand +5 per tier, regardless of style. The <span className="text-foreground">Defensive Doctrine</span> skill (Study of Arms) further hardens overall mitigation by +15% per rank.</p>
           </Section>
 
-          <Section title="Weapon Styles" icon={<Scale className="h-5 w-5" />}>
+          <Section title="Gladiator Types & Weapon Styles" icon={<Scale className="h-5 w-5" />}>
             <p>
-              Your gladiator's <span className="text-foreground">weapon style</span> (not their class name — class is flavor only) decides how much each stat point is worth in Power.
+              A recruit's <span className="text-foreground">class</span> is their historical gladiator type — flavor text, but always matched to how they actually fight. Their <span className="text-foreground">weapon style</span> is what decides how much each stat point is worth in Power, and whether their off-hand slot carries a shield or a second weapon.
             </p>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {WEAPON_STYLES.map((w) => (
-                <div key={w.label} className="flex items-center justify-between border-b border-border/40 py-1.5 text-xs">
-                  <span className="text-foreground">{w.label}</span>
-                  <span className="italic">STR×{w.str} AGI×{w.agi} STA×{w.sta} TEC×{w.tec} — favors {w.favors}</span>
+                <div key={w.label} className="border-b border-border/40 py-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-foreground">{w.label} <span className="text-muted-foreground">— {w.classes.join(", ")}</span></span>
+                    <span className="italic">STR×{w.str} AGI×{w.agi} STA×{w.sta} TEC×{w.tec} — favors {w.favors}</span>
+                  </div>
+                  <p className="mt-0.5 text-muted-foreground">
+                    {w.shield
+                      ? "Carries a shield — off-hand slot mitigates damage, and must block (not dodge) a boss's charge."
+                      : "No shield — off-hand slot adds damage instead, and must dodge (not block) a boss's charge."}
+                  </p>
                 </div>
               ))}
             </div>

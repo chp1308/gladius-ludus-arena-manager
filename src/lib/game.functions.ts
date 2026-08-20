@@ -45,7 +45,19 @@ async function spendDenarii(
 }
 
 const ORIGINS = ["Thrace", "Gaul", "Nubia", "Britannia", "Germania", "Hispania", "Syria", "Numidia"];
-const CLASSES = ["Murmillo", "Retiarius", "Thraex", "Secutor", "Hoplomachus", "Dimachaerus"];
+// Class is a recruit's historical gladiator type — flavor text, but no
+// longer independent of weapon_type (which drives actual combat). Each
+// class is grouped under the weapon style it historically fought with, so
+// a Murmillo/Secutor/Thraex always carries a Gladius & Shield, a
+// Hoplomachus always a Spear (with its own small shield), a Retiarius
+// always a Net & Trident, and a Dimachaerus always Dual Blades — see
+// CLASSES_BY_WEAPON below and its use in generateGladiator.
+const CLASSES_BY_WEAPON: Record<(typeof WEAPON_TYPES)[number], string[]> = {
+  gladius: ["Murmillo", "Secutor", "Thraex"],
+  spear: ["Hoplomachus"],
+  net: ["Retiarius"],
+  dual: ["Dimachaerus"],
+};
 // Both lists deliberately mix standard Roman praenomina with historical/
 // thematic gladiator names — matches the flavor already established by
 // Crixus, Spartacus, Flamma, and Tetraites below. No trailing "" entry in
@@ -71,7 +83,7 @@ type WeaponType = typeof WEAPON_TYPES[number] | "beast_lion" | "beast_tiger" | "
 
 export const WEAPON_LABELS: Record<string, string> = {
   gladius: "Gladius & Shield",
-  spear: "Spear",
+  spear: "Spear & Shield",
   net: "Net & Trident",
   dual: "Dual Blades",
   beast_lion: "Lion",
@@ -79,6 +91,19 @@ export const WEAPON_LABELS: Record<string, string> = {
   beast_elephant: "War Elephant",
   beast_rhino: "Armored Rhino",
 };
+
+// Which weapon styles actually carry a shield — decides both the boss
+// fight's block/dodge requirement (only a shield-bearer can block a
+// charge) and whether the off-hand slot mitigates damage (a shield) or
+// instead adds damage (Net & Trident's net-hand, Dual Blades' second
+// sword — see the off-hand split in armorMitigation/weaponDamageRange
+// below). A missing weapon_type (anonymous pit/arena opponents, which
+// have no real class) is treated as shielded, matching how mitigation
+// always applied unconditionally before this split existed.
+const SHIELD_WEAPON_TYPES = new Set<string>(["gladius", "spear"]);
+function hasShield(weaponType?: string | null): boolean {
+  return weaponType == null || SHIELD_WEAPON_TYPES.has(weaponType);
+}
 
 
 // Facility caps and effects
@@ -285,11 +310,16 @@ function generateGladiator(scoutingLevel: number) {
 
   const bonus = Math.floor((scoutingLevel - 1) * 0.8);
   const name = `${pick(PRAENOMEN)}${Math.random() < 0.5 ? " " + pick(COGNOMEN) : ""}`.trim();
+  // Weapon style still rolls uniformly across all 4 (preserving the
+  // existing weapon-type/gear balance) — class is then picked to match,
+  // so the flavor name always lines up with how the gladiator actually
+  // fights instead of being independently randomized.
+  const weaponType = pick(WEAPON_TYPES as unknown as string[]) as (typeof WEAPON_TYPES)[number];
   return {
     name,
     origin: pick(ORIGINS),
-    class: pick(CLASSES),
-    weapon_type: pick(WEAPON_TYPES as unknown as string[]),
+    class: pick(CLASSES_BY_WEAPON[weaponType]),
+    weapon_type: weaponType,
     is_beast: false,
     strength: rand(4, 9) + bonus,
     agility: rand(4, 9) + bonus,
@@ -386,22 +416,39 @@ export function winChance(powerA: number, powerB: number): number {
 
 // Weapon tier increases hit range. Tier 1: 15–30, Tier 20: 36–65 (same
 // ceiling the old tier-8 cap reached — see GEAR_SLOPE_RESCALE above).
-export function weaponDamageRange(weaponTier: number) {
+// weaponType/offhandTier are optional and only matter for Net & Trident
+// and Dual Blades: since neither carries a shield, their off-hand slot
+// adds damage here instead of mitigation (see armorMitigation below) —
+// same 0.8 weight and gear-tier rescale the shield's mitigation term
+// uses, just redirected into offense. Shield-bearers (Gladius, Spear) and
+// anonymous opponents (no weaponType on record) get no bonus here; their
+// off-hand slot mitigates instead.
+const OFFHAND_DAMAGE_WEIGHT = 0.8;
+export function weaponDamageRange(weaponTier: number, weaponType?: string | null, offhandTier?: number | null) {
   const t = Math.max(1, weaponTier || 1);
-  return {
-    min: Math.round(15 + (t - 1) * 3 * GEAR_SLOPE_RESCALE),
-    max: Math.round(30 + (t - 1) * 5 * GEAR_SLOPE_RESCALE),
-  };
+  let min = 15 + (t - 1) * 3 * GEAR_SLOPE_RESCALE;
+  let max = 30 + (t - 1) * 5 * GEAR_SLOPE_RESCALE;
+  if (!hasShield(weaponType)) {
+    const bonus = GEAR_WEIGHT_RESCALE * (offhandTier ?? 1) * OFFHAND_DAMAGE_WEIGHT;
+    min += bonus;
+    max += bonus;
+  }
+  return { min: Math.round(min), max: Math.round(max) };
 }
 
-// Armor tiers reduce incoming damage. Averages helmet/cuirass/greaves/offhand.
+// Armor tiers reduce incoming damage. Averages helmet/cuirass/greaves, plus
+// off-hand ONLY for shield-bearing weapon styles (Gladius & Shield, Spear &
+// Shield) — Net & Trident and Dual Blades don't carry a shield, so their
+// off-hand slot buffs damage instead (see weaponDamageRange above). A
+// missing weapon_type (anonymous opponents) is treated as shielded.
 export function armorMitigation(g: {
   armor_tier?: number | null; helmet_tier?: number | null;
   legs_tier?: number | null; offhand_tier?: number | null;
+  weapon_type?: string | null;
 }, defenseLevel: number = 0) {
   const a = g.armor_tier ?? 1, h = g.helmet_tier ?? 1;
-  const l = g.legs_tier ?? 1, o = g.offhand_tier ?? 1;
-  // Cuirass weighted highest; offhand (shield) contributes if worn.
+  const l = g.legs_tier ?? 1;
+  const o = hasShield(g.weapon_type) ? (g.offhand_tier ?? 1) : 0;
   const score = GEAR_WEIGHT_RESCALE * (a * 1.5 + h * 1.0 + l * 1.0 + o * 0.8);
   // Defensive Doctrine: each rank hardens armor effectiveness.
   const defenseMod = 1 + defenseLevel * 0.15;
@@ -411,12 +458,12 @@ export function armorMitigation(g: {
 // Compute an actual damage roll from attacker weapon tier and defender armor.
 // Attacker level adds a small experience bonus to hit damage.
 function rollDamage(
-  attackerWeaponTier: number,
-  defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null },
+  attacker: { weapon_tier: number; weapon_type?: string | null; offhand_tier?: number | null },
+  defender: { armor_tier?: number | null; helmet_tier?: number | null; legs_tier?: number | null; offhand_tier?: number | null; weapon_type?: string | null },
   defenseLevel: number = 0,
   attackerLevel: number = 1,
 ) {
-  const dmg = weaponDamageRange(attackerWeaponTier);
+  const dmg = weaponDamageRange(attacker.weapon_tier, attacker.weapon_type, attacker.offhand_tier);
   const mit = armorMitigation(defender, defenseLevel);
   const lvlBonus = Math.max(0, attackerLevel - 1); // +1 damage per level above 1
   const min = Math.max(3, dmg.min + lvlBonus - mit.max);
@@ -1047,7 +1094,7 @@ export const fightMatch = createServerFn({ method: "POST" })
       weapon_tier: oppGearTier, armor_tier: oppGearTier,
       helmet_tier: oppGearTier, legs_tier: oppGearTier, offhand_tier: oppGearTier,
     };
-    const myDmg = weaponDamageRange(g.weapon_tier);
+    const myDmg = weaponDamageRange(g.weapon_tier, g.weapon_type, g.offhand_tier);
     const myMit = armorMitigation(g, defenseLevel);
     // The fight completed during the "cursus_or_fight" tutorial step is a
     // guaranteed win — first impressions matter. Bias the round-by-round
@@ -1070,7 +1117,7 @@ export const fightMatch = createServerFn({ method: "POST" })
     const fightRounds: FightRound[] = [];
     for (let i = 1; i <= rounds && myHp > 0 && oppHp > 0; i++) {
       if (Math.random() < myChance) {
-        const dmg = rollDamage(g.weapon_tier, opponent, 0, g.level);
+        const dmg = rollDamage(g, opponent, 0, g.level);
         oppHp -= dmg;
         const text = `Round ${i}: ${g.name} lands a blow for ${dmg}.`;
         log.push(text);
@@ -1078,7 +1125,7 @@ export const fightMatch = createServerFn({ method: "POST" })
         // so the animation never looks like a kill.
         fightRounds.push({ attacker: "me", damage: dmg, myHp: Math.max(1, myHp), oppHp: Math.max(1, oppHp), text });
       } else {
-        const dmg = rollDamage(oppGearTier, g, defenseLevel, tier.reqLevel);
+        const dmg = rollDamage({ weapon_tier: oppGearTier }, g, defenseLevel, tier.reqLevel);
         myHp -= dmg;
         const text = `Round ${i}: ${opponentName} strikes ${g.name} for ${dmg}.`;
         log.push(text);
@@ -1463,8 +1510,8 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     log.push(`${g.name} answers the call of ${opp.name}'s ludus.`);
     if (toDeath) log.push("⚔ Sine missione — a fight to the death. No quarter, no mercy.");
     log.push(`Power ${myPower} vs ${oppPower}.`);
-    const myDmg = weaponDamageRange(g.weapon_tier);
-    const oppDmg = weaponDamageRange(opp.weapon_tier);
+    const myDmg = weaponDamageRange(g.weapon_tier, g.weapon_type, g.offhand_tier);
+    const oppDmg = weaponDamageRange(opp.weapon_tier, opp.weapon_type, opp.offhand_tier);
     const myChance = winChance(myPower, oppPower);
     log.push(`${g.name}: ${myDmg.min}–${myDmg.max} dmg · ${opp.name}: ${oppDmg.min}–${oppDmg.max} dmg. Win chance: ${Math.round(myChance * 100)}%.`);
     if (myDefenseLevel > 0) log.push(`${g.name} adopts defensive stance — rank ${myDefenseLevel}.`);
@@ -1477,7 +1524,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
     // Same reasoning as fightMatch — cap must outlast the real HP pools.
     for (let i = 1; i <= 20 && myHp > 0 && oHp > 0; i++) {
       if (Math.random() < myChance) {
-        const d = rollDamage(g.weapon_tier, opp, oppDefenseLevel, g.level);
+        const d = rollDamage(g, opp, oppDefenseLevel, g.level);
         oHp -= d;
         const text = `Round ${i}: ${g.name} strikes for ${d}.`;
         log.push(text);
@@ -1486,7 +1533,7 @@ export const acceptPvpChallenge = createServerFn({ method: "POST" })
         // that isn't going to happen.
         fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(toDeath ? 0 : 1, myHp), oppHp: Math.max(toDeath ? 0 : 1, oHp), text });
       } else {
-        const d = rollDamage(opp.weapon_tier, g, myDefenseLevel, opp.level);
+        const d = rollDamage(opp, g, myDefenseLevel, opp.level);
         myHp -= d;
         const text = `Round ${i}: ${opp.name} strikes for ${d}.`;
         log.push(text);
@@ -2182,11 +2229,12 @@ export const startBossFight = createServerFn({ method: "POST" })
       beatType = phase1.netBonus && hasNet ? "net_bonus" : bossBeatForRound(1);
     }
 
-    // Shield-bearers (weapon_type "gladius") must block a charge, everyone
-    // else must dodge — frozen at fight start so a mid-fight gear change
-    // can't retroactively flip who owes which reflex. Armor reduction for
-    // the boss's passive per-second mauling is frozen the same way.
-    const shieldMap: Record<string, boolean> = Object.fromEntries(team.map(g => [g.id, g.weapon_type === "gladius"]));
+    // Shield-bearers (Gladius & Shield, Spear & Shield — see hasShield)
+    // must block a charge, everyone else must dodge — frozen at fight start
+    // so a mid-fight gear change can't retroactively flip who owes which
+    // reflex. Armor reduction for the boss's passive per-second mauling is
+    // frozen the same way.
+    const shieldMap: Record<string, boolean> = Object.fromEntries(team.map(g => [g.id, hasShield(g.weapon_type)]));
     const defenseLevel = skillMap.get("defense") ?? 0;
     const armorReduction = team.length
       ? Math.round(team.reduce((sum, g) => sum + armorMitigation(g, defenseLevel).min, 0) / team.length)
