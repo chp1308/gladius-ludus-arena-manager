@@ -191,3 +191,134 @@ export const getAdminStats = createServerFn({ method: "GET" })
       sampledAt: new Date().toISOString(),
     };
   });
+
+// ---------- LUDUS LOOKUP ----------
+export type AdminLudusSearchResult = {
+  id: string;
+  ludus_name: string;
+  denarii: number;
+  reputation: number;
+  is_bot: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+// Case-insensitive substring match on ludus_name — good enough for an admin
+// typing a partial/misremembered name, no need for full-text search infra
+// at this scale. Capped at 20 results; narrowing the query is the UI, not
+// pagination.
+export const adminSearchLudi = createServerFn({ method: "GET" })
+  .middleware([requireAdminAuth])
+  .inputValidator((input) => z.object({ query: z.string().trim().min(1) }).parse(input))
+  .handler(async ({ data }): Promise<{ results: AdminLudusSearchResult[] }> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows, error } = await supabaseAdmin
+      .from("profiles")
+      .select("id,ludus_name,denarii,reputation,is_bot,created_at,updated_at")
+      .ilike("ludus_name", `%${data.query}%`)
+      .order("updated_at", { ascending: false })
+      .limit(20);
+    if (error) throw new Error(error.message);
+    return { results: rows ?? [] };
+  });
+
+export type AdminLudusDetail = {
+  profile: {
+    id: string;
+    ludus_name: string;
+    denarii: number;
+    reputation: number;
+    is_bot: boolean;
+    created_at: string;
+    updated_at: string;
+    training_level: number;
+    scouting_level: number;
+    medicus_level: number;
+    armory_level: number;
+    pantry_level: number;
+    social_level: number;
+    relics_level: number;
+    hades_keys: number;
+  };
+  gladiators: {
+    id: string;
+    name: string;
+    class: string;
+    weapon_type: string;
+    is_beast: boolean;
+    level: number;
+    status: string;
+    wins: number;
+    losses: number;
+    strength: number;
+    agility: number;
+    stamina: number;
+    technique: number;
+    weapon_tier: number;
+    armor_tier: number;
+  }[];
+  recentMatches: {
+    id: string;
+    created_at: string;
+    difficulty: string;
+    opponent_name: string;
+    result: string;
+    denarii_gained: number;
+    xp_gained: number;
+    gladiator_id: string;
+  }[];
+  totals: {
+    matchCount: number;
+    winCount: number;
+    totalGoldEarned: number;
+    totalXpEarned: number;
+  };
+};
+
+// Everything shown for one ludus on the admin lookup's detail panel — one
+// round trip covering the profile, its full roster, and a recent-activity
+// window (last 50 matches). Matches beyond that window still count toward
+// nothing here — this is a spot-check tool, not a full audit log.
+export const getAdminLudusDetail = createServerFn({ method: "GET" })
+  .middleware([requireAdminAuth])
+  .inputValidator((input) => z.object({ ludusId: z.string().uuid() }).parse(input))
+  .handler(async ({ data }): Promise<AdminLudusDetail> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [profileRes, gladiatorsRes, matchesRes] = await Promise.all([
+      supabaseAdmin
+        .from("profiles")
+        .select("id,ludus_name,denarii,reputation,is_bot,created_at,updated_at,training_level,scouting_level,medicus_level,armory_level,pantry_level,social_level,relics_level,hades_keys")
+        .eq("id", data.ludusId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("gladiators")
+        .select("id,name,class,weapon_type,is_beast,level,status,wins,losses,strength,agility,stamina,technique,weapon_tier,armor_tier")
+        .eq("owner_id", data.ludusId)
+        .order("created_at", { ascending: true }),
+      supabaseAdmin
+        .from("matches")
+        .select("id,created_at,difficulty,opponent_name,result,denarii_gained,xp_gained,gladiator_id")
+        .eq("owner_id", data.ludusId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
+    if (profileRes.error) throw new Error(profileRes.error.message);
+    if (!profileRes.data) throw new Error("Ludus not found");
+    if (gladiatorsRes.error) throw new Error(gladiatorsRes.error.message);
+    if (matchesRes.error) throw new Error(matchesRes.error.message);
+
+    const recentMatches = matchesRes.data ?? [];
+    const totals = {
+      matchCount: recentMatches.length,
+      winCount: recentMatches.filter(m => m.result === "win").length,
+      totalGoldEarned: recentMatches.reduce((sum, m) => sum + (m.denarii_gained ?? 0), 0),
+      totalXpEarned: recentMatches.reduce((sum, m) => sum + (m.xp_gained ?? 0), 0),
+    };
+
+    return {
+      profile: profileRes.data,
+      gladiators: gladiatorsRes.data ?? [],
+      recentMatches,
+      totals,
+    };
+  });

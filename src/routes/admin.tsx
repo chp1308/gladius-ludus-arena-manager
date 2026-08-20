@@ -4,12 +4,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { adminLogin, adminLogout, adminSessionStatus, getAdminStats } from "@/lib/admin.functions";
+import { adminLogin, adminLogout, adminSessionStatus, getAdminStats, adminSearchLudi, getAdminLudusDetail } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck, Search, X } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Admin — Gladius Ludus" }] }),
@@ -91,6 +92,195 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint: 
   );
 }
 
+// Formats a raw stat_level-style key ("training_level") into a display
+// label ("Training") — every facility level on the profile follows this
+// same "<key>_level" naming, so one formatter covers all of them.
+function facilityLabel(key: string): string {
+  return key.replace(/_level$/, "").replace(/^\w/, c => c.toUpperCase());
+}
+
+const PROFILE_FACILITY_KEYS = [
+  "training_level", "scouting_level", "medicus_level",
+  "armory_level", "pantry_level", "social_level", "relics_level",
+] as const;
+
+function LudusDetail({ ludusId, onClose }: { ludusId: string; onClose: () => void }) {
+  const fetchDetail = useServerFn(getAdminLudusDetail);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["admin-ludus-detail", ludusId],
+    queryFn: () => fetchDetail({ data: { ludusId } }),
+  });
+
+  return (
+    <Card className="border-accent/40">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle className="font-display text-lg">
+          {data ? data.profile.ludus_name : "Ludus"}
+          {data?.profile.is_bot && <Badge variant="secondary" className="ml-2 align-middle">Bot</Badge>}
+        </CardTitle>
+        <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {isLoading && <p className="font-serif italic text-muted-foreground">Consulting the ledgers…</p>}
+        {error && <p className="text-destructive">{(error as Error).message}</p>}
+        {data && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <StatCard label="Denarii" value={data.profile.denarii.toLocaleString()} hint="Current purse" />
+              <StatCard label="Reputation" value={data.profile.reputation.toLocaleString()} hint="Fame" />
+              <StatCard label="Joined" value={new Date(data.profile.created_at).toLocaleDateString()} hint={new Date(data.profile.created_at).toLocaleTimeString()} />
+              <StatCard label="Last active" value={new Date(data.profile.updated_at).toLocaleDateString()} hint={new Date(data.profile.updated_at).toLocaleTimeString()} />
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-medium text-foreground">Facility levels</div>
+              <div className="flex flex-wrap gap-2">
+                {PROFILE_FACILITY_KEYS.map((key) => (
+                  <Badge key={key} variant="outline">{facilityLabel(key)}: {data.profile[key]}</Badge>
+                ))}
+                <Badge variant="outline">Keys to the Underworld: {data.profile.hades_keys}</Badge>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              <StatCard label="Matches (last 50)" value={data.totals.matchCount.toLocaleString()} hint="Fetched window, not lifetime" />
+              <StatCard
+                label="Win rate"
+                value={data.totals.matchCount > 0 ? `${Math.round((data.totals.winCount / data.totals.matchCount) * 100)}%` : "—"}
+                hint={`${data.totals.winCount} of ${data.totals.matchCount}`}
+              />
+              <StatCard label="Gold earned" value={data.totals.totalGoldEarned.toLocaleString()} hint="Sum, last 50 matches" />
+              <StatCard label="XP earned" value={data.totals.totalXpEarned.toLocaleString()} hint="Sum, last 50 matches" />
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-medium text-foreground">Roster ({data.gladiators.length})</div>
+              {data.gladiators.length === 0 ? (
+                <p className="font-serif italic text-muted-foreground">No gladiators.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Name</th>
+                        <th className="px-3 py-2 text-left">Class</th>
+                        <th className="px-3 py-2 text-left">Style</th>
+                        <th className="px-3 py-2 text-right">Lvl</th>
+                        <th className="px-3 py-2 text-right">W/L</th>
+                        <th className="px-3 py-2 text-right">STR/AGI/STA/TEC</th>
+                        <th className="px-3 py-2 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.gladiators.map((g) => (
+                        <tr key={g.id} className="border-t border-border/60">
+                          <td className="px-3 py-2">{g.name}{g.is_beast && <Badge variant="secondary" className="ml-1.5">Beast</Badge>}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{g.class}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{g.weapon_type}</td>
+                          <td className="px-3 py-2 text-right">{g.level}</td>
+                          <td className="px-3 py-2 text-right">{g.wins}/{g.losses}</td>
+                          <td className="px-3 py-2 text-right text-muted-foreground">{g.strength}/{g.agility}/{g.stamina}/{g.technique}</td>
+                          <td className="px-3 py-2">
+                            {g.status === "dead" ? <Badge variant="destructive">Dead</Badge> : <span className="text-muted-foreground">{g.status}</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-medium text-foreground">Recent matches</div>
+              {data.recentMatches.length === 0 ? (
+                <p className="font-serif italic text-muted-foreground">No matches yet.</p>
+              ) : (
+                <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border p-2 text-xs">
+                  {data.recentMatches.map((m) => (
+                    <div key={m.id} className="flex items-center justify-between border-b border-border/40 py-1 last:border-0">
+                      <span className="text-muted-foreground">{new Date(m.created_at).toLocaleString()}</span>
+                      <span>{m.difficulty} vs {m.opponent_name}</span>
+                      <span className={m.result === "win" ? "text-accent" : "text-destructive"}>{m.result}</span>
+                      <span className="text-muted-foreground">+{m.denarii_gained}d · +{m.xp_gained}xp</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LudusLookup() {
+  const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const search = useServerFn(adminSearchLudi);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["admin-ludus-search", submittedQuery],
+    queryFn: () => search({ data: { query: submittedQuery } }),
+    enabled: submittedQuery.length > 0,
+  });
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSelectedId(null);
+    setSubmittedQuery(query.trim());
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-display text-lg">Ludus Lookup</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={submit} className="flex gap-2">
+            <Input
+              placeholder="Search by ludus name…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <Button type="submit" disabled={!query.trim()}>
+              <Search className="mr-2 h-4 w-4" /> Search
+            </Button>
+          </form>
+
+          {isLoading && <p className="font-serif italic text-muted-foreground">Searching…</p>}
+          {error && <p className="text-destructive">{(error as Error).message}</p>}
+          {data && (
+            data.results.length === 0 ? (
+              <p className="font-serif italic text-muted-foreground">No ludus matches "{submittedQuery}".</p>
+            ) : (
+              <div className="divide-y divide-border/60 rounded-md border border-border">
+                {data.results.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedId(r.id)}
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40 ${selectedId === r.id ? "bg-muted/60" : ""}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      {r.ludus_name}
+                      {r.is_bot && <Badge variant="secondary">Bot</Badge>}
+                    </span>
+                    <span className="text-muted-foreground">{r.denarii.toLocaleString()}d · {r.reputation.toLocaleString()} fame</span>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedId && <LudusDetail ludusId={selectedId} onClose={() => setSelectedId(null)} />}
+    </div>
+  );
+}
+
 function AdminDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
   const fetchStats = useServerFn(getAdminStats);
   const logout = useServerFn(adminLogout);
@@ -120,6 +310,8 @@ function AdminDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
       </header>
 
       <main className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+        <LudusLookup />
+
         {isLoading && <p className="font-serif italic text-muted-foreground">Consulting the ledgers…</p>}
         {error && <p className="text-destructive">{(error as Error).message}</p>}
 
