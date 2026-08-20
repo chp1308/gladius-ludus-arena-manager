@@ -132,6 +132,12 @@ function LudusDetail({ ludusId, onClose }: { ludusId: string; onClose: () => voi
               <StatCard label="Last active" value={new Date(data.profile.updated_at).toLocaleDateString()} hint={new Date(data.profile.updated_at).toLocaleTimeString()} />
             </div>
 
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={data.activeToday ? "default" : "outline"}>{data.activeToday ? "Active today" : "Not active today"}</Badge>
+              <Badge variant={data.activeThisWeek ? "default" : "outline"}>{data.activeThisWeek ? "Active this week" : "Not active this week"}</Badge>
+              <Badge variant={data.activeThisMonth ? "default" : "outline"}>{data.activeThisMonth ? "Active this month" : "Not active this month"}</Badge>
+            </div>
+
             <div>
               <div className="mb-2 text-sm font-medium text-foreground">Facility levels</div>
               <div className="flex flex-wrap gap-2">
@@ -140,6 +146,42 @@ function LudusDetail({ ludusId, onClose }: { ludusId: string; onClose: () => voi
                 ))}
                 <Badge variant="outline">Keys to the Underworld: {data.profile.hades_keys}</Badge>
               </div>
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-medium text-foreground">Activity — last {data.activity.windowDays} days</div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <StatCard
+                  label="Avg. gold / active day"
+                  value={Math.round(data.activity.avgGoldPerActiveDay).toLocaleString()}
+                  hint="Same methodology as the dashboard-wide average"
+                />
+                <StatCard
+                  label="Avg. XP / active gladiator / day"
+                  value={Math.round(data.activity.avgXpPerActiveGladiatorPerDay).toLocaleString()}
+                  hint="Same methodology as the dashboard-wide average"
+                />
+                <StatCard
+                  label="Avg. Cursus Honorum / active day"
+                  value={data.activity.avgCursusHonorumTriggersPerActiveDay.toFixed(2)}
+                  hint="Triggers per day this ludus used it"
+                />
+              </div>
+              {data.activity.goldByChannel.length > 0 && (
+                <div className="mt-3 space-y-2 rounded-md border border-border p-3">
+                  {data.activity.goldByChannel.map((c) => (
+                    <div key={c.channel}>
+                      <div className="mb-1 flex items-center justify-between text-xs">
+                        <span>{c.channel}</span>
+                        <span className="text-muted-foreground">{Math.round(c.total).toLocaleString()}d · {c.pct.toFixed(1)}%</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${c.pct}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-4">

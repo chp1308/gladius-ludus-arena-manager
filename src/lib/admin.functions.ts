@@ -273,18 +273,82 @@ export type AdminLudusDetail = {
     totalGoldEarned: number;
     totalXpEarned: number;
   };
+  // Same shape and same 30-day-window methodology as getAdminStats'
+  // site-wide numbers above (avgGoldPerActivePlayerPerDay etc.) — just
+  // scoped to this one ludus, so it reads directly against the dashboard's
+  // averages instead of needing its own units.
+  activity: {
+    windowDays: number;
+    avgGoldPerActiveDay: number;
+    avgXpPerActiveGladiatorPerDay: number;
+    avgCursusHonorumTriggersPerActiveDay: number;
+    goldByChannel: { channel: string; total: number; pct: number }[];
+  };
+  activeToday: boolean;
+  activeThisWeek: boolean;
+  activeThisMonth: boolean;
 };
 
+// Same math as getAdminStats' site-wide gold/XP/Cursus averages, minus the
+// owner_id grouping — everything here is already scoped to one owner, so
+// the "player-day"/"gladiator-day" sets collapse to plain day sets.
+function computeLudusActivity(
+  matches: { gladiator_id: string; created_at: string; denarii_gained: number | null; xp_gained: number | null; difficulty: string }[],
+  socialEvents: { created_at: string; denarii_delta: number }[],
+) {
+  let totalGold = 0;
+  const goldDays = new Set<string>();
+  for (const m of matches) {
+    totalGold += m.denarii_gained ?? 0;
+    goldDays.add(dayKey(m.created_at));
+  }
+  for (const s of socialEvents) {
+    if (s.denarii_delta > 0) {
+      totalGold += s.denarii_delta;
+      goldDays.add(dayKey(s.created_at));
+    }
+  }
+  const avgGoldPerActiveDay = goldDays.size > 0 ? totalGold / goldDays.size : 0;
+
+  let totalXp = 0;
+  const xpGladiatorDays = new Set<string>();
+  for (const m of matches) {
+    totalXp += m.xp_gained ?? 0;
+    xpGladiatorDays.add(`${m.gladiator_id}:${dayKey(m.created_at)}`);
+  }
+  const avgXpPerActiveGladiatorPerDay = xpGladiatorDays.size > 0 ? totalXp / xpGladiatorDays.size : 0;
+
+  const cursusDays = new Set<string>();
+  for (const s of socialEvents) cursusDays.add(dayKey(s.created_at));
+  const avgCursusHonorumTriggersPerActiveDay = cursusDays.size > 0 ? socialEvents.length / cursusDays.size : 0;
+
+  const channelTotals = new Map<string, number>();
+  for (const m of matches) {
+    const channel = classifyChannel(m.difficulty);
+    channelTotals.set(channel, (channelTotals.get(channel) ?? 0) + (m.denarii_gained ?? 0));
+  }
+  let cursusGold = 0;
+  for (const s of socialEvents) if (s.denarii_delta > 0) cursusGold += s.denarii_delta;
+  if (cursusGold > 0) channelTotals.set("Cursus Honorum", (channelTotals.get("Cursus Honorum") ?? 0) + cursusGold);
+  const grandTotal = [...channelTotals.values()].reduce((a, b) => a + b, 0);
+  const goldByChannel = [...channelTotals.entries()]
+    .map(([channel, total]) => ({ channel, total, pct: grandTotal > 0 ? (total / grandTotal) * 100 : 0 }))
+    .sort((a, b) => b.total - a.total);
+
+  return { windowDays: 30, avgGoldPerActiveDay, avgXpPerActiveGladiatorPerDay, avgCursusHonorumTriggersPerActiveDay, goldByChannel };
+}
+
 // Everything shown for one ludus on the admin lookup's detail panel — one
-// round trip covering the profile, its full roster, and a recent-activity
-// window (last 50 matches). Matches beyond that window still count toward
-// nothing here — this is a spot-check tool, not a full audit log.
+// round trip covering the profile, its full roster, a recent-activity log
+// (last 50 matches, all-time), and the same 30-day rate stats the site-wide
+// dashboard shows, scoped to just this ludus.
 export const getAdminLudusDetail = createServerFn({ method: "GET" })
   .middleware([requireAdminAuth])
   .inputValidator((input) => z.object({ ludusId: z.string().uuid() }).parse(input))
   .handler(async ({ data }): Promise<AdminLudusDetail> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [profileRes, gladiatorsRes, matchesRes] = await Promise.all([
+    const sinceIso = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const [profileRes, gladiatorsRes, matchesRes, matches30dRes, social30dRes] = await Promise.all([
       supabaseAdmin
         .from("profiles")
         .select("id,ludus_name,denarii,reputation,is_bot,created_at,updated_at,training_level,scouting_level,medicus_level,armory_level,pantry_level,social_level,relics_level,hades_keys")
@@ -301,11 +365,23 @@ export const getAdminLudusDetail = createServerFn({ method: "GET" })
         .eq("owner_id", data.ludusId)
         .order("created_at", { ascending: false })
         .limit(50),
+      supabaseAdmin
+        .from("matches")
+        .select("gladiator_id,created_at,denarii_gained,xp_gained,difficulty")
+        .eq("owner_id", data.ludusId)
+        .gte("created_at", sinceIso),
+      supabaseAdmin
+        .from("social_events")
+        .select("created_at,denarii_delta")
+        .eq("owner_id", data.ludusId)
+        .gte("created_at", sinceIso),
     ]);
     if (profileRes.error) throw new Error(profileRes.error.message);
     if (!profileRes.data) throw new Error("Ludus not found");
     if (gladiatorsRes.error) throw new Error(gladiatorsRes.error.message);
     if (matchesRes.error) throw new Error(matchesRes.error.message);
+    if (matches30dRes.error) throw new Error(matches30dRes.error.message);
+    if (social30dRes.error) throw new Error(social30dRes.error.message);
 
     const recentMatches = matchesRes.data ?? [];
     const totals = {
@@ -315,10 +391,24 @@ export const getAdminLudusDetail = createServerFn({ method: "GET" })
       totalXpEarned: recentMatches.reduce((sum, m) => sum + (m.xp_gained ?? 0), 0),
     };
 
+    const activity = computeLudusActivity(matches30dRes.data ?? [], social30dRes.data ?? []);
+
+    // Same thresholds as getAdminStats' dau/wau/mau above, applied to this
+    // one profile's updated_at instead of the whole table.
+    const now = Date.now();
+    const updatedMs = new Date(profileRes.data.updated_at).getTime();
+    const activeToday = now - updatedMs < 86_400_000;
+    const activeThisWeek = now - updatedMs < 7 * 86_400_000;
+    const activeThisMonth = now - updatedMs < 30 * 86_400_000;
+
     return {
       profile: profileRes.data,
       gladiators: gladiatorsRes.data ?? [],
       recentMatches,
       totals,
+      activity,
+      activeToday,
+      activeThisWeek,
+      activeThisMonth,
     };
   });
