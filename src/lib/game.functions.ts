@@ -2206,16 +2206,25 @@ function bossBeatForRound(round: number): BossBeat {
   return pos === 1 ? "defensive" : pos === 3 ? "howl" : "vulnerable";
 }
 
-// The howl beat's reaction window is shorter than a normal round's, on top
-// of hitting harder — see BossPhase.howlDamageScale. Cerberus's snake bite
-// gets the same tighter window.
+// The boar's howl beat gets a shorter reaction window than a normal round,
+// on top of hitting harder — see BossPhase.howlDamageScale.
 const HOWL_DEADLINE_MULT = 0.7;
+// Cerberus's snake bite deliberately goes the OTHER way — a longer window
+// than its regular beats (lunges/strike windows), not a shorter one like
+// the boar's howl. Derived from the target reaction times at fully-maxed
+// (100 average) Technique: 3s for regular beats, 5s for the snake bite —
+// since deadlineMult doubles at 100 avg Technique (see bossDeadlineMult
+// below), Cerberus's own roundDeadlineMs is set to half the 3s target
+// (1500ms), and this multiplier (2500ms / 1500ms) reproduces the 5s target
+// on top of that same doubling, independent of the boar's HOWL_DEADLINE_MULT.
+const SNAKE_BITE_DEADLINE_MULT = 2500 / 1500;
 // Technique widens every round's reaction window, up to 2x at full stat-cap
 // development — frozen at fight start as session.deadline_mult (see
 // TECHNIQUE_DEADLINE_BONUS_MAX below), so this always gets that multiplier
 // explicitly rather than defaulting silently.
 function bossRoundDeadlineMs(boss: BossDefinition, beat: BossBeat, deadlineMult: number): number {
-  const base = (beat === "howl" || beat === "snake_bite") ? Math.round(boss.roundDeadlineMs * HOWL_DEADLINE_MULT) : boss.roundDeadlineMs;
+  const mult = beat === "howl" ? HOWL_DEADLINE_MULT : beat === "snake_bite" ? SNAKE_BITE_DEADLINE_MULT : 1;
+  const base = Math.round(boss.roundDeadlineMs * mult);
   return Math.round(base * deadlineMult);
 }
 

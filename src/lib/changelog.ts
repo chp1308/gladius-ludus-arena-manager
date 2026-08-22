@@ -27,6 +27,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Leaderboards now show the top 10 by default, with a \"Show 10 more\" button to see the rest.",
       "World Event: press S to strike with whichever fielded champion is off cooldown.",
       "Cursus Honorum: a \"Same crew as last time\" button re-sends the same gladiators without re-picking them.",
+      "Cerberus's constant mauling tick was quietly landing as its bare 1-damage floor almost every round regardless of zone — it now actually scales with the fight, hitting roughly 10x harder.",
+      "Cerberus's reaction windows are retuned: 3 seconds for a regular beat and 5 seconds for the snake bite, at fully-maxed (100 average) Technique.",
+      "Fight result screens now scroll straight to the reward line, fixed for boss fights specifically — a long Cerberus log could previously leave you scrolled to the top.",
     ],
   },
   {

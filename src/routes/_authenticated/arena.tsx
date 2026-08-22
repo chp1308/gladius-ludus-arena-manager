@@ -719,7 +719,15 @@ function RivalChallengesCard({ state }: { state: State }) {
 function useAutoScrollBottom(dep: unknown) {
   const ref = useRef<HTMLOListElement>(null);
   useEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+    // Deferred a frame: on a fresh mount inside a Dialog (e.g. a boss fight's
+    // result screen), the list can still be mid-layout when this effect first
+    // fires — reading scrollHeight too early under-measures a long log, which
+    // silently no-ops for a short one (nothing to scroll) but leaves a long
+    // one stuck at the top. A rAF runs after that layout settles.
+    const id = requestAnimationFrame(() => {
+      if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
   }, [dep]);
   return ref;
 }

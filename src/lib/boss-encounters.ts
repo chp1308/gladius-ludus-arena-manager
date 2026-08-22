@@ -71,10 +71,8 @@ export type BossPhase = {
 // howlDamageScale as the snake-bite miss penalty, vulnerableDamageScale as
 // the strike-window payoff — see cerberusZoneIndex/rollCerberusBurstLength
 // in game.functions.ts. netBonus is unused (Cerberus has no net-bonus
-// beat). tickDamageScale IS used (unlike earlier), at a small fraction of
-// the boar's per-second rate — a Cerberus fight runs far more rounds than
-// the boar's (see the per-phase comment below for the round math), so
-// even a modest rate compounds to real total attrition over a full fight.
+// beat). tickDamageScale IS used (unlike earlier) — see the per-phase
+// comment below for why its scale was raised 10x from the original tuning.
 // A failed snake-bite dodge also poisons the party — see
 // POISON_STACKS_ON_SNAKE_BITE in game.functions.ts — doubling the next 3
 // hits actually taken, on top of howlDamageScale's own snake-bite penalty.
@@ -194,29 +192,34 @@ export const BOSS_ENCOUNTERS: BossDefinition[] = [
     // three separate pools — see the mechanic comment on BossDefinition.
     // hpScale is only read from phases[0], at fight start.
     phases: [
-      // tickDamageScale here is deliberately much lower than the boar's
-      // (0.015/0.022) — a Cerberus fight runs far more rounds. Modeled at
-      // ~5.3 rounds per successful strike (avg burst length 4.3 + 1 strike
-      // window; see rollCerberusBurstLength in game.functions.ts), a party
-      // right at the baseHp floor needs ~46-88 total rounds to win. These
-      // rates put total tick attrition over a full fight at roughly 6-13%
-      // of max HP for an attentive player (resolving each round in ~40% of
-      // its deadline on average) — enough to punish stalling without
-      // eating into the ~19% buffer the "3 big hits" baseline (3x the
-      // worst snake-bite penalty below) is meant to leave.
+      // tickDamageScale: raised 10x (was 0.0006/0.0010/0.0016) after
+      // real play found Cerberus too easy — the original values were tuned
+      // assuming the raw scaled number itself would matter, but at that
+      // scale round(partyMaxHp * scale) rounded to 0-1 for most realistic
+      // parties, so armor_reduction's flat subtraction (see resolveBossRound
+      // in game.functions.ts) swallowed it back down to the Math.max(1, ...)
+      // floor almost every round regardless of zone — the tick was
+      // effectively always its bare 1-per-second minimum. These values are
+      // sized to clear that floor with real margin even after armor
+      // reduction, so the tick is an actual ongoing threat again, not a
+      // rounding artifact.
       { name: "Three Heads Hunting", blurb: "All three heads circle and lunge in pairs — read the gap and step through it. Two attacks before it gives you an opening.",
-        hpScale: 0.95, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.09, howlDamageScale: 0.14, tickDamageScale: 0.0006 },
+        hpScale: 0.95, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.09, howlDamageScale: 0.14, tickDamageScale: 0.006 },
       { name: "Backed to the Gate", blurb: "Fewer safe reads and faster onslaughts — three or four attacks now, before it gives ground.",
-        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.13, howlDamageScale: 0.20, tickDamageScale: 0.0010 },
+        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.13, howlDamageScale: 0.20, tickDamageScale: 0.010 },
       { name: "Last Guardian of Hell", blurb: "Wounded and desperate, it keeps coming — three attacks at minimum, and it may not stop there.",
-        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.18, howlDamageScale: 0.27, tickDamageScale: 0.0016 },
+        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.18, howlDamageScale: 0.27, tickDamageScale: 0.016 },
     ],
     lootTable: [
       { key: "denarii", label: "Denarii Purse", chance: 1, effect: "denarii", min: 500, max: 900 },
       { key: "gear", label: "Gear Upgrade (per gladiator)", chance: 0.35, effect: "gear" },
       { key: "hades_key", label: "Key to the Underworld", effect: "key" },
     ],
-    roundDeadlineMs: 3400,
+    // Base (0 average Technique) reaction window for regular beats — see
+    // SNAKE_BITE_DEADLINE_MULT in game.functions.ts for the derivation.
+    // At 100 average Technique (deadlineMult doubles), this reaches the
+    // target 3s for regular beats and 5s for the snake bite specifically.
+    roundDeadlineMs: 1500,
     maxRoundsPerPhase: 90,
     shieldwallCritMult: 1.5,
     image: cerberusSelectImg,
