@@ -25,6 +25,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Every facility panel now shows what the next level actually unlocks before you spend denarii on it.",
       "New Achievement Leaders leaderboard on the Hall of Champions page.",
       "Leaderboards now show the top 10 by default, with a \"Show 10 more\" button to see the rest.",
+      "World Event: press S to strike with whichever fielded champion is off cooldown.",
+      "Cursus Honorum: a \"Same crew as last time\" button re-sends the same gladiators without re-picking them.",
     ],
   },
   {
