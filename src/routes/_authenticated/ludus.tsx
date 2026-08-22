@@ -918,19 +918,21 @@ function SocialEventPanel({ state }: { state: State }) {
     });
   };
 
-  const sendSameCrew = () => {
-    setSelectedIds(lastCrewAvailable.slice(0, maxSize));
-  };
-
+  // Takes the crew explicitly rather than reading `selectedIds` from
+  // closure — "Same crew as last time" needs to select AND immediately
+  // confirm-and-send in one click, and setSelectedIds() before calling
+  // this wouldn't be visible yet in the same synchronous handler (React
+  // batches the state update), so passing it straight through avoids
+  // sending a stale (or empty) selection.
   const mut = useMutation({
-    mutationFn: () => run({ data: { gladiatorIds: selectedIds } }),
-    onSuccess: (r) => {
+    mutationFn: (ids: string[]) => run({ data: { gladiatorIds: ids } }),
+    onSuccess: (r, ids) => {
       if (r.tone === "positive") toast.success(r.log);
       else if (r.tone === "negative") toast.error(r.log);
       else toast(r.log);
       if (profileId) {
-        localStorage.setItem(lastCursusCrewKey(profileId), JSON.stringify(selectedIds));
-        setLastCrew(selectedIds);
+        localStorage.setItem(lastCursusCrewKey(profileId), JSON.stringify(ids));
+        setLastCrew(ids);
       }
       setSelectedIds([]);
       qc.invalidateQueries({ queryKey: ["ludus"] });
@@ -938,12 +940,25 @@ function SocialEventPanel({ state }: { state: State }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const onSend = async () => {
+  const sendCrew = async (ids: string[]) => {
+    if (ids.length === 0) return;
     const ok = await confirm({
       title: "Court Roman society?",
-      description: `Send ${selectedIds.length} gladiator${selectedIds.length === 1 ? "" : "s"} to seek favor in Rome? Fortune may reward or punish them — outcomes are ${Math.round(odds.positive * 100)}% likely to be favorable at this level.`,
+      description: `Send ${ids.length} gladiator${ids.length === 1 ? "" : "s"} to seek favor in Rome? Fortune may reward or punish them — outcomes are ${Math.round(odds.positive * 100)}% likely to be favorable at this level.`,
     });
-    if (ok) mut.mutate();
+    if (ok) mut.mutate(ids);
+  };
+
+  const onSend = () => sendCrew(selectedIds);
+
+  // One click, one confirmation — selects the crew and goes straight to
+  // the same odds dialog onSend uses, instead of requiring a select click
+  // followed by a separate Send click (each with the potential to feel
+  // like its own "approval").
+  const sendSameCrew = () => {
+    const ids = lastCrewAvailable.slice(0, maxSize);
+    setSelectedIds(ids);
+    sendCrew(ids);
   };
 
   return (
@@ -963,10 +978,10 @@ function SocialEventPanel({ state }: { state: State }) {
             <Button
               variant="outline"
               size="sm"
-              disabled={mut.isPending}
+              disabled={mut.isPending || onCooldown}
               onClick={sendSameCrew}
             >
-              Same crew as last time ({lastCrewAvailable.length})
+              {onCooldown ? `Same crew — resting ${formatMinutes(cooldownMins)}` : `Same crew as last time (${lastCrewAvailable.length})`}
             </Button>
           )}
           {eligible.length === 0 ? (
