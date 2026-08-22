@@ -976,7 +976,6 @@ function SocialEventPanel({ state }: { state: State }) {
           </p>
           {lastCrewAvailable.length > 0 && (
             <Button
-              variant="outline"
               size="sm"
               disabled={mut.isPending || onCooldown}
               onClick={sendSameCrew}
