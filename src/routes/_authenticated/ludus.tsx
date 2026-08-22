@@ -880,6 +880,19 @@ const TONE_STYLES: Record<string, string> = {
   neutral: "border-border bg-muted/30 text-muted-foreground",
 };
 
+// Remembers the gladiator IDs of the last delegation actually sent, per
+// account (localStorage, same "gladius_*:${profileId}" convention as
+// use-discovery-reveal.ts) — lets the panel offer a one-click "same crew
+// again" instead of re-picking every time, without needing a server-side
+// column (social_events already stores names for display, not ids).
+function lastCursusCrewKey(profileId: string): string {
+  return `gladius_last_cursus_crew:${profileId}`;
+}
+function loadLastCursusCrew(profileId: string | undefined): string[] {
+  if (!profileId) return [];
+  try { return JSON.parse(localStorage.getItem(lastCursusCrewKey(profileId)) ?? "[]"); } catch { return []; }
+}
+
 function SocialEventPanel({ state }: { state: State }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -889,6 +902,11 @@ function SocialEventPanel({ state }: { state: State }) {
   const odds = socialToneWeights(socialLevel);
   const eligible = state.gladiators.filter(g => g.status !== "dead");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const profileId = state.profile?.id;
+  const [lastCrew, setLastCrew] = useState<string[]>(() => loadLastCursusCrew(profileId));
+  // Only the members of the last crew who are still around to send —
+  // one having died or been dismissed since shouldn't block reusing the rest.
+  const lastCrewAvailable = lastCrew.filter(id => eligible.some(g => g.id === id));
 
   const { onCooldown, minutesLeft: cooldownMins } = socialCooldownStatus(state.socialEvents);
 
@@ -900,12 +918,20 @@ function SocialEventPanel({ state }: { state: State }) {
     });
   };
 
+  const sendSameCrew = () => {
+    setSelectedIds(lastCrewAvailable.slice(0, maxSize));
+  };
+
   const mut = useMutation({
     mutationFn: () => run({ data: { gladiatorIds: selectedIds } }),
     onSuccess: (r) => {
       if (r.tone === "positive") toast.success(r.log);
       else if (r.tone === "negative") toast.error(r.log);
       else toast(r.log);
+      if (profileId) {
+        localStorage.setItem(lastCursusCrewKey(profileId), JSON.stringify(selectedIds));
+        setLastCrew(selectedIds);
+      }
       setSelectedIds([]);
       qc.invalidateQueries({ queryKey: ["ludus"] });
     },
@@ -933,6 +959,16 @@ function SocialEventPanel({ state }: { state: State }) {
             Choose up to {maxSize} gladiator{maxSize === 1 ? "" : "s"} to attend Rome's feasts, weddings, and games.
             Positive outcomes pay out per gladiator sent; ill fortune never scales with the size of your delegation.
           </p>
+          {lastCrewAvailable.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={mut.isPending}
+              onClick={sendSameCrew}
+            >
+              Same crew as last time ({lastCrewAvailable.length})
+            </Button>
+          )}
           {eligible.length === 0 ? (
             <p className="font-serif italic text-muted-foreground">No gladiators available to send.</p>
           ) : (

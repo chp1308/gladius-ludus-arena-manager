@@ -1693,11 +1693,34 @@ function WorldEventFight({ state }: { state: State }) {
     return () => clearInterval(id);
   }, [status]);
 
+  // Computed ahead of the early returns below (hooks can't follow a
+  // conditional return) — safe even before an event/contributions exist,
+  // since it just yields an empty map.
+  const myByGladiator = new Map((data?.myContributions ?? []).map(c => [c.gladiator_id, c]));
+
+  // S strikes with whichever fielded champion is off cooldown — usually
+  // just your one selected gladiator (a second slot needs the rare Shard
+  // of the Titan's Chain drop), so this is a plain "strike now" hotkey in
+  // the common case, and cycles to the next ready champion otherwise.
+  useEffect(() => {
+    if (status !== "live") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "s") return;
+      if (strike.isPending) return;
+      const readyId = selectedIds.find(id => {
+        const lastStrikeMs = myByGladiator.get(id)?.last_strike_at ? new Date(myByGladiator.get(id)!.last_strike_at!).getTime() : 0;
+        return Date.now() - lastStrikeMs >= GLOBAL_EVENT_STRIKE_COOLDOWN_SEC * 1000;
+      });
+      if (readyId) strike.mutate(readyId);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [status, selectedIds, myByGladiator, strike]);
+
   if (!data || !data.event) {
     return <p className="font-serif italic text-muted-foreground">No world event is active right now. Watch the banner above — Rome will call when it needs you.</p>;
   }
-  const { event, myContributions, maxFighters, leaderboard } = data;
-  const myByGladiator = new Map(myContributions.map(c => [c.gladiator_id, c]));
+  const { event, maxFighters, leaderboard } = data;
 
   if (event.status === "announced") {
     return (
@@ -1784,26 +1807,37 @@ function WorldEventFight({ state }: { state: State }) {
 
           {selectedIds.length > 0 && (
             <ul className="space-y-2">
-              {selectedIds.map(id => {
-                const gl = eligible.find(g => g.id === id);
-                if (!gl) return null;
-                const contribution = myByGladiator.get(id);
-                const strikesUsed = contribution?.strikes_used ?? 0;
-                const lastStrikeMs = contribution?.last_strike_at ? new Date(contribution.last_strike_at).getTime() : 0;
-                const cooldownLeft = Math.max(0, GLOBAL_EVENT_STRIKE_COOLDOWN_SEC - Math.floor((Date.now() - lastStrikeMs) / 1000));
-                const onCooldown = cooldownLeft > 0;
-                return (
-                  <li key={id} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
-                    <span className="text-sm font-display">{gl.name}</span>
-                    <span className="flex items-center gap-3">
-                      {strikesUsed > 0 && <span className="text-xs text-muted-foreground">{strikesUsed} strike{strikesUsed === 1 ? "" : "s"} landed</span>}
-                      <Button size="sm" disabled={onCooldown || strike.isPending} onClick={() => strike.mutate(id)}>
-                        {onCooldown ? `${cooldownLeft}s` : "Strike!"}
-                      </Button>
-                    </span>
-                  </li>
-                );
-              })}
+              {(() => {
+                // Which champion the S hotkey would actually strike with
+                // right now — same "first ready" search the keydown
+                // handler uses — so the kbd hint only shows where it's true.
+                let hintShown = false;
+                return selectedIds.map(id => {
+                  const gl = eligible.find(g => g.id === id);
+                  if (!gl) return null;
+                  const contribution = myByGladiator.get(id);
+                  const strikesUsed = contribution?.strikes_used ?? 0;
+                  const lastStrikeMs = contribution?.last_strike_at ? new Date(contribution.last_strike_at).getTime() : 0;
+                  const cooldownLeft = Math.max(0, GLOBAL_EVENT_STRIKE_COOLDOWN_SEC - Math.floor((Date.now() - lastStrikeMs) / 1000));
+                  const onCooldown = cooldownLeft > 0;
+                  const showHint = !onCooldown && !hintShown;
+                  if (showHint) hintShown = true;
+                  return (
+                    <li key={id} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                      <span className="text-sm font-display">{gl.name}</span>
+                      <span className="flex items-center gap-3">
+                        {strikesUsed > 0 && <span className="text-xs text-muted-foreground">{strikesUsed} strike{strikesUsed === 1 ? "" : "s"} landed</span>}
+                        <Button size="sm" className="relative overflow-visible" disabled={onCooldown || strike.isPending} onClick={() => strike.mutate(id)}>
+                          {onCooldown ? `${cooldownLeft}s` : "Strike!"}
+                          {showHint && (
+                            <kbd className="absolute -right-1.5 -top-1.5 rounded border border-border bg-background px-1 text-[10px] leading-tight text-foreground opacity-90">S</kbd>
+                          )}
+                        </Button>
+                      </span>
+                    </li>
+                  );
+                });
+              })()}
             </ul>
           )}
         </CardContent>
