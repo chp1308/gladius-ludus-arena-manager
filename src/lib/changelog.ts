@@ -9,6 +9,25 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: "2026-08-22",
+    title: "Team Battle rebalance, Cerberus poison, and roster tools",
+    items: [
+      "Team Battles now genuinely reflect your team's power — a lopsided roster (one strong fighter carried by weak fodder) no longer wins fights it has no business winning.",
+      "Leveling up mid-fight always fully heals your gladiator and refunds the charge now — Team Battles, Cursus Honorum, and the World Event could previously level you up without either.",
+      "Scouting with a full pantry no longer lets you spam for a free chance at a beast — use the paid \"Roll for a beast\" option once you're full instead.",
+      "Cerberus now has a constant, low-level mauling tick like other bosses, and a failed snake-bite dodge poisons your cohort — the next 3 hits taken deal double damage.",
+      "Fixed building level/count badges sometimes getting hidden behind a neighboring building on the Ludus map.",
+      "The World Event banner now actually takes you to the World Event tab, instead of always landing on Pit Fights.",
+      "Pit Fights: the \"pits\" charge counter is now labeled \"battles\", plus a \"Ready to fight\" toggle to hide gladiators with no charges left.",
+      "Rival Ludi: a \"Fightable only\" toggle, and more open challenges from rival ludi spread across power levels so there's something to fight at more levels.",
+      "The Chronicle Stele now shows up to 200 of your bouts, with an honest count, instead of silently capping at 20 while claiming to show every match.",
+      "Ludus Grounds: sort and filter your roster — by level, power, wins, health, name, or weapon style.",
+      "Every facility panel now shows what the next level actually unlocks before you spend denarii on it.",
+      "New Achievement Leaders leaderboard on the Hall of Champions page.",
+      "Leaderboards now show the top 10 by default, with a \"Show 10 more\" button to see the rest.",
+    ],
+  },
+  {
     date: "2026-08-20",
     title: "Onboarding, combat consistency, and balance",
     items: [
