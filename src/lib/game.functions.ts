@@ -472,6 +472,27 @@ function rollDamage(
 }
 
 
+// Chronicle Stele's own history — getLudusState's `matches` field is
+// capped at 20 (it's fetched on every page load, so it stays cheap), which
+// undersold the Stele's "every match, carved in stone" promise. This is a
+// dedicated fetch the Stele's panel calls only when opened, with its own
+// higher cap and a real total count so the panel can say exactly how much
+// of the ludus's full history it's showing.
+const MATCH_HISTORY_LIMIT = 200;
+export const getMatchHistory = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: matches, error, count } = await supabase
+      .from("matches")
+      .select("*", { count: "exact" })
+      .eq("owner_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(MATCH_HISTORY_LIMIT);
+    if (error) throw new Error(error.message);
+    return { matches: matches ?? [], total: count ?? matches?.length ?? 0, limit: MATCH_HISTORY_LIMIT };
+  });
+
 export const getLudusState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -1331,13 +1352,24 @@ export const cancelPvpChallenge = createServerFn({ method: "POST" })
 // challenge (see postPvpChallenge) to appear here; this used to auto-post
 // on behalf of ANY idle player, bot or not, which enrolled real gladiators
 // into PvP without their owner's say-so.
+//
+// Each bot is topped up to BOT_CHALLENGES_PER_OWNER concurrently open
+// challenges (was 1) — picked spread evenly across that bot's roster
+// rating range, not one random gladiator — so at any moment the open pool
+// actually spans low to high level instead of clustering wherever a single
+// random pick per bot happened to land. A player at any rating is far more
+// likely to find something within the ±25% similar-rating window.
+const BOT_CHALLENGES_PER_OWNER = 5;
 async function ensureBotChallenges(currentUserId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: openByOwner } = await supabaseAdmin
+  const { data: openRows } = await supabaseAdmin
     .from("pvp_challenges")
     .select("challenger_id")
     .eq("status", "open");
-  const havingOpen = new Set((openByOwner ?? []).map(o => o.challenger_id));
+  const openCountByOwner = new Map<string, number>();
+  for (const row of openRows ?? []) {
+    openCountByOwner.set(row.challenger_id, (openCountByOwner.get(row.challenger_id) ?? 0) + 1);
+  }
 
   const { data: botProfiles } = await supabaseAdmin
     .from("profiles")
@@ -1358,7 +1390,6 @@ async function ensureBotChallenges(currentUserId: string) {
   const nowIso = new Date().toISOString();
   const byOwner = new Map<string, typeof bots>();
   for (const b of bots) {
-    if (havingOpen.has(b.owner_id)) continue;
     if (b.injury_until && b.injury_until > nowIso) continue;
     const list = byOwner.get(b.owner_id) ?? [];
     list.push(b);
@@ -1366,16 +1397,28 @@ async function ensureBotChallenges(currentUserId: string) {
   }
 
   for (const [owner, list] of byOwner) {
-    const g = list[Math.floor(Math.random() * list.length)];
-    const rating = matchRating(g);
-    await supabaseAdmin.from("pvp_challenges").insert({
-      challenger_id: owner,
-      challenger_gladiator_id: g.id,
-      rating,
-      to_death: Math.random() < 0.25,
-      status: "open",
-    });
-    await supabaseAdmin.from("gladiators").update({ status: "challenging" }).eq("id", g.id);
+    const slotsToFill = BOT_CHALLENGES_PER_OWNER - (openCountByOwner.get(owner) ?? 0);
+    if (slotsToFill <= 0) continue;
+
+    const sorted = [...list].sort((a, b) => matchRating(a) - matchRating(b));
+    const n = Math.min(slotsToFill, sorted.length);
+    const picks = new Map<string, (typeof bots)[number]>();
+    for (let i = 0; i < n; i++) {
+      const idx = n === 1 ? 0 : Math.round((i * (sorted.length - 1)) / (n - 1));
+      picks.set(sorted[idx].id, sorted[idx]);
+    }
+
+    for (const g of picks.values()) {
+      const rating = matchRating(g);
+      await supabaseAdmin.from("pvp_challenges").insert({
+        challenger_id: owner,
+        challenger_gladiator_id: g.id,
+        rating,
+        to_death: Math.random() < 0.25,
+        status: "open",
+      });
+      await supabaseAdmin.from("gladiators").update({ status: "challenging" }).eq("id", g.id);
+    }
   }
 }
 
@@ -1903,7 +1946,35 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
 
     const teamMaxHp = team.reduce((sum, gl) => sum + maxHealth(gl.strength), 0);
     const teamCurrentHp = team.reduce((sum, gl) => sum + currentHealthById.get(gl.id)!, 0);
-    const enemyMaxHp = battle.hp;
+    // enemyMaxHp used to be a flat constant, completely decoupled from
+    // enemyPower — teamChance above was the ONLY place power mattered.
+    // Scaled off enemyPower now (derived from the battle's own existing
+    // hp/powerMin/powerMax tuning, so a roll at the tier's own power-band
+    // midpoint reproduces the old flat value exactly) — a harder roll
+    // within the band is now a genuinely tougher fight, not the same HP.
+    const midBandPower = (battle.powerMin + battle.powerMax) / 2;
+    const enemyHpScale = battle.hp / midBandPower;
+    const enemyMaxHp = Math.max(1, Math.round(enemyPower * enemyHpScale));
+
+    // Per-round damage used to be a flat rand(25,45) for both sides,
+    // regardless of power — combined with a team's pooled HP (summed
+    // maxHealth across several bodies, driven by raw Strength alone and
+    // ~free per fielded body) being routinely several times the enemy's
+    // small fixed HP pool, a roster with one heavily-invested gladiator
+    // and several cheap, undeveloped ones could win consistently even at
+    // a real power deficit — the team could out-race the enemy's HP
+    // regardless of how many individual exchanges it actually lost.
+    //
+    // Damage is now a fraction of the TARGET's own max HP (same pattern
+    // boss fights already use — see defensiveDamageScale in
+    // boss-encounters.ts), not an absolute number derived from the
+    // attacker's power. This makes "hits needed to defeat you" the same
+    // ~HITS_NEEDED regardless of which side's pool is bigger in absolute
+    // terms, so a team can no longer out-survive a power deficit just by
+    // fielding a larger pooled-HP roster — only the odds above (teamChance,
+    // genuinely power-driven) decide who lands more of those hits.
+    const HITS_NEEDED = battle.hp / 35; // 35 matches the old flat rand(25,45) average, so this reproduces the old fight length at the tier's own power-band midpoint
+    const hitFraction = 1 / HITS_NEEDED;
     // Start from the cohort's actual current pooled health, not a fresh full bar.
     let teamHp = teamCurrentHp;
     let enemyHp = enemyMaxHp;
@@ -1912,21 +1983,28 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
     // cohorts — same reasoning as the solo fights, cap must outlast it.
     for (let i = 1; i <= 20 && teamHp > 0 && enemyHp > 0; i++) {
       if (Math.random() < teamChance) {
-        const d = rand(25, 45);
+        const d = Math.max(5, Math.round(enemyMaxHp * hitFraction * (0.7 + Math.random() * 0.6)));
         enemyHp -= d;
         const text = `Round ${i}: your cohort presses for ${d}.`;
         log.push(text);
         // Team battles are never lethal — floor displayed HP at 1, not 0.
         fightRounds.push({ attacker: "me", damage: d, myHp: Math.max(1, teamHp), oppHp: Math.max(1, enemyHp), text });
       } else {
-        const d = Math.max(5, Math.floor(rand(25, 45) * defenseReduction));
+        const d = Math.max(5, Math.round(teamMaxHp * hitFraction * (0.7 + Math.random() * 0.6) * defenseReduction));
         teamHp -= d;
         const text = `Round ${i}: the enemy strikes for ${d}.`;
         log.push(text);
         fightRounds.push({ attacker: "opponent", damage: d, myHp: Math.max(1, teamHp), oppHp: Math.max(1, enemyHp), text });
       }
     }
-    const won = enemyHp <= teamHp;
+    // Comparing raw remaining HP would still favor the team almost
+    // unconditionally — a team's pooled HP (from summed maxHealth across
+    // several bodies) is routinely 2-3x the enemy's whole HP pool, so it
+    // would "win" this comparison even after clearly losing more exchanges
+    // than it won. Comparing each side's remaining HP as a % of its OWN
+    // max is the fair version: whoever's proportionally more beaten up
+    // when the clock runs out actually lost.
+    const won = (enemyHp / enemyMaxHp) <= (teamHp / teamMaxHp);
 
     const denariiGained = applyGoldBonus(
       Math.round((won ? battle.reward + rand(0, Math.floor(battle.reward * 0.2)) : Math.floor(battle.reward * 0.15)) * TEAM_DENARII_SCALE),
@@ -1980,6 +2058,7 @@ export const fightTeamBattle = createServerFn({ method: "POST" })
         xp_gained: xpEach,
         denarii_gained: Math.floor(denariiGained / team.length),
         reputation_gained: Math.floor(repGained / team.length),
+        refunded_charge: leveledUp,
         log,
       });
     }
@@ -2045,6 +2124,14 @@ function rollCerberusBurstLength(zoneIdx: number): number {
   }
   return n;
 }
+
+// A failed snake-bite dodge poisons the party for this many subsequent
+// hits actually taken (not attack attempts — a clean dodge/block doesn't
+// burn a stack), each dealt at POISON_DAMAGE_MULT instead of normal
+// damage. A second bite while already poisoned refreshes the stack count
+// rather than adding to it, so this can't compound indefinitely.
+const POISON_STACKS_ON_SNAKE_BITE = 3;
+const POISON_DAMAGE_MULT = 2;
 
 // Which zones are safe to stand in for each head-lunge pattern — empty for
 // "all_three" (unavoidable, matches the reference art of all three heads
@@ -2160,6 +2247,10 @@ export type BossRoundOutcome = {
   playerDamage: number;
   playerTarget: "boss" | "party";
   tickDamage: number;
+  // Cerberus only — whether this round's own hit (not the tick above) was
+  // doubled by an active poison stack, and how many stacks remain after.
+  poisoned: boolean;
+  poisonStacks: number;
 };
 
 export const startBossFight = createServerFn({ method: "POST" })
@@ -2310,6 +2401,14 @@ export const resolveBossRound = createServerFn({ method: "POST" })
     let bossHp = session.boss_hp;
     let partyHp = session.party_hp;
 
+    // Cerberus only — a failed snake-bite dodge poisons the party: the
+    // next POISON_STACKS_ON_SNAKE_BITE hits actually taken (lunge or
+    // defensive/howl/snake-bite misses, not the passive tick below) deal
+    // double damage. Mutated below as stacks are consumed, then persisted
+    // back onto the session same as boss_hp/party_hp.
+    let poisonStacks = session.poison_stacks ?? 0;
+    let poisonedThisRound = false;
+
     // Populated by whichever branch below runs, then handed back to the
     // client as roundOutcome so it can play a two-stage reveal (this round's
     // own result, then the boar's passive mauling) instead of jumping
@@ -2351,11 +2450,12 @@ export const resolveBossRound = createServerFn({ method: "POST" })
         log.push(`Round ${session.round}: the ${variantLabel} lunge misses — the cohort reads it clean.`);
         playerLabel = "Clean read!"; playerDamage = 0; playerTarget = "party";
       } else {
-        const dmg = Math.round(session.party_max_hp * phaseDef.defensiveDamageScale);
+        let dmg = Math.round(session.party_max_hp * phaseDef.defensiveDamageScale);
+        if (poisonStacks > 0) { dmg *= POISON_DAMAGE_MULT; poisonStacks--; poisonedThisRound = true; }
         partyHp -= dmg;
         const why = safeZones.length === 0 ? "all three heads lunge at once — nowhere to go"
           : picked ? "the cohort moves the wrong way" : "the cohort hesitates";
-        log.push(`Round ${session.round}: ${why} — ${dmg} damage taken.`);
+        log.push(`Round ${session.round}: ${why} — ${dmg} damage taken${poisonedThisRound ? " (poisoned — doubled)" : ""}.`);
         playerLabel = safeZones.length === 0 ? "No way to dodge!" : "Caught by the lunge!"; playerDamage = dmg; playerTarget = "party";
       }
     } else {
@@ -2386,10 +2486,17 @@ export const resolveBossRound = createServerFn({ method: "POST" })
         }
       });
       if (failedCount > 0) {
-        const dmg = Math.round(session.party_max_hp * failDamageScale);
+        let dmg = Math.round(session.party_max_hp * failDamageScale);
+        if (poisonStacks > 0) { dmg *= POISON_DAMAGE_MULT; poisonStacks--; poisonedThisRound = true; }
         partyHp -= dmg;
+        // A fresh bite refreshes the poison window (see
+        // POISON_STACKS_ON_SNAKE_BITE) — applied after this hit's own
+        // damage above, so a bite landing while already poisoned still
+        // only doubles once, then resets the count for the next three.
+        if (isSnake) poisonStacks = POISON_STACKS_ON_SNAKE_BITE;
         const breakText = isSnake ? "the serpent strikes true" : isHowl ? "the howl shatters the line" : "the line breaks";
-        log.push(`Round ${session.round}: ${beats.join("; ")} — ${breakText}, ${dmg} damage taken.`);
+        const poisonNote = poisonedThisRound ? " (poisoned — doubled)" : isSnake ? " — poisoned!" : "";
+        log.push(`Round ${session.round}: ${beats.join("; ")} — ${breakText}, ${dmg} damage taken${poisonNote}.`);
         playerLabel = isSnake ? "The serpent strikes!" : isHowl ? "The howl shatters the line!" : "The line breaks!"; playerDamage = dmg; playerTarget = "party";
       } else if (allShieldParty) {
         // Shieldwall — a full line of shields, all blocking clean, punches
@@ -2404,13 +2511,16 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       }
     }
 
-    // The boar keeps mauling passively every second, regardless of the
-    // round's beat — reduced by the party's frozen average armor
-    // mitigation, floored so armor can blunt it but never fully negate it.
-    // Cerberus has no passive tick — its difficulty comes purely from
-    // surviving longer attack bursts, not a mauling clock.
+    // Both bosses maul passively every second regardless of the round's
+    // beat — reduced by the party's frozen average armor mitigation,
+    // floored so armor can blunt it but never fully negate it. Cerberus's
+    // rate (see boss-encounters.ts) is set lower than the boar's per
+    // second, since a Cerberus fight typically runs far more rounds — the
+    // same per-second rate would compound to much more total attrition.
+    // Not affected by poison — poison only doubles hits actually taken
+    // from an attack beat, not this ambient tick.
     let tickDamage = 0;
-    if (!isCerberus) {
+    {
       const thisRoundMs = bossRoundDeadlineMs(boss, session.beat_type as BossBeat, session.deadline_mult);
       const roundStartedAt = new Date(session.round_deadline).getTime() - thisRoundMs;
       const elapsedMs = Math.min(thisRoundMs, Math.max(0, Date.now() - roundStartedAt));
@@ -2426,6 +2536,8 @@ export const resolveBossRound = createServerFn({ method: "POST" })
       beat: session.beat_type as BossBeat,
       playerLabel, playerDamage, playerTarget,
       tickDamage,
+      poisoned: poisonedThisRound,
+      poisonStacks,
     };
 
     bossHp = Math.max(0, bossHp);
@@ -2673,6 +2785,7 @@ export const resolveBossRound = createServerFn({ method: "POST" })
     const { data: updated, error } = await supabaseAdmin.from("boss_fight_sessions").update({
       boss_hp: bossHp,
       party_hp: partyHp,
+      poison_stacks: poisonStacks,
       round: session.round + 1,
       phase: nextPhase,
       burst_length: nextBurstLength,
@@ -3021,6 +3134,39 @@ export const getAchievementProgress = createServerFn({ method: "GET" })
     return { progress, unlocked, claimedTiers: claimed };
   });
 
+export const TOTAL_ACHIEVEMENT_BADGES = ACHIEVEMENTS.reduce((sum, cat) => sum + cat.tiers.length, 0);
+
+// Ranks by achievement_tiers_claimed — the same ratchet-only-up record the
+// single-player Achievements page persists (see getAchievementProgress
+// above), not a fresh live recomputation across every ludus. That keeps
+// this cheap (one profiles scan, no per-player gladiator/match joins), at
+// the cost of the same lag the single-player view already has: a tier only
+// counts here once that player has opened their own Achievements page at
+// least once since crossing it.
+export const getAchievementLeaderboard = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profiles, error } = await supabaseAdmin
+      .from("profiles")
+      .select("id,ludus_name,achievement_tiers_claimed,is_bot")
+      .eq("is_bot", false);
+    if (error) throw new Error(error.message);
+
+    const ranked = (profiles ?? [])
+      .map(p => {
+        const claimed = (p.achievement_tiers_claimed as Record<string, number> | null) ?? {};
+        const badges = ACHIEVEMENTS.reduce((sum, cat) => sum + Math.min(cat.tiers.length, claimed[cat.key] ?? 0), 0);
+        return { id: p.id, ludus_name: p.ludus_name, badges };
+      })
+      .filter(p => p.badges > 0)
+      .sort((a, b) => b.badges - a.badges)
+      .slice(0, 25)
+      .map((p, i) => ({ rank: i + 1, ...p }));
+
+    return { ludi: ranked, totalBadges: TOTAL_ACHIEVEMENT_BADGES };
+  });
+
 // ============================================================
 // CURSUS HONORUM — passive income. Every 30 minutes, send a delegation of
 // gladiators to court Rome's high society for a shot at coin, renown, or a
@@ -3138,8 +3284,11 @@ export const runSocialEvent = createServerFn({ method: "POST" })
         const leveledUp = newXp >= xpForNext;
         gladiatorUpdates.push({
           id: g.id,
+          // Same "leveling up fully heals" rule fights use — a Cursus
+          // Honorum outing shouldn't level a gladiator up into a worse
+          // state than a pit fight would have.
           patch: leveledUp
-            ? { experience: newXp - xpForNext, level: g.level + 1 }
+            ? { experience: newXp - xpForNext, level: g.level + 1, health: maxHealth(g.strength), health_updated_at: new Date().toISOString(), injury_until: null }
             : { experience: newXp },
         });
       }
@@ -3373,13 +3522,17 @@ async function payoutGlobalEvent(eventId: string) {
     totalPaid += denarii;
     denariiByOwner.set(r.owner_id, (denariiByOwner.get(r.owner_id) ?? 0) + denarii);
 
-    const { data: glad } = await supabaseAdmin.from("gladiators").select("experience,level").eq("id", r.gladiator_id).maybeSingle();
+    const { data: glad } = await supabaseAdmin.from("gladiators").select("experience,level,strength").eq("id", r.gladiator_id).maybeSingle();
     if (glad) {
       const newXp = glad.experience + xp;
       const xpForNext = glad.level * 100;
       const leveledUp = newXp >= xpForNext;
+      // Same "leveling up fully heals" rule every other XP source follows —
+      // see the pit-fight/Cursus Honorum handlers for the same pattern.
       await supabaseAdmin.from("gladiators").update(
-        leveledUp ? { experience: newXp - xpForNext, level: glad.level + 1 } : { experience: newXp },
+        leveledUp
+          ? { experience: newXp - xpForNext, level: glad.level + 1, health: maxHealth(glad.strength), health_updated_at: new Date().toISOString(), injury_until: null }
+          : { experience: newXp },
       ).eq("id", r.gladiator_id);
     }
     await supabaseAdmin.from("global_event_contributions")

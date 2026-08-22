@@ -39,6 +39,7 @@ export function GlobalEventBanner() {
   return (
     <Link
       to="/arena"
+      search={{ tab: "event" }}
       className="flex items-center justify-center gap-2 bg-primary px-4 py-2 text-center text-sm text-primary-foreground transition hover:opacity-90"
     >
       <img src={porphyrionSelectImg} alt="Porphyrion" className="h-6 w-6 shrink-0 rounded-full object-cover ring-1 ring-primary-foreground/50" />

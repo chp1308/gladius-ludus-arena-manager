@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tansta
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { z } from "zod";
 import {
   getLudusState, fightMatch, fightTeamBattle,
   postPvpChallenge, cancelPvpChallenge, listOpenPvpChallenges, acceptPvpChallenge,
@@ -90,7 +91,9 @@ function HealButton({ g, medicusLevel }: { g: Gladiator; medicusLevel: number })
   );
 }
 
+const ARENA_TAB_KEYS = ["pits", "pvp", "team", "boss", "event"] as const;
 export const Route = createFileRoute("/_authenticated/arena")({
+  validateSearch: (search) => z.object({ tab: z.enum(ARENA_TAB_KEYS).optional() }).parse(search),
   component: ArenaPage,
 });
 
@@ -113,6 +116,7 @@ function ArenaPage() {
   const { data } = useSuspenseQuery({ queryKey: ["ludus"], queryFn: () => fetchState() });
   const denarii = data.profile?.denarii ?? 0;
   const navigate = useNavigate();
+  const { tab } = Route.useSearch();
 
   const fetchEvent = useServerFn(getGlobalEventState);
   const { data: eventData } = useQuery({
@@ -146,6 +150,14 @@ function ArenaPage() {
     { key: "changelog", label: "Changelog", icon: <History className="mr-1 h-4 w-4" />, onClick: () => navigate({ to: "/changelog" }) },
   ];
 
+  // Falls back to "pits" if the requested tab (e.g. from the world-event
+  // banner's ?tab=event link) isn't currently visible/unlocked — same
+  // default the Tabs component always had, just now overridable via URL
+  // instead of hardcoded.
+  const tabVisible: Record<string, boolean> = { pits: true, pvp: showPvp, team: showTeam, boss: showBoss, event: hasEvent };
+  const activeTab = tab && tabVisible[tab] ? tab : "pits";
+  const setActiveTab = (v: string) => navigate({ to: "/arena", search: { tab: v as (typeof ARENA_TAB_KEYS)[number] } });
+
   return (
     <div className="min-h-screen">
       <AppHeader
@@ -161,7 +173,7 @@ function ArenaPage() {
       />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <Tabs defaultValue="pits" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className={`grid w-full ${gridClass[visibleTabCount] ?? gridClass[4]}`}>
             <TabsTrigger value="pits"><Swords className="h-4 w-4 shrink-0 sm:mr-1" /> <span className="hidden sm:inline">Pit Fights</span><span className="sm:hidden">Pits</span></TabsTrigger>
             {showPvp && (
@@ -199,6 +211,7 @@ function PitFights({ state }: { state: State }) {
   const [selectedId, setSelectedId] = useState<string | null>(eligible[0]?.id ?? null);
   const g = state.gladiators.find(x => x.id === selectedId) ?? null;
   const skillMap = skillMapFor(state);
+  const [onlyReady, setOnlyReady] = useState(false);
 
   const fetchAvailability = useServerFn(getPitFightAvailability);
   const { data: availabilityData } = useQuery({
@@ -208,13 +221,26 @@ function PitFights({ state }: { state: State }) {
   });
   const availability = availabilityData?.availability ?? {};
 
+  const roster = state.gladiators
+    .filter(gl => gl.status !== "dead")
+    .filter(gl => !onlyReady || (availability[gl.id]?.chargesAvailable ?? 0) > 0);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
       <div>
-        <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">Your gladiators</div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-xs uppercase tracking-widest text-muted-foreground">Your gladiators</div>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Switch id="only-ready" checked={onlyReady} onCheckedChange={setOnlyReady} />
+            Ready to fight
+          </label>
+        </div>
         <div className="space-y-2">
           {state.gladiators.length === 0 && <p className="font-serif italic text-muted-foreground">No gladiators yet.</p>}
-          {state.gladiators.filter(gl => gl.status !== "dead").map(gl => {
+          {roster.length === 0 && state.gladiators.length > 0 && (
+            <p className="font-serif italic text-muted-foreground">No gladiators currently have a fight charge available.</p>
+          )}
+          {roster.map(gl => {
             const injured = gl.injury_until && new Date(gl.injury_until) > new Date();
             const disabled = injured || gl.health < 30;
             const charges = availability[gl.id];
@@ -235,7 +261,7 @@ function PitFights({ state }: { state: State }) {
                     <span>{gl.wins}W/{gl.losses}L · Power {powerOf(gl, skillMap)} · HP {gl.health}</span>
                     {charges && (
                       <span className={charges.chargesAvailable > 0 ? "text-accent" : "text-destructive"}>
-                        {charges.chargesAvailable}/{PIT_MAX_CHARGES} pits
+                        {charges.chargesAvailable}/{PIT_MAX_CHARGES} battles
                       </span>
                     )}
                   </div>
@@ -306,7 +332,7 @@ function TierPicker({ g, state, availability }: { g: Gladiator; state: State; av
         {g.name} — Lv {g.level} · {g.wins}W · Ludus fame {state.profile?.reputation ?? 0}
         {availability && (
           <span className={onCooldown ? "text-destructive" : "text-accent"}>
-            {" "}· {availability.chargesAvailable}/{PIT_MAX_CHARGES} pit charges
+            {" "}· {availability.chargesAvailable}/{PIT_MAX_CHARGES} battle charges
             {onCooldown && availability.nextAvailableAt && ` (next in ${formatCountdown(availability.nextAvailableAt)})`}
           </span>
         )}
@@ -530,6 +556,7 @@ function RivalChallengesCard({ state }: { state: State }) {
   const [animating, setAnimating] = useState(false);
   const [opponent, setOpponent] = useState<{ name: string; portrait: PortraitSubject } | null>(null);
   const [opponentFilter, setOpponentFilter] = useState<"all" | "players" | "bots">("all");
+  const [onlyFightable, setOnlyFightable] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["pvp-open", myId],
@@ -600,18 +627,24 @@ function RivalChallengesCard({ state }: { state: State }) {
         </div>
 
         {data && data.openChallenges.length > 0 && (
-          <div className="flex items-center gap-1">
-            {(["all", "players", "bots"] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setOpponentFilter(f)}
-                className={`rounded-full border px-2.5 py-1 text-xs capitalize transition ${
-                  opponentFilter === f ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-primary/60"
-                }`}
-              >
-                {f}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1">
+              {(["all", "players", "bots"] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setOpponentFilter(f)}
+                  className={`rounded-full border px-2.5 py-1 text-xs capitalize transition ${
+                    opponentFilter === f ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-primary/60"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch id="only-fightable" checked={onlyFightable} onCheckedChange={setOnlyFightable} />
+              Fightable only
+            </label>
           </div>
         )}
 
@@ -620,12 +653,12 @@ function RivalChallengesCard({ state }: { state: State }) {
           <p className="font-serif italic text-muted-foreground">No rival ludi have open challenges. Return later.</p>
         )}
         {data && data.openChallenges.length > 0 && data.openChallenges.filter(c =>
-          opponentFilter === "all" || (opponentFilter === "bots" ? c.is_bot : !c.is_bot)
+          (opponentFilter === "all" || (opponentFilter === "bots" ? c.is_bot : !c.is_bot)) && (!onlyFightable || c.similar)
         ).length === 0 && (
-          <p className="font-serif italic text-muted-foreground">No {opponentFilter} challenges open right now.</p>
+          <p className="font-serif italic text-muted-foreground">No {onlyFightable ? "fightable " : ""}{opponentFilter === "all" ? "" : opponentFilter + " "}challenges open right now.</p>
         )}
         {data && data.openChallenges.filter(c =>
-          opponentFilter === "all" || (opponentFilter === "bots" ? c.is_bot : !c.is_bot)
+          (opponentFilter === "all" || (opponentFilter === "bots" ? c.is_bot : !c.is_bot)) && (!onlyFightable || c.similar)
         ).map(c => {
           const g = c.gladiator;
           const disabled = !myId || !c.similar || accept.isPending;
@@ -1503,6 +1536,12 @@ function BossRoundReveal({
           <div className="mt-1 font-display text-4xl font-black tabular-nums text-black">
             {outcome.playerDamage > 0 ? `-${outcome.playerDamage}` : "—"}
           </div>
+          {outcome.poisoned && (
+            <div className="mt-1 font-display text-xs uppercase tracking-widest text-emerald-950">Poisoned — doubled</div>
+          )}
+          {outcome.beat === "snake_bite" && outcome.poisonStacks > 0 && !outcome.poisoned && (
+            <div className="mt-1 font-display text-xs uppercase tracking-widest text-emerald-950">Poisoned — next {outcome.poisonStacks} hits doubled</div>
+          )}
         </div>
       ) : (
         <div className="mx-auto max-w-sm rounded-lg border-2 border-red-900 bg-black p-6 text-center shadow-lg">

@@ -251,6 +251,7 @@ export type Database = {
           party_hp: number
           party_max_hp: number
           phase: number
+          poison_stacks: number
           round: number
           round_deadline: string
           shield_map: Json
@@ -274,6 +275,7 @@ export type Database = {
           party_hp: number
           party_max_hp: number
           phase?: number
+          poison_stacks?: number
           round?: number
           round_deadline: string
           shield_map?: Json
@@ -297,6 +299,7 @@ export type Database = {
           party_hp?: number
           party_max_hp?: number
           phase?: number
+          poison_stacks?: number
           round?: number
           round_deadline?: string
           shield_map?: Json

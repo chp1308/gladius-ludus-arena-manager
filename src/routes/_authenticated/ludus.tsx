@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,7 +11,7 @@ import {
   keyDropChance, EXTENDED_MAX_LEVEL, extendedFacilityCost, relicsCooldownHours,
   trainBigChance, recruitCost as recruitCostFor, beastChance, medicusSpeedPct, maxCraftableTier, armoryDiscountPct,
   runSocialEvent, socialDelegationSize, socialToneWeights, SOCIAL_COOLDOWN_MINUTES,
-  markBuildingVisited,
+  markBuildingVisited, getMatchHistory,
 } from "@/lib/game.functions";
 import { DISCOVERY_KEYS, DISCOVERY_INTRO, DISCOVERY_MILESTONE, type DiscoveryKey } from "@/lib/discovery";
 import { useDiscoveryReveal, useFirstOpenIntro } from "@/lib/use-discovery-reveal";
@@ -21,6 +21,7 @@ import { MAX_GEAR_TIER, requiredArmoryLevel } from "@/lib/game.functions";
 import { RELICS } from "@/lib/relics";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AppHeader, type HeaderAction } from "@/components/app-header";
 import { useConfirm } from "@/lib/confirm";
@@ -238,6 +239,17 @@ function facilityBonusText(facility: "training" | "scouting" | "medicus" | "armo
   }
 }
 
+// Same numbers as facilityBonusText, one level ahead — shown alongside it
+// so a player can see what an upgrade actually buys before spending on it.
+function facilityNextLevelText(
+  facility: "training" | "scouting" | "medicus" | "armory" | "pantry" | "social" | "relics",
+  level: number,
+  maxLevel: number,
+): string | null {
+  if (level >= maxLevel) return null;
+  return facilityBonusText(facility, level + 1).replace(/^Active now:/, "Next level:");
+}
+
 function LudusPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -428,7 +440,7 @@ function VillageView({
     armory:   `Lv ${state.profile?.armory_level ?? 1}`,
     pantry:   `${humans}/${cap.humans} · ${beasts}/${cap.beasts}`,
     temple:   dead > 0 ? `${dead} fallen` : undefined,
-    chronicle: state.matches.length ? `${state.matches.length}` : undefined,
+    chronicle: state.matches.length ? `${state.matches.length}${state.matches.length >= 20 ? "+" : ""}` : undefined,
     relics:   `Lv ${state.profile?.relics_level ?? 1}`,
   };
 
@@ -533,17 +545,38 @@ function VillageView({
               {!visited.has(b.key) && (
                 <span className="absolute -top-2 right-1/4 h-[36px] w-[36px] animate-pulse rounded-full border-2 border-black bg-red-600 shadow-[0_0_8px_#dc2626]" title="Not yet visited" />
               )}
-              {badges[b.key] && (
-                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-border/60 bg-background/90 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground shadow-sm">
-                  {badges[b.key]}
-                </span>
-              )}
               <span className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-border/70 bg-[oklch(0.99_0.012_85_/_0.92)] px-2.5 py-1 font-display text-xs tracking-wide opacity-0 shadow-[var(--shadow-relief)] transition group-hover:opacity-100">
                 {b.name}
               </span>
             </button>
           );
         })}
+
+        {/* Level/count badges render in their own pass, after every
+            building's own button — a building sitting later in this same
+            list (e.g. the Forge) otherwise visually covers a neighbor's
+            badge whenever their map slots are close together, since both
+            share the buttons' z-20 baseline and later DOM order wins ties.
+            Buildings themselves keep that relative stacking (hover still
+            lifts one above its neighbors); only the small info badges are
+            guaranteed to always sit on top of every building. Reuses each
+            slot's own x/y — translate(-50%,-100%) on the button above
+            anchors slot.y at the button's bottom edge, so top-1 here lands
+            in the same spot the old inline "-bottom-1" badge did, without
+            needing to know the button's actual rendered height. */}
+        <div className="pointer-events-none absolute inset-0 z-40">
+          {BUILDINGS.filter(b => b.key !== "ludus" && discovered.has(b.key) && badges[b.key]).map((b) => {
+            const slot = MAP_SLOTS[b.key];
+            if (!slot) return null;
+            return (
+              <div key={b.key} className="absolute -translate-x-1/2" style={{ left: `${slot.x * 100}%`, top: `${slot.y * 100}%` }}>
+                <span className="absolute left-1/2 top-1 -translate-x-1/2 whitespace-nowrap rounded-full border border-border/60 bg-background/90 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground shadow-sm">
+                  {badges[b.key]}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <Dialog open={open !== null} onOpenChange={(o) => !o && setOpen(null)}>
@@ -557,6 +590,7 @@ function VillageView({
               recruitCost={recruitCost}
               recruitPending={recruitPending}
               onRecruit={onRecruit}
+              humanPantryFull={humans >= cap.humans}
               canRollBeast={humans >= cap.humans && beasts < cap.beasts}
               recruitBeastPending={recruitBeastPending}
               onRecruitBeast={onRecruitBeast}
@@ -570,11 +604,11 @@ function VillageView({
 
 function BuildingPanel({
   buildingKey, state, denarii, scoutingLevel, recruitCost, recruitPending, onRecruit,
-  canRollBeast, recruitBeastPending, onRecruitBeast,
+  humanPantryFull, canRollBeast, recruitBeastPending, onRecruitBeast,
 }: {
   buildingKey: BuildingKey; state: State; denarii: number; scoutingLevel: number;
   recruitCost: number; recruitPending: boolean; onRecruit: () => void;
-  canRollBeast: boolean; recruitBeastPending: boolean; onRecruitBeast: () => void;
+  humanPantryFull: boolean; canRollBeast: boolean; recruitBeastPending: boolean; onRecruitBeast: () => void;
 }) {
   const b = BUILDINGS.find(x => x.key === buildingKey)!;
   const Icon = b.Icon;
@@ -625,9 +659,14 @@ function BuildingPanel({
               <div className="text-sm text-muted-foreground">
                 Scouting Network — <span className="text-accent">Lv {scoutingLevel}</span> · beast chance ~{Math.round(beastChance(scoutingLevel) * 100)}%
               </div>
-              <Button size="lg" onClick={onRecruit} disabled={recruitPending || denarii < recruitCost}>
+              <Button size="lg" onClick={onRecruit} disabled={recruitPending || denarii < recruitCost || humanPantryFull}>
                 Scout recruit · {recruitCost} denarii
               </Button>
+              {humanPantryFull && !canRollBeast && (
+                <p className="font-serif text-sm italic text-destructive">
+                  Your pantry is completely full — upgrade it, or make room by dismissing or losing a gladiator, before scouting again.
+                </p>
+              )}
 
               {canRollBeast && (
                 <div className="mt-2 rounded-lg border border-accent/40 bg-accent/5 p-4">
@@ -716,43 +755,66 @@ function BuildingPanel({
 
         {buildingKey === "relics" && <RelicsPanel state={state} />}
 
-        {buildingKey === "chronicle" && (
-          <Card className="inscribed ornate-border">
-            <CardContent className="pt-6">
-              {state.matches.length === 0 ? (
-                <p className="font-serif italic text-muted-foreground">No matches yet. Send a gladiator to the sand.</p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {state.matches.map((m) => {
-                    const g = state.gladiators.find(x => x.id === m.gladiator_id);
-                    return (
-                      <li key={m.id} className="flex items-center justify-between py-3">
-                        <div>
-                          <div className="font-serif text-base">
-                            <span className={m.result === "win" ? "text-primary font-semibold" : "text-muted-foreground"}>
-                              {m.result === "win" ? "Victory" : "Defeat"}
-                            </span>
-                            {" — "}
-                            {g?.name ?? "Fallen"} vs {m.opponent_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {ARENA_TIERS.find(t => t.key === m.difficulty)?.label ?? m.difficulty} · {new Date(m.created_at).toLocaleString()}
-                          </div>
-                        </div>
-                        <div className="text-right text-sm">
-                          <div className="text-accent">+{m.denarii_gained} denarii</div>
-                          <div className="text-muted-foreground">+{m.xp_gained} XP</div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        {buildingKey === "chronicle" && <ChroniclePanel state={state} />}
       </div>
     </>
+  );
+}
+
+// The Stele's own fetch (up to 200 matches, with a real total count) —
+// getLudusState's `matches` field is capped at 20 for the sake of every
+// other page load, which undersold "every match, carved in stone."
+function ChroniclePanel({ state }: { state: State }) {
+  const fetchHistory = useServerFn(getMatchHistory);
+  const { data, isLoading } = useQuery({
+    queryKey: ["match-history"],
+    queryFn: () => fetchHistory({}),
+  });
+  const matches = data?.matches ?? state.matches;
+  const total = data?.total ?? state.matches.length;
+
+  return (
+    <Card className="inscribed ornate-border">
+      <CardContent className="pt-6">
+        {isLoading && <p className="mb-3 font-serif text-xs italic text-muted-foreground">Reading the stele…</p>}
+        {matches.length === 0 ? (
+          <p className="font-serif italic text-muted-foreground">No matches yet. Send a gladiator to the sand.</p>
+        ) : (
+          <>
+            <p className="mb-3 font-serif text-xs italic text-muted-foreground">
+              {data && total > data.limit
+                ? `Showing your last ${data.limit} of ${total} bouts.`
+                : `Every one of your ${total} bout${total === 1 ? "" : "s"}, carved in stone.`}
+            </p>
+            <ul className="divide-y divide-border">
+              {matches.map((m) => {
+                const g = state.gladiators.find(x => x.id === m.gladiator_id);
+                return (
+                  <li key={m.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <div className="font-serif text-base">
+                        <span className={m.result === "win" ? "text-primary font-semibold" : "text-muted-foreground"}>
+                          {m.result === "win" ? "Victory" : "Defeat"}
+                        </span>
+                        {" — "}
+                        {g?.name ?? "Fallen"} vs {m.opponent_name}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {ARENA_TIERS.find(t => t.key === m.difficulty)?.label ?? m.difficulty} · {new Date(m.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="text-right text-sm">
+                      <div className="text-accent">+{m.denarii_gained} denarii</div>
+                      <div className="text-muted-foreground">+{m.xp_gained} XP</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -974,6 +1036,9 @@ function FacilityCard({
       <CardContent className="space-y-3">
         <p className="font-serif text-sm italic text-muted-foreground">{desc}</p>
         <p className="text-xs text-accent">{facilityBonusText(facility, level)}</p>
+        {!atMax && (
+          <p className="text-xs text-muted-foreground">{facilityNextLevelText(facility, level, maxLevel)}</p>
+        )}
         <Button
           className="w-full"
           size="sm"
@@ -1068,13 +1133,81 @@ function SkillCard({
   );
 }
 
+type RosterSort = "name" | "level" | "power" | "wins" | "health";
+type RosterTypeFilter = "all" | "gladius" | "spear" | "net" | "dual" | "beast";
+
+const ROSTER_SORTS: { key: RosterSort; label: string }[] = [
+  { key: "level", label: "Level" },
+  { key: "power", label: "Power" },
+  { key: "wins", label: "Wins" },
+  { key: "health", label: "Health" },
+  { key: "name", label: "Name" },
+];
+
+const ROSTER_TYPE_FILTERS: { key: RosterTypeFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "gladius", label: "Gladius & Shield" },
+  { key: "spear", label: "Spear & Shield" },
+  { key: "net", label: "Net & Trident" },
+  { key: "dual", label: "Dual Blades" },
+  { key: "beast", label: "Beasts" },
+];
+
 function GladiatorGrid({ state }: { state: State }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [sort, setSort] = useState<RosterSort>("level");
+  const [typeFilter, setTypeFilter] = useState<RosterTypeFilter>("all");
   const selected = state.gladiators.find(g => g.id === openId) ?? null;
+  const skillMap = new Map(state.skills.map(s => [s.weapon_type, s.level]));
+
+  const roster = state.gladiators
+    .filter(g => g.status !== "dead")
+    .filter(g => {
+      if (typeFilter === "all") return true;
+      if (typeFilter === "beast") return g.is_beast;
+      return g.weapon_type === typeFilter;
+    })
+    .sort((a, b) => {
+      switch (sort) {
+        case "level": return b.level - a.level;
+        case "power": return gladiatorPower(b, skillMap.get(b.weapon_type) ?? 0) - gladiatorPower(a, skillMap.get(a.weapon_type) ?? 0);
+        case "wins": return b.wins - a.wins;
+        case "health": return (b.health / maxHealth(b.strength)) - (a.health / maxHealth(a.strength));
+        case "name": return a.name.localeCompare(b.name);
+      }
+    });
+
   return (
     <>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {ROSTER_TYPE_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setTypeFilter(f.key)}
+              className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                typeFilter === f.key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/60"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          Sort by
+          <Select value={sort} onValueChange={(v) => setSort(v as RosterSort)}>
+            <SelectTrigger className="h-8 w-[130px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {ROSTER_SORTS.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {roster.length === 0 && (
+        <p className="font-serif italic text-muted-foreground">No gladiators match this filter.</p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {state.gladiators.filter(g => g.status !== "dead").map((g) => (
+        {roster.map((g) => (
           <GladiatorTile key={g.id} g={g} onClick={() => setOpenId(g.id)} />
 
         ))}

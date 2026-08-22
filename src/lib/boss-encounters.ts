@@ -70,8 +70,14 @@ export type BossPhase = {
 // pools: defensiveDamageScale doubles as the head-lunge miss penalty,
 // howlDamageScale as the snake-bite miss penalty, vulnerableDamageScale as
 // the strike-window payoff — see cerberusZoneIndex/rollCerberusBurstLength
-// in game.functions.ts. tickDamageScale and netBonus are unused (Cerberus
-// has no passive mauling and no net-bonus beat).
+// in game.functions.ts. netBonus is unused (Cerberus has no net-bonus
+// beat). tickDamageScale IS used (unlike earlier), at a small fraction of
+// the boar's per-second rate — a Cerberus fight runs far more rounds than
+// the boar's (see the per-phase comment below for the round math), so
+// even a modest rate compounds to real total attrition over a full fight.
+// A failed snake-bite dodge also poisons the party — see
+// POISON_STACKS_ON_SNAKE_BITE in game.functions.ts — doubling the next 3
+// hits actually taken, on top of howlDamageScale's own snake-bite penalty.
 export type DogLungeVariant = "left_middle" | "right_middle" | "middle_only" | "left_right" | "all_three";
 
 // One row of the boss's loot table. "denarii" rolls a random amount in
@@ -188,12 +194,22 @@ export const BOSS_ENCOUNTERS: BossDefinition[] = [
     // three separate pools — see the mechanic comment on BossDefinition.
     // hpScale is only read from phases[0], at fight start.
     phases: [
+      // tickDamageScale here is deliberately much lower than the boar's
+      // (0.015/0.022) — a Cerberus fight runs far more rounds. Modeled at
+      // ~5.3 rounds per successful strike (avg burst length 4.3 + 1 strike
+      // window; see rollCerberusBurstLength in game.functions.ts), a party
+      // right at the baseHp floor needs ~46-88 total rounds to win. These
+      // rates put total tick attrition over a full fight at roughly 6-13%
+      // of max HP for an attentive player (resolving each round in ~40% of
+      // its deadline on average) — enough to punish stalling without
+      // eating into the ~19% buffer the "3 big hits" baseline (3x the
+      // worst snake-bite penalty below) is meant to leave.
       { name: "Three Heads Hunting", blurb: "All three heads circle and lunge in pairs — read the gap and step through it. Two attacks before it gives you an opening.",
-        hpScale: 0.95, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.09, howlDamageScale: 0.14, tickDamageScale: 0 },
+        hpScale: 0.95, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.09, howlDamageScale: 0.14, tickDamageScale: 0.0006 },
       { name: "Backed to the Gate", blurb: "Fewer safe reads and faster onslaughts — three or four attacks now, before it gives ground.",
-        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.13, howlDamageScale: 0.20, tickDamageScale: 0 },
+        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.13, howlDamageScale: 0.20, tickDamageScale: 0.0010 },
       { name: "Last Guardian of Hell", blurb: "Wounded and desperate, it keeps coming — three attacks at minimum, and it may not stop there.",
-        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.18, howlDamageScale: 0.27, tickDamageScale: 0 },
+        hpScale: 0, vulnerableChance: 1, vulnerableDamageScale: 0.11, defensiveDamageScale: 0.18, howlDamageScale: 0.27, tickDamageScale: 0.0016 },
     ],
     lootTable: [
       { key: "denarii", label: "Denarii Purse", chance: 1, effect: "denarii", min: 500, max: 900 },
